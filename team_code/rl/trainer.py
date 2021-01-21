@@ -48,7 +48,8 @@ def train(config, agent, env):
         new_obs, reward, done, info = env.step(action)
 
         # store in replay buffer
-        agent.model.replay_buffer.add(obs, action, reward, new_obs, float(done))
+        if env.frame > 60: # 3 seconds of warmup time
+            agent.model.replay_buffer.add(obs, action, reward, new_obs, float(done))
         total_reward += reward
         episode_steps += 1
 

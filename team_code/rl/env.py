@@ -39,7 +39,7 @@ class CarlaEnv(gym.Env):
 
         # set up blocking checks
         self.last_hero_positions = deque()
-        self.max_positions_len = 100 # 5 seconds
+        self.max_positions_len = 60 
         self.blocking_distance = 3.0
 
         # route indexer
@@ -128,7 +128,7 @@ class CarlaEnv(gym.Env):
         # get target waypoint to compute reward
         targets = closest_aligned_transform(
                 hero_transform, 
-                self.route_waypoints, 
+                self.route_transforms, 
                 self.forward_vectors)
         if len(targets) == 0:
             return np.zeros(6), 0, True, {'no_targets': True}
@@ -231,9 +231,11 @@ class CarlaEnv(gym.Env):
         route_locations = [route_elem[0] for route_elem in self.route]
         self.route_waypoints = [
                 self.map.get_waypoint(loc) for loc in route_locations]
+        self.route_transforms = [
+                waypoint_to_vector(wp) for wp in self.route_waypoints]
+        self.route_transforms = np.array(self.route_transforms)
         forward_vectors = [wp.transform.get_forward_vector() for wp in self.route_waypoints]
-        self.forward_vectors = np.array(
-                [[v.x, v.y, v.z] for v in forward_vectors])
+        self.forward_vectors = np.array( [[v.x, v.y, v.z] for v in forward_vectors])
 
         if draw:
             draw_waypoints(self.world, self.route_waypoints, color=(0,0,255), life_time=9999)
@@ -291,7 +293,7 @@ class CarlaEnv(gym.Env):
         # distance reward
         dist = np.linalg.norm(hero[:3] - target[:3])
         dist_max = 5
-        dist_reward = max(-dist/dist_max, -1)
+        dist_reward = 1 - min(dist/dist_max, 1)
 
         # rotation reward
         yaw_diff = (hero[4]-target[4]) % 360

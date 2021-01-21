@@ -32,6 +32,7 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
         self.step = 0
         self.episode_num = -1 # the first reset changes this to 0
         self.save_images_path  = f'{self.config.save_root}/images/episode_{self.episode_num:06d}'
+        self.save_images_interval = 5
 
     def sensors(self):
         return [
@@ -93,10 +94,10 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
             image = input_data['bev'][1][:, :, :3] # what's the last number?
             cv2.imshow('debug', image)
             cv2.waitKey(1)
-
-            frame = self.step // 10
-            save_path = f'{self.save_images_path}/{frame:06d}.png'
-            cv2.imwrite(save_path, image)
+            if self.step % self.save_images_interval == 0:
+                frame = self.step // self.save_images_interval
+                save_path = f'{self.save_images_path}/{frame:06d}.png'
+                cv2.imwrite(save_path, image)
 
         control = VehicleControl()
         if self.config.mode == 'train': # use cached training prediction           

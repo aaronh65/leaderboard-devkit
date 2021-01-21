@@ -8,8 +8,7 @@ def sgn_angle_diff(t1, t2):
     return diff
 
 # index of closest transform in candidates (vector form)
-def closest_aligned_transform(hero_transform, waypoints, fvectors, world=None):
-    transforms = np.array([waypoint_to_vector(wp) for wp in waypoints])
+def closest_aligned_transform(hero_transform, transforms, fvectors, world=None):
 
     # distance criteria
     hero_transform_vec = transform_to_vector(hero_transform)
