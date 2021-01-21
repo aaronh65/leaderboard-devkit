@@ -3,7 +3,7 @@ import yaml
 import argparse
 
 from datetime import datetime
-from leaderboard.team_code.common.utils import *
+from utils import *
 
 parser = argparse.ArgumentParser()
 
@@ -23,12 +23,13 @@ parser.add_argument('--debug', action='store_true')
 args = parser.parse_args()
 
 # save path for images/logs/videos/plots
+project_root = "/home/aaron/workspace/carla/leaderboard-devkit"
 date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
 suffix = f'debug/{date_str}' if args.debug else f'{date_str}' 
-base_save_path = f'/data/leaderboard/results/rl/waypoint_agent/{suffix}'
+save_root = f'/data/leaderboard/results/rl/waypoint_agent/{suffix}'
 if args.save_images:
-    mkdir_if_not_exists(f'{base_save_path}/images')
-mkdir_if_not_exists(f'{base_save_path}/weights')
+    mkdir_if_not_exists(f'{save_root}/images')
+mkdir_if_not_exists(f'{save_root}/weights')
 
 # route indexer information
 routes = f'routes_{args.split}'
@@ -50,6 +51,7 @@ env_config = {
         }
 
 sac_config = {
+        'save_root': save_root,
         'mode': 'train',
         'total_timesteps': 500000,
         'burn_timesteps': 2000,
@@ -65,13 +67,13 @@ sac_config = {
         }
 
 config = {'env_config': env_config, 'sac_config': sac_config}
-config_path = f'{base_save_path}/config.yml'
+config_path = f'{save_root}/config.yml'
 with open(config_path, 'w') as f:
     yaml.dump(config, f, default_flow_style=False)
 
-os.environ["PROJECT_ROOT"] = '/home/aaron/workspace/carla/2020_CARLA_challenge'
-os.environ["BASE_SAVE_PATH"] = base_save_path
+os.environ["PROJECT_ROOT"] = project_root
+os.environ["SAVE_ROOT"] = save_root
 os.environ["CONDA_ENV"] = 'lbrl'
 
-cmd = f'bash scripts/rl_trainer.sh {config_path}'
+cmd = f'bash sh/rl_trainer.sh {config_path}'
 os.system(cmd)

@@ -14,7 +14,6 @@ from carla import VehicleControl
 import cv2
 import numpy as np
 
-BASE_SAVE_PATH = os.environ.get('BASE_SAVE_PATH', 0)
 
 def get_entry_point():
     return 'WaypointAgent'
@@ -32,7 +31,7 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
         self.cached_control = None
         self.step = 0
         self.episode_num = -1 # the first reset changes this to 0
-        self.save_images_path  = f'{BASE_SAVE_PATH}/images/episode_{self.episode_num:06d}'
+        self.save_images_path  = f'{self.config.save_root}/images/episode_{self.episode_num:06d}'
 
     def sensors(self):
         return [
@@ -67,7 +66,7 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
     def reset(self):
         self.step = 0
         self.episode_num += 1
-        self.save_images_path  = f'{BASE_SAVE_PATH}/images/episode_{self.episode_num:06d}'
+        self.save_images_path  = f'{self.config.save_root}/images/episode_{self.episode_num:06d}'
         if self.config.save_images:
             mkdir_if_not_exists(self.save_images_path)
 
