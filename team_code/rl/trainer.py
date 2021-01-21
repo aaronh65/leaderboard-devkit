@@ -13,7 +13,7 @@ from waypoint_agent import WaypointAgent
 from carla import Client
 from team_code.common.utils import *
 
-BASE_SAVE_PATH = os.environ.get('BASE_SAVE_PATH', 0)
+SAVE_ROOT = os.environ.get('SAVE_ROOT', 0)
 
 def train(config, agent, env):
 
@@ -96,11 +96,11 @@ def train(config, agent, env):
 
         # save model if applicable
         if step % config.save_frequency == 0 and not burn_in:
-            weights_path = f'{BASE_SAVE_PATH}/weights/{step:07d}'
+            weights_path = f'{SAVE_ROOT}/weights/{step:07d}'
             agent.model.save(weights_path)
 
             for name, arr in save_dict.items():
-                save_path = f'{BASE_SAVE_PATH}/{name}.npy'
+                save_path = f'{SAVE_ROOT}/{name}.npy'
                 with open(save_path, 'wb') as f:
                     np.save(f, arr)
 
