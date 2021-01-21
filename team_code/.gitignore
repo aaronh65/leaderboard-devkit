@@ -1,2 +1,4 @@
-math
-bkup
+config
+*.swp
+*.pyc
+*__pycache__*

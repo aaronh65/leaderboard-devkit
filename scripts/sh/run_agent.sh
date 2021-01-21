@@ -9,11 +9,11 @@ conda activate ${CONDA_ENV}
 
 # Python env variables so the subdirectories can find each other
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/$NAME/anaconda3/lib
-export CARLA_ROOT=/home/$NAME/workspace/carla/CARLA_0.9.10.1
-#export CARLA_ROOT=/home/$NAME/workspace/carla/CARLA_0.9.11
+#export CARLA_ROOT=/home/$NAME/workspace/carla/CARLA_0.9.10.1
+export CARLA_ROOT=/home/$NAME/workspace/carla/CARLA_0.9.11
 export PYTHONPATH=$PYTHONPATH:$CARLA_ROOT/PythonAPI/carla
-export PYTHONPATH=$PYTHONPATH:$CARLA_ROOT/PythonAPI/carla/dist/carla-0.9.10-py3.7-linux-x86_64.egg
-#export PYTHONPATH=$PYTHONPATH:$CARLA_ROOT/PythonAPI/carla/dist/carla-0.9.11-py3.7-linux-x86_64.egg
+#export PYTHONPATH=$PYTHONPATH:$CARLA_ROOT/PythonAPI/carla/dist/carla-0.9.10-py3.7-linux-x86_64.egg
+export PYTHONPATH=$PYTHONPATH:$CARLA_ROOT/PythonAPI/carla/dist/carla-0.9.11-py3.7-linux-x86_64.egg
 
 export PYTHONPATH=$PYTHONPATH:$PROJECT_ROOT
 export PYTHONPATH=$PYTHONPATH:$PROJECT_ROOT/leaderboard
@@ -29,6 +29,7 @@ export TEAM_CONFIG=$BASE_SAVE_PATH/config.yml
 export ROUTE_PATH=$PROJECT_ROOT/leaderboard/data/$2
 export SCENARIOS=$PROJECT_ROOT/leaderboard/data/all_towns_traffic_scenarios_public.json
 export REPETITIONS=$3
+export PRIVILEGED=$4
 CHECKPOINT_ENDPOINT="$BASE_SAVE_PATH/logs/${ROUTE_NAME}.txt"
 
 
@@ -42,7 +43,8 @@ python ${PROJECT_ROOT}/leaderboard/leaderboard/leaderboard_evaluator.py \
 --port=${WORLD_PORT} \
 --debug=${DEBUG_CHALLENGE} \
 --trafficManagerPort=${TM_PORT} \
---repetitions=${REPETITIONS}
+--repetitions=${REPETITIONS} \
+--privileged=${PRIVILEGED}
 
 echo "Done. See $CHECKPOINT_ENDPOINT for detailed results."
 

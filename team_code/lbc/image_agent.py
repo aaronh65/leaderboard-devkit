@@ -29,7 +29,9 @@ class ImageAgent(BaseAgent):
         super().setup(path_to_conf_file)
 
         self.converter = Converter()
-        self.net = ImageModel.load_from_checkpoint(self.config['weights_path'])
+        project_root = self.config['project_root']
+        weights_path = self.config['weights_path']
+        self.net = ImageModel.load_from_checkpoint(f'{project_root}/{weights_path}')
         self.net.cuda()
         self.net.eval()
 
@@ -163,12 +165,9 @@ class ImageAgent(BaseAgent):
 
         # create control object
         control = carla.VehicleControl()
-        #control.steer = steer
-        #control.throttle = throttle
-        #control.brake = float(brake)
-        control.steer = 0
-        control.throttle = 1
-        control.brake = False
+        control.steer = steer
+        control.throttle = throttle
+        control.brake = float(brake)
         if DEBUG or self.config['save_images']:
 
             # make display image

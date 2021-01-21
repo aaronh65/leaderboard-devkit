@@ -41,16 +41,19 @@ mkdir_if_not_exists(save_perf_path)
 config = {}
 config['project_root'] = project_root
 config['save_images'] = args.save_images
+privileged = False
 conda_env = 'lb'
 if args.agent == 'common/straight_agent':
     pass
 elif args.agent == 'lbc/auto_pilot':
+    privileged = True
     config['save_data'] = False
 elif args.agent == 'lbc/image_agent':
     conda_env = 'lblbc'
     config['weights_path'] = 'team_code/config/image_model.ckpt'
 elif args.agent == 'lbc/privileged_agent':
     conda_env = 'lblbc'
+    privileged = True
     config['weights_path'] = 'team_code/config/map_model.ckpt'
 elif args.agent == 'rl/waypoint_agent':
     conda_env = 'lbrl'
@@ -71,6 +74,6 @@ os.environ["ROUTE_NAME"] = route_name
 os.environ["WORLD_PORT"] = "2000"
 os.environ["TM_PORT"] = "8000"
  
-cmd = f'bash sh/run_agent.sh {args.agent} {route_path} {args.repetitions}'
+cmd = f'bash sh/run_agent.sh {args.agent} {route_path} {args.repetitions} {privileged}'
 print(f'running {cmd}')
 os.system(cmd)

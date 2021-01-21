@@ -34,7 +34,9 @@ class PrivilegedAgent(MapAgent):
         
         super().setup(path_to_conf_file)
         self.converter = Converter()
-        self.net = MapModel.load_from_checkpoint(self.config['weights_path'])
+        project_root = self.config['project_root']
+        weights_path = self.config['weights_path']
+        self.net = MapModel.load_from_checkpoint(f'{project_root}/{weights_path}')
         self.net.cuda()
         self.net.eval()
 
