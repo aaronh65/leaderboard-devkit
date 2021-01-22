@@ -19,7 +19,6 @@ from team_code.lbc.pid_controller import PIDController
 
 
 DEBUG = int(os.environ.get('HAS_DISPLAY', 0))
-BASE_SAVE_PATH = os.environ.get('BASE_SAVE_PATH', 0)
 ROUTE_NAME = os.environ.get('ROUTE_NAME', 0)
 
 def get_entry_point():
@@ -34,8 +33,8 @@ class PrivilegedAgent(MapAgent):
         
         super().setup(path_to_conf_file)
         self.converter = Converter()
-        project_root = self.config['project_root']
-        weights_path = self.config['weights_path']
+        project_root = self.config.project_root
+        weights_path = self.config.weights_path
         self.net = MapModel.load_from_checkpoint(f'{project_root}/{weights_path}')
         self.net.cuda()
         self.net.eval()
@@ -45,7 +44,7 @@ class PrivilegedAgent(MapAgent):
 
         self._turn_controller = PIDController(K_P=1.25, K_I=0.75, K_D=0.3, n=40)
         self._speed_controller = PIDController(K_P=5.0, K_I=0.5, K_D=1.0, n=40)
-        self.save_images_path = Path(f'{BASE_SAVE_PATH}/images/{ROUTE_NAME}')
+        self.save_images_path = Path(f'{self.config.save_root}/images/{ROUTE_NAME}')
         self.save_image_dim=(1371,256)
         #self.save_path.mkdir()
 
@@ -181,7 +180,7 @@ class PrivilegedAgent(MapAgent):
         control.brake = float(brake)
         #print(timestamp) # GAMETIME
 
-        if DEBUG or self.config['save_images']:
+        if DEBUG or self.config.save_images:
 
             # transform image model cam points to overhead BEV image (spectator frame?)
             self.debug_display(
@@ -273,7 +272,7 @@ class PrivilegedAgent(MapAgent):
         _topdown = _topdown.resize((256, 256))
         _save_img = Image.fromarray(np.hstack([_rgb_img, _topdown]))
         _save_img = cv2.cvtColor(np.array(_save_img), cv2.COLOR_BGR2RGB)
-        if self.step % 10 == 0 and self.config['save_images']:
+        if self.step % 10 == 0 and self.config.save_images:
             frame_number = self.step // 10
             rep_number = int(os.environ.get('REP',0))
             save_path = self.save_images_path / f'repetition_{rep_number:02d}' / f'{frame_number:06d}.png'

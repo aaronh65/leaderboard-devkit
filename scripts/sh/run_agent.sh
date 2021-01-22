@@ -25,12 +25,12 @@ export HAS_DISPLAY=1
 
 # leaderboard and agent config
 export TEAM_AGENT=$PROJECT_ROOT/team_code/$1.py
-export TEAM_CONFIG=$BASE_SAVE_PATH/config.yml
+export TEAM_CONFIG=$SAVE_ROOT/config.yml
 export ROUTE_PATH=$PROJECT_ROOT/leaderboard/data/$2
 export SCENARIOS=$PROJECT_ROOT/leaderboard/data/all_towns_traffic_scenarios_public.json
 export REPETITIONS=$3
 export PRIVILEGED=$4
-CHECKPOINT_ENDPOINT="$BASE_SAVE_PATH/logs/${ROUTE_NAME}.txt"
+CHECKPOINT_ENDPOINT="$SAVE_ROOT/logs/${ROUTE_NAME}.txt"
 
 
 python ${PROJECT_ROOT}/leaderboard/leaderboard/leaderboard_evaluator.py \
