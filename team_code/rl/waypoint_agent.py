@@ -20,12 +20,17 @@ def get_entry_point():
 
 class WaypointAgent(autonomous_agent.AutonomousAgent):
     def setup(self, path_to_conf_file=None):
-        if path_to_conf_file:
-            if type(path_to_conf_file) == str:
-                with open(self.config_path, 'r') as f:
-                    self.config = yaml.load(f, Loader=yaml.Loader)
-            elif type(path_to_conf_file) == dict or Bunch:
-                self.config = path_to_conf_file
+        config_type = type(path_to_conf_file)
+        if config_type == str:
+            self.config_path = path_to_conf_file
+            with open(self.config_path, 'r') as f:
+                config = yaml.load(f, Loader=yaml.Loader)
+            self.config = Bunch(config)
+        elif config_type == dict:
+            self.config = Bunch(path_to_conf_file)
+        elif config_type == Bunch:
+            self.config = path_to_conf_file
+
         self.track = autonomous_agent.Track.SENSORS
         self.model = SAC(MlpPolicy, NullEnv(6,3))
         self.cached_control = None

@@ -14,6 +14,8 @@ from leaderboard.scenarios.scenario_manager import ScenarioManager
 from leaderboard.scenarios.route_scenario import RouteScenario
 from leaderboard.utils.route_indexer import RouteIndexer
 
+from pympler import refbrowser
+
 class CarlaEnv(gym.Env):
 
     def __init__(self, econfig, client, agent):
@@ -56,7 +58,7 @@ class CarlaEnv(gym.Env):
                 econfig.trafficmanager_port)
         self.traffic_manager.set_random_device_seed(
                 econfig.trafficmanager_seed)
-        
+
         CarlaDataProvider.set_client(self.client)
         CarlaDataProvider.set_world(self.world)
         CarlaDataProvider.set_traffic_manager_port(
@@ -73,13 +75,13 @@ class CarlaEnv(gym.Env):
         
         # load next RouteScenario
         num_configs = len(self.indexer._configs_list)
-        rconfig = self.indexer.get(np.random.randint(num_configs))
+        #rconfig = self.indexer.get(np.random.randint(num_configs))
+        rconfig = self.indexer.get(0)
         rconfig.agent = self.agent_instance
+
         self._load_world_and_scenario(rconfig)
-        
         self._get_hero_route(draw=True)
 
-        # prepare manager for run
         self.manager.start_system_time = time.time()
         self.manager.start_game_time = GameTime.get_time()
         self.manager._watchdog.start()
@@ -167,21 +169,24 @@ class CarlaEnv(gym.Env):
 
         CarlaDataProvider.cleanup()
 
+        self.world = None
+        self.map = None
+        self.scenario = None
+        self.traffic_manager = None
+
         self.hero_actor = None
+
         if self.agent_instance:
             # just clears sensor interface for resetting
             self.agent_instance.destroy() 
 
     def __del__(self):
-        #self.cleanup()
         if hasattr(self, 'manager') and self.manager:
             del self.manager
         if hasattr(self, 'world') and self.world:
             del self.world
         if hasattr(self, 'scenario') and self.scenario:
             del self.scenario
-
-
 
     def _load_world_and_scenario(self, rconfig):
 
@@ -192,7 +197,8 @@ class CarlaEnv(gym.Env):
         settings.synchronous_mode = True
         self.world.apply_settings(settings)
         self.world.reset_all_traffic_lights()
-        self.map = self.world.get_map()
+        self.traffic_manager = self.client.get_trafficmanager(
+                self.econfig.trafficmanager_port)
         self.traffic_manager.set_synchronous_mode(True)
 
         # setup provider and tick to check correctness
@@ -200,6 +206,8 @@ class CarlaEnv(gym.Env):
         CarlaDataProvider.set_world(self.world)
         CarlaDataProvider.set_traffic_manager_port(
                 self.econfig.trafficmanager_port)
+        self.map = CarlaDataProvider.get_map()
+        
         if CarlaDataProvider.is_sync_mode():
             self.world.tick()
         else:
@@ -225,7 +233,6 @@ class CarlaEnv(gym.Env):
     def _get_hero_route(self, draw=False):
 
         # retrieve new hero route
-        self.map = self.world.get_map()
         self.route = CarlaDataProvider.get_ego_vehicle_route()
 
         route_locations = [route_elem[0] for route_elem in self.route]

@@ -2,20 +2,17 @@ import signal
 import os, sys, time, yaml
 import argparse
 import traceback
+import numpy as np
+
 from datetime import datetime
 from tqdm import tqdm
 
-import numpy as np
-np.set_printoptions(precision=3, suppress=True)
-
 from env import CarlaEnv
+from carla import Client, World, TrafficManager
 from waypoint_agent import WaypointAgent
-from carla import Client
 from team_code.common.utils import *
 
-SAVE_ROOT = os.environ.get('SAVE_ROOT', 0)
-
-def train(config, agent, env):
+def train(config, agent, env, tracker=None):
 
     # metrics
     episode_rewards = []
@@ -36,6 +33,8 @@ def train(config, agent, env):
     total_entropy = 0
     episode_steps = 0
 
+    sizeof = lambda x: asizeof.asizeof(x)
+
     # start environment and run
     obs = env.reset()
     for step in tqdm(range(config.total_timesteps)):
@@ -52,7 +51,6 @@ def train(config, agent, env):
             agent.model.replay_buffer.add(obs, action, reward, new_obs, float(done))
         total_reward += reward
         episode_steps += 1
-
 
         if done:
 
@@ -97,17 +95,19 @@ def train(config, agent, env):
 
         # save model if applicable
         if step % config.save_frequency == 0 and not burn_in:
-            weights_path = f'{SAVE_ROOT}/weights/{step:07d}'
+            weights_path = f'{config.save_root}/weights/{step:07d}'
             agent.model.save(weights_path)
 
             for name, arr in save_dict.items():
-                save_path = f'{SAVE_ROOT}/{name}.npy'
+                save_path = f'{config.save_root}/{name}.npy'
                 with open(save_path, 'wb') as f:
                     np.save(f, arr)
 
         obs = new_obs
 
     #print('done training')
+    if tracker:
+        tracker.stats.print_summary()
 
 def main(args):
     client = Client('localhost', 2000)
@@ -119,10 +119,12 @@ def main(args):
     sac_config = Bunch(config['sac_config'])
 
     agent = WaypointAgent(sac_config)
-
+    tracker = ClassTracker()
+    tracker.track_class(World, trace=1)
+    tracker.track_class(TrafficManager, trace=1)
     try:
         env = CarlaEnv(env_config, client, agent)
-        train(sac_config, agent, env)
+        train(sac_config, agent, env, tracker)
     except KeyboardInterrupt:
         print('caught KeyboardInterrupt')
     except Exception as e:
@@ -133,10 +135,7 @@ def main(args):
 
 def parse_args():
     parser = argparse.ArgumentParser()
-
-    # yaml config path if available
     parser.add_argument('--config_path', type=str, required=True)
-
     args = parser.parse_args()
     return args
 
