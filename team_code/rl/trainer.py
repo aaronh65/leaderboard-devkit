@@ -3,16 +3,15 @@ import os, sys, time, yaml
 import argparse
 import traceback
 import numpy as np
-
-from datetime import datetime
 from tqdm import tqdm
+from datetime import datetime
 
-from env import CarlaEnv
-from carla import Client, World, TrafficManager
+from team_code.common.utils import Bunch
 from waypoint_agent import WaypointAgent
-from team_code.common.utils import *
+from env import CarlaEnv
+from carla import Client
 
-def train(config, agent, env, tracker=None):
+def train(config, agent, env):
 
     # metrics
     episode_rewards = []
@@ -32,8 +31,6 @@ def train(config, agent, env, tracker=None):
     total_value_loss = 0
     total_entropy = 0
     episode_steps = 0
-
-    sizeof = lambda x: asizeof.asizeof(x)
 
     # start environment and run
     obs = env.reset()
@@ -106,25 +103,21 @@ def train(config, agent, env, tracker=None):
         obs = new_obs
 
     #print('done training')
-    if tracker:
-        tracker.stats.print_summary()
 
 def main(args):
     client = Client('localhost', 2000)
 
-    # get configs
+    # get configs and spin up agent
     with open(args.config_path, 'r') as f:
         config = yaml.load(f, Loader=yaml.Loader)
     env_config = Bunch(config['env_config'])
     sac_config = Bunch(config['sac_config'])
 
     agent = WaypointAgent(sac_config)
-    tracker = ClassTracker()
-    tracker.track_class(World, trace=1)
-    tracker.track_class(TrafficManager, trace=1)
+
     try:
         env = CarlaEnv(env_config, client, agent)
-        train(sac_config, agent, env, tracker)
+        train(sac_config, agent, env)
     except KeyboardInterrupt:
         print('caught KeyboardInterrupt')
     except Exception as e:

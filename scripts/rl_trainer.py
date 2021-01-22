@@ -6,6 +6,9 @@ from utils import *
 
 parser = argparse.ArgumentParser()
 
+# route indexing 
+parser.add_argument('--version', type=int, choices=[10,11], default=11)
+
 # route indexing
 parser.add_argument('--split', type=str, default='training', choices=['debug', 'devtest', 'testing', 'training'])
 parser.add_argument('--routenum', type=int)
@@ -21,8 +24,15 @@ parser.add_argument('--verbose', action='store_true')
 parser.add_argument('--debug', action='store_true')
 args = parser.parse_args()
 
+# set carla version variables
+carla_root = f'/home/aaron/workspace/carla/CARLA_0.9.{args.version}'
+if args.version == 10:
+    carla_server = f'{carla_root}.1'
+carla_api = f'{carla_root}/PythonAPI/carla'
+carla_egg = f'{carla_root}/PythonAPI/carla/dist/carla-0.9.{args.version}-py3.7-linux-x86-64.egg'
+
 # save path for images/logs/videos/plots
-project_root = "/home/aaron/workspace/carla/leaderboard-devkit"
+project_root = '/home/aaron/workspace/carla/leaderboard-devkit'
 date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
 suffix = f'debug/{date_str}' if args.debug else f'{date_str}' 
 save_root = f'/data/leaderboard/results/rl/waypoint_agent/{suffix}'
@@ -73,9 +83,11 @@ config_path = f'{save_root}/config.yml'
 with open(config_path, 'w') as f:
     yaml.dump(config, f, default_flow_style=False)
 
+os.environ["CONDA_ENV"] = 'lbrl'
 os.environ["PROJECT_ROOT"] = project_root
 os.environ["SAVE_ROOT"] = save_root
-os.environ["CONDA_ENV"] = 'lbrl'
+os.environ["CARLA_EGG"] = carla_egg
+os.environ["CARLA_API"] = carla_api
 
 cmd = f'bash sh/rl_trainer.sh {config_path}'
 os.system(cmd)

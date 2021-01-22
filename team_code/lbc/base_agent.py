@@ -12,7 +12,6 @@ class BaseAgent(autonomous_agent.AutonomousAgent):
     def setup(self, path_to_conf_file):
         self.track = autonomous_agent.Track.SENSORS
         config_type = type(path_to_conf_file)
-        print(path_to_conf_file)
         if config_type == str:
             self.config_path = path_to_conf_file
             with open(self.config_path, 'r') as f:
