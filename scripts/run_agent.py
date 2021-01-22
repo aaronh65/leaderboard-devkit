@@ -6,13 +6,12 @@ import os, sys, time
 import yaml
 import argparse
 from datetime import datetime
-sys.path.append('') # to get to teamcode
 from utils import *
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--split', type=str, default='devtest', choices=['devtest','testing','training','debug'])
 parser.add_argument('--route', type=int, default=3)
-parser.add_argument('--agent', type=str, default='lbc/image_agent', choices=['lbc/image_agent', 'lbc/auto_pilot', 'lbc/privileged_agent', 'rl/waypoint_agent'])
+parser.add_argument('--agent', type=str, default='lbc/image_agent', choices=['lbc/image_agent', 'lbc/auto_pilot', 'lbc/privileged_agent', 'rl/waypoint_agent', 'common/forward_agent'])
 parser.add_argument('--repetitions', type=int, default=1)
 parser.add_argument('--save_images', action='store_true')
 parser.add_argument('--debug', action='store_true')
@@ -44,7 +43,7 @@ config['save_root'] = save_root
 config['save_images'] = args.save_images
 privileged = False
 conda_env = 'lb'
-if args.agent == 'common/straight_agent':
+if args.agent == 'common/forward_agent':
     pass
 elif args.agent == 'lbc/auto_pilot':
     privileged = True

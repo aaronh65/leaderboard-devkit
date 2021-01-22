@@ -33,7 +33,8 @@ export PRIVILEGED=$4
 CHECKPOINT_ENDPOINT="$SAVE_ROOT/logs/${ROUTE_NAME}.txt"
 
 
-python ${PROJECT_ROOT}/leaderboard/leaderboard/leaderboard_evaluator.py \
+#python ${PROJECT_ROOT}/leaderboard/leaderboard/leaderboard_evaluator.py \
+mprof run ${PROJECT_ROOT}/leaderboard/leaderboard/leaderboard_evaluator.py \
 --track=SENSORS \
 --scenarios=${SCENARIOS} \
 --agent=${TEAM_AGENT} \

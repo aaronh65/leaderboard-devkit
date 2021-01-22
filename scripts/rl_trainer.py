@@ -39,6 +39,9 @@ scenarios = 'all_towns_traffic_scenarios_public.json' if args.scenarios \
         else 'no_traffic_scenarios.json'
 
 env_config = {
+        'save_root': save_root,
+        'project_root': project_root,
+        'save_images': args.save_images,
         'world_port': 2000,
         'trafficmanager_port': 8000,
         'trafficmanager_seed': 0,
@@ -46,23 +49,23 @@ env_config = {
         'scenarios': scenarios,
         'repetitions': args.repetitions,
         'empty': args.empty,
-        'save_images': args.save_images,
         }
 
 sac_config = {
         'save_root': save_root,
+        'project_root': project_root,
+        'save_images': args.save_images,
         'mode': 'train',
-        'total_timesteps': 500000,
-        'burn_timesteps': 2000,
-        #'total_timesteps': 1000,
-        #'burn_timesteps': 100,
+        #'total_timesteps': 500000,
+        #'burn_timesteps': 2000,
+        'total_timesteps': 1000,
+        'burn_timesteps': 500,
         'train_frequency': 1,
         'gradient_steps': 1,
         'target_update_interval': 1,
         'save_frequency': 1000,
         'log_frequency': 1000,
         'verbose': args.verbose,
-        'save_images': args.save_images,
         }
 
 config = {'env_config': env_config, 'sac_config': sac_config}

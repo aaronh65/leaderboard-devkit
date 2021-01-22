@@ -18,7 +18,9 @@ export PYTHONPATH=$PYTHONPATH:$PROJECT_ROOT/leaderboard
 export PYTHONPATH=$PYTHONPATH:$PROJECT_ROOT/scenario_runner
 export PYTHONPATH=$PYTHONPATH:$PROJECT_ROOT
 
-python $PROJECT_ROOT/team_code/rl/trainer.py \
+#python $PROJECT_ROOT/team_code/rl/trainer.py \
+#python -m memory_profiler $PROJECT_ROOT/team_code/rl/trainer.py \
+mprof run $PROJECT_ROOT/team_code/rl/trainer.py \
 	--config_path=$CONFIG_PATH
 
 echo "Done. See $SAVE_ROOT for detailed results."
