@@ -2,6 +2,7 @@
 # this script is usually used on a remote cluster
 
 import os, sys, time
+import yaml
 import subprocess
 import argparse
 import traceback
@@ -45,8 +46,10 @@ assert not (args.ssd is not None and args.scratch), 'choose only one disk to sav
 assert args.ssd is not None or args.scratch, 'choose a disk to save to'
 if args.ssd is not None:
     assert os.path.exists(f'/ssd{args.ssd}'), 'ssd does not exist'
+    prefix = '/ssd{args.ssd}'
 if args.scratch:
     assert os.path.exists('/scratch'), 'scratch does not exist'
+    prefix = '/scratch'
 
 # set carla version variables
 carla_root = f'/home/aaronhua/CARLA_0.9.{args.version}'
@@ -61,8 +64,8 @@ try:
     project_root = "/home/aaronhua/leaderboard-devkit"
     date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
     suffix = f'debug/{date_str}/{args.split}' if args.debug else f'{date_str}/{args.split}'
-    save_root = f'/ssd{args.ssd}/aaronhua/leaderboard/results/{args.agent}/{suffix}'
-    mkdir_if_not_exists(f'{save_path_base}/logs')
+    save_root = f'{prefix}/aaronhua/leaderboard/results/{args.agent}/{suffix}'
+    mkdir_if_not_exists(f'{save_root}/logs')
         
     # launch CARLA servers
     carla_procs = list()
@@ -113,8 +116,8 @@ try:
         yaml.dump(config, f, default_flow_style=False)
     
     # route paths
-    route_prefix = f'leaderboard/data/routes_{args.split}'
-    routes = [f'{route_prefix}/{route}' for route in sorted(os.listdir(route_prefix)) if route.endswith('.xml')]
+    route_dir = f'{project_root}/leaderboard/data/routes_{args.split}'
+    routes = [route.split('.')[0] for route in sorted(os.listdir(route_dir)) if route.endswith('.xml')]
 
     # tracks relevant information for running on cluster
     lbc_procs = [] # one leaderboard process per route
@@ -143,7 +146,7 @@ try:
         
         # otherwise run a new leaderboard process on next route
         route_idx = routes_done.index(False)
-        route_name = routes[route_idx].split('/')[-1].split('.')[0] # e.g. route_00
+        route_name = routes[route_idx]
                         
         # make image + performance plot dirs
         if args.save_images:
