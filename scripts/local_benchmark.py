@@ -21,7 +21,7 @@ args = parser.parse_args()
 # set carla version variables
 carla_root = f'/home/aaron/workspace/carla/CARLA_0.9.{args.version}'
 if args.version == 10:
-    carla_server = f'{carla_root}.1'
+    carla_root = f'{carla_root}.1'
 carla_api = f'{carla_root}/PythonAPI/carla'
 carla_egg = f'{carla_root}/PythonAPI/carla/dist/carla-0.9.{args.version}-py3.7-linux-x86_64.egg'
 
