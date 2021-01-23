@@ -1,14 +1,13 @@
 #!/bin/bash
 
 # running on my local machine vs CMU cluster
-export NAME=aaron
-source /home/$NAME/anaconda3/etc/profile.d/conda.sh
+source ~/anaconda3/etc/profile.d/conda.sh
 conda activate ${CONDA_ENV}
 
 export CONFIG_PATH=$1
 
 # Python env variables so the subdirectories can find each other
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/$NAME/anaconda3/lib
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/anaconda3/lib
 export PYTHONPATH=$PYTHONPATH:$CARLA_EGG
 export PYTHONPATH=$PYTHONPATH:$CARLA_API
 

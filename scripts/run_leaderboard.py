@@ -53,7 +53,7 @@ carla_root = f'/home/aaronhua/CARLA_0.9.{args.version}'
 if args.version == 10:
     carla_server = f'{carla_root}.1'
 carla_api = f'{carla_root}/PythonAPI/carla'
-carla_egg = f'{carla_root}/PythonAPI/carla/dist/carla-0.9.{args.version}-py3.7-linux-x86-64.egg'
+carla_egg = f'{carla_root}/PythonAPI/carla/dist/carla-0.9.{args.version}-py3.7-linux-x86_64.egg'
 
 try:
 

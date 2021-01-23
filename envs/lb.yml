@@ -72,7 +72,6 @@ dependencies:
     - backcall==0.1.0
     - bleach==3.1.4
     - cachetools==4.0.0
-    - carla==0.9.10
     - certifi==2018.8.24
     - chardet==3.0.4
     - click==7.1.1

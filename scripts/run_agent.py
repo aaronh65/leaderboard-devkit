@@ -23,7 +23,7 @@ carla_root = f'/home/aaron/workspace/carla/CARLA_0.9.{args.version}'
 if args.version == 10:
     carla_server = f'{carla_root}.1'
 carla_api = f'{carla_root}/PythonAPI/carla'
-carla_egg = f'{carla_root}/PythonAPI/carla/dist/carla-0.9.{args.version}-py3.7-linux-x86-64.egg'
+carla_egg = f'{carla_root}/PythonAPI/carla/dist/carla-0.9.{args.version}-py3.7-linux-x86_64.egg'
 
 # make save root + log dir
 date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -88,5 +88,5 @@ os.environ["REPETITIONS"] = str(args.repetitions)
 os.environ["PRIVILEGED"] = "1" if privileged else "0"
  
 cmd = f'bash sh/run_agent.sh'
-print(f'running {cmd} on {args.split}/{route_name}')
+print(f'running {cmd} on {args.split}/{route_name} for {args.repetitions} repetitions')
 os.system(cmd)
