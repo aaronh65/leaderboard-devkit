@@ -6,7 +6,7 @@ import os, sys, time
 import yaml
 import argparse
 from datetime import datetime
-from utils import *
+from utils import mkdir_if_not_exists
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--version', type=int, choices=[10,11], default=11)
@@ -25,11 +25,10 @@ if args.version == 10:
 carla_api = f'{carla_root}/PythonAPI/carla'
 carla_egg = f'{carla_root}/PythonAPI/carla/dist/carla-0.9.{args.version}-py3.7-linux-x86-64.egg'
 
-# make base save path + log dir
-project_root = "/home/aaron/workspace/carla/leaderboard-devkit"
+# make save root + log dir
 date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-end_str = f'debug/{date_str}/{args.split}' if args.debug else f'{date_str}/{args.split}' 
-save_root = f'/data/leaderboard/results/{args.agent}/{end_str}'
+suffix = f'debug/{date_str}/{args.split}' if args.debug else f'{date_str}/{args.split}' 
+save_root = f'/data/leaderboard/results/{args.agent}/{suffix}'
 mkdir_if_not_exists(f'{save_root}/logs')
 
 # route information
@@ -43,6 +42,8 @@ if args.save_images:
         mkdir_if_not_exists(f'{images_path}/repetition_{rep_number:02d}')
 plots_path = f'{save_root}/plots/{route_name}'
 mkdir_if_not_exists(plots_path)
+
+project_root = "/home/aaron/workspace/carla/leaderboard-devkit"
 
 # agent-specific configurations
 config = {}
@@ -64,28 +65,28 @@ elif args.agent == 'lbc/privileged_agent':
     conda_env = 'lblbc'
     privileged = True
     config['weights_path'] = 'team_code/config/map_model.ckpt'
-elif args.agent == 'rl/waypoint_agent':
-    conda_env = 'lbrl'
-    config['mode'] = 'train'
-    config['world_port'] = 2000
-    config['tm_port'] = 8000
 
 config_path = f'{save_root}/config.yml'
 with open(config_path, 'w') as f:
     yaml.dump(config, f, default_flow_style=False)
 
 # environ variables
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 os.environ["CONDA_ENV"] = conda_env
 os.environ["PROJECT_ROOT"] = project_root
 os.environ["SAVE_ROOT"] = save_root
 os.environ["CARLA_EGG"] = carla_egg
 os.environ["CARLA_API"] = carla_api
+os.environ["HAS_DISPLAY"] = "1"
 
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 os.environ["WORLD_PORT"] = "2000"
 os.environ["TM_PORT"] = "8000"
+os.environ["AGENT"] = args.agent
+os.environ["SPLIT"] = args.split
 os.environ["ROUTE_NAME"] = route_name
+os.environ["REPETITIONS"] = str(args.repetitions)
+os.environ["PRIVILEGED"] = "1" if privileged else "0"
  
-cmd = f'bash sh/run_agent.sh {args.agent} {route_path} {args.repetitions} {privileged}'
-print(f'running {cmd}')
+cmd = f'bash sh/run_agent.sh'
+print(f'running {cmd} on {args.split}/{route_name}')
 os.system(cmd)
