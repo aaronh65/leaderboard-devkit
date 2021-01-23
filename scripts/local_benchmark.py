@@ -27,7 +27,7 @@ carla_egg = f'{carla_root}/PythonAPI/carla/dist/carla-0.9.{args.version}-py3.7-l
 
 # make save root + log dir
 date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-suffix = f'debug/{date_str}/{args.split}' if args.debug else f'{date_str}/{args.split}' 
+suffix = f'debug/{date_str}' if args.debug else f'{date_str}' 
 save_root = f'/data/leaderboard/results/{args.agent}/{suffix}'
 mkdir_if_not_exists(f'{save_root}/logs')
 
@@ -50,6 +50,7 @@ config = {}
 config['project_root'] = project_root
 config['save_root'] = save_root
 config['save_images'] = args.save_images
+config['split'] = args.split
 privileged = False
 conda_env = 'lb'
 if args.agent == 'common/forward_agent':
