@@ -13,7 +13,7 @@ from utils import mkdir_if_not_exists
 parser = argparse.ArgumentParser()
 parser.add_argument('--version', type=int, choices=[10,11], default=11)
 parser.add_argument('--split', type=str, default='devtest', choices=['devtest','testing','training','debug'])
-parser.add_argument('--agent', type=str, default='image_agent', choices=['image_agent', 'auto_pilot', 'privileged_agent'])
+parser.add_argument('--agent', type=str, default='lbc/image_agent', choices=['lbc/image_agent', 'lbc/auto_pilot', 'lbc/privileged_agent', 'common/forward_agent'])
 parser.add_argument('--gpus', type=int, default=1)
 parser.add_argument('--repetitions', type=int, default=1)
 parser.add_argument('--save_images', action='store_true')
@@ -63,7 +63,7 @@ try:
     # make save root + log dir
     project_root = "/home/aaronhua/leaderboard-devkit"
     date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-    suffix = f'debug/{date_str}/{args.split}' if args.debug else f'{date_str}/{args.split}'
+    suffix = f'debug/{date_str}' if args.debug else f'{date_str}'
     save_root = f'{prefix}/aaronhua/leaderboard/results/{args.agent}/{suffix}'
     mkdir_if_not_exists(f'{save_root}/logs')
         
@@ -95,6 +95,7 @@ try:
     config['project_root'] = project_root
     config['save_root'] = save_root
     config['save_images'] = args.save_images
+    config['split'] = args.split
     privileged = False
     conda_env = 'lb'
     if args.agent == 'common/forward_agent':
@@ -109,8 +110,7 @@ try:
     elif args.agent == 'lbc/privileged_agent':
         conda_env = 'lblbc'
         privileged = True
-        config['weights_path'] = 'team_code/config/map_model.ckpt'
-
+        config['weights_path'] = 'team_code/config/map_model.ckpt' 
     config_path = f'{save_root}/config.yml'
     with open(config_path, 'w') as f:
         yaml.dump(config, f, default_flow_style=False)
@@ -178,7 +178,7 @@ try:
         env["PRIVILEGED"] = "1" if privileged else "0"
 
         # run command
-        cmd = f'bash sh/run_agent.sh'
+        cmd = f'bash sh/run_agent.sh &> {save_root}/logs/AGENT_{route_name}.txt'
         print(f'running {cmd} on {args.split}/{route_name} for {args.repetitions} repetitions')
         lbc_procs.append(subprocess.Popen(cmd, env=env, shell=True))
 
