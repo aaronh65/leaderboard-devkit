@@ -46,7 +46,7 @@ assert not (args.ssd is not None and args.scratch), 'choose only one disk to sav
 assert args.ssd is not None or args.scratch, 'choose a disk to save to'
 if args.ssd is not None:
     assert os.path.exists(f'/ssd{args.ssd}'), 'ssd does not exist'
-    prefix = '/ssd{args.ssd}'
+    prefix = f'/ssd{args.ssd}'
 if args.scratch:
     assert os.path.exists('/scratch'), 'scratch does not exist'
     prefix = '/scratch'

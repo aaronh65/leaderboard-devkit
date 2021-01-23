@@ -7,20 +7,25 @@ dependencies:
   - _libgcc_mutex=0.1=conda_forge
   - _openmp_mutex=4.5=1_gnu
   - blas=1.0=mkl
-  - ca-certificates=2021.1.19=h06a4308_0
+  - bzip2=1.0.8=h7f98852_4
+  - ca-certificates=2020.12.5=ha878542_0
   - cudatoolkit=10.0.130=0
   - cycler=0.10.0=py_2
   - dbus=1.13.18=hb2f20db_0
   - expat=2.2.10=he6710b0_2
+  - ffmpeg=4.3.1=h3215721_1
   - filprofiler=0.14.1=py37h5b85342_0
   - fontconfig=2.13.0=h9420a91_0
   - freetype=2.10.4=h5ab3b9f_0
   - glib=2.66.1=h92f7085_0
+  - gmp=6.2.1=h58526e2_0
+  - gnutls=3.6.13=h85f3911_1
   - gst-plugins-base=1.14.0=h8213a91_2
   - gstreamer=1.14.0=h28cd5cc_2
   - icu=58.2=he6710b0_3
   - intel-openmp=2020.2=254
   - jpeg=9b=h024ee3a_2
+  - lame=3.100=h7f98852_1001
   - lcms2=2.11=h396b838_0
   - ld_impl_linux-64=2.33.1=h53a641e_7
   - libblas=3.8.0=21_mkl
@@ -30,6 +35,7 @@ dependencies:
   - libgcc-ng=9.3.0=h2828fa1_18
   - libgfortran-ng=7.3.0=hdf63c60_0
   - libgomp=9.3.0=h2828fa1_18
+  - libiconv=1.16=h516909a_0
   - libjpeg-turbo=2.0.5=h516909a_0
   - liblapack=3.8.0=21_mkl
   - libpng=1.6.37=hbc83047_0
@@ -45,10 +51,12 @@ dependencies:
   - mkl_fft=1.2.0=py37h23d657b_0
   - mkl_random=1.1.1=py37h0573a6f_0
   - ncurses=6.2=he6710b0_1
+  - nettle=3.6=he412f7d_0
   - ninja=1.10.2=py37hff7bd54_0
   - numpy-base=1.19.2=py37hfa32c7d_0
   - olefile=0.46=py37_0
-  - openssl=1.1.1i=h27cfd23_0
+  - openh264=2.1.1=h8b12597_0
+  - openssl=1.1.1i=h7f98852_0
   - pcre=8.44=he6710b0_0
   - pip=20.3.3=py37h06a4308_0
   - pyqt=5.9.2=py37h05f1152_2
@@ -65,6 +73,7 @@ dependencies:
   - threadpoolctl=2.1.0=pyh5ca1d4c_0
   - tk=8.6.10=hbc83047_0
   - wheel=0.36.2=pyhd3eb1b0_0
+  - x264=1!152.20180806=h14c3975_0
   - xz=5.2.5=h7b6447c_0
   - zlib=1.2.11=h7b6447c_3
   - zstd=1.4.5=h9ceee32_0
