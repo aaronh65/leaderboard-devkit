@@ -1,4 +1,4 @@
-import os
+import os, yaml
 import json
 import argparse
 import numpy as np
@@ -124,49 +124,51 @@ def plot_metrics(args, metrics, routes, plot_dir, split):
 
 def main(args):
 
+    config_path = f'{args.target_dir}/config.yml'
+    with open(config_path, 'r') as f:
+        config = yaml.load(f, Loader=yaml.Loader)
+    split = config['split']
+
     metrics = {}
-    splits = sorted(os.listdir(args.target_dir))
-    for split in splits:
-        log_dir = os.path.join(args.target_dir, split, 'logs')
-        plot_dir = os.path.join(args.target_dir, split, 'plots')
-        if not os.path.exists(log_dir):
-            print('continuing')
-            continue
-        if not os.path.exists(plot_dir):
-            os.makedirs(plot_dir)
-        log_fnames = sorted([os.path.join(log_dir, fname) for fname in os.listdir(log_dir) if fname.endswith('.txt')])
+    log_dir = os.path.join(args.target_dir, 'logs')
+    plot_dir = os.path.join(args.target_dir, 'plots')
+    assert os.path.exists(log_dir), 'no logs available'
+    if not os.path.exists(plot_dir):
+        os.makedirs(plot_dir)
+    log_fnames = sorted([os.path.join(log_dir, fname) for fname in os.listdir(log_dir) if fname.startswith('route')])
+    print(log_fnames)
 
-        routes = []
+    routes = []
 
-        for fname in log_fnames:
-            with open(fname) as f:
-                log = json.load(f)
-            route = fname.split('/')[-1].split('.')[0]
-            routes.append(route)
-            metrics[route] = {}
-            records = log['_checkpoint']['records']
+    for fname in log_fnames:
+        with open(fname) as f:
+            log = json.load(f)
+        route = fname.split('/')[-1].split('.')[0]
+        routes.append(route)
+        metrics[route] = {}
+        records = log['_checkpoint']['records']
 
-            # driving score, route completion score metrics
-            dscores = [record['scores']['score_composed'] for record in records]
-            rcscores = [record['scores']['score_route'] for record in records]
-            metrics[route]['driving score mean'] = np.mean(dscores)
-            metrics[route]['driving score std'] = np.std(dscores)
-            metrics[route]['driving score max'] = np.amax(dscores)
-            metrics[route]['driving score min'] = np.amin(dscores)
-            metrics[route]['route completion mean'] = np.mean(rcscores)
-            metrics[route]['route completion std'] = np.std(rcscores)
-            metrics[route]['route completion max'] = np.amax(rcscores)
-            metrics[route]['route completion min'] = np.amin(rcscores)
+        # driving score, route completion score metrics
+        dscores = [record['scores']['score_composed'] for record in records]
+        rcscores = [record['scores']['score_route'] for record in records]
+        metrics[route]['driving score mean'] = np.mean(dscores)
+        metrics[route]['driving score std'] = np.std(dscores)
+        metrics[route]['driving score max'] = np.amax(dscores)
+        metrics[route]['driving score min'] = np.amin(dscores)
+        metrics[route]['route completion mean'] = np.mean(rcscores)
+        metrics[route]['route completion std'] = np.std(rcscores)
+        metrics[route]['route completion max'] = np.amax(rcscores)
+        metrics[route]['route completion min'] = np.amin(rcscores)
 
-            # infractions
-            for inf_type in infraction_types:
-                num_infractions = [len(record['infractions'][inf_type]) for record in records]
-                metrics[route][f'{inf_type} mean'] = np.mean(num_infractions)
-                metrics[route][f'{inf_type} std'] = np.std(num_infractions)
-                metrics[route][f'{inf_type} max'] = np.amax(num_infractions)
-                metrics[route][f'{inf_type} min'] = np.amin(num_infractions)
+        # infractions
+        for inf_type in infraction_types:
+            num_infractions = [len(record['infractions'][inf_type]) for record in records]
+            metrics[route][f'{inf_type} mean'] = np.mean(num_infractions)
+            metrics[route][f'{inf_type} std'] = np.std(num_infractions)
+            metrics[route][f'{inf_type} max'] = np.amax(num_infractions)
+            metrics[route][f'{inf_type} min'] = np.amin(num_infractions)
 
-        plot_metrics(args, metrics, routes, plot_dir, split)
+    plot_metrics(args, metrics, routes, plot_dir, split)
 
 def parse_args():
     parser = argparse.ArgumentParser()
