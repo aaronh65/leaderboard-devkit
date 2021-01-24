@@ -6,19 +6,17 @@ from utils import *
 
 parser = argparse.ArgumentParser()
 
-# route indexing 
 parser.add_argument('--version', type=int, choices=[10,11], default=11)
 
-# route indexing
+# indexing + setup
 parser.add_argument('--split', type=str, default='training', choices=['debug', 'devtest', 'testing', 'training'])
 parser.add_argument('--routenum', type=int)
 parser.add_argument('--scenarios', action='store_true')
 parser.add_argument('--repetitions', type=int, default=1)
-
-# other actors?
 parser.add_argument('--empty', action='store_true')
 
 # logging
+parser.add_argument('--restore_from', type=str)
 parser.add_argument('--save_images', action='store_true')
 parser.add_argument('--verbose', action='store_true')
 parser.add_argument('--debug', action='store_true')
@@ -48,6 +46,14 @@ routes = f'{routes}.xml'
 scenarios = 'all_towns_traffic_scenarios_public.json' if args.scenarios \
         else 'no_traffic_scenarios.json'
 
+if args.debug:
+    total_timesteps = 1000
+    burn_timesteps = 400
+else:
+    total_timesteps = 500000
+    burn_timesteps = 2000
+
+
 env_config = {
         'save_root': save_root,
         'project_root': project_root,
@@ -66,10 +72,8 @@ sac_config = {
         'project_root': project_root,
         'save_images': args.save_images,
         'mode': 'train',
-        'total_timesteps': 500000,
-        'burn_timesteps': 2000,
-        #'total_timesteps': 1000,
-        #'burn_timesteps': 500,
+        'total_timesteps': total_timesteps,
+        'burn_timesteps': burn_timesteps,
         'train_frequency': 1,
         'gradient_steps': 1,
         'target_update_interval': 1,
@@ -77,6 +81,8 @@ sac_config = {
         'log_frequency': 1000,
         'verbose': args.verbose,
         }
+if args.restore_from is not None:
+    sac_config['restore_from'] = args.restore_from
 
 config = {'env_config': env_config, 'sac_config': sac_config}
 config_path = f'{save_root}/config.yml'

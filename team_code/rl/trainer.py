@@ -11,6 +11,12 @@ from waypoint_agent import WaypointAgent
 from env import CarlaEnv
 from carla import Client
 
+def restore(path, save_dict):
+    for metric_name in save_dict.keys():
+        with open(f'{path}/{metric_name}.npy', 'rb') as f:
+            save_dict[metric_name] = np.load(f)
+        pass
+
 def train(config, agent, env):
 
     # metrics
@@ -25,6 +31,10 @@ def train(config, agent, env):
         'value_losses' : episode_value_losses,
         'entropies' : episode_entropies
         }
+
+    if hasattr(config, 'restore_from'):
+        restore(config.restore_from, save_dict)
+        config.burn_timesteps = agent.model.batch_size
 
     total_reward = 0
     total_policy_loss = 0

@@ -34,10 +34,23 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
         self.track = autonomous_agent.Track.SENSORS
         self.model = SAC(MlpPolicy, NullEnv(6,3))
         self.cached_control = None
+        self.cached_reward = 0
+        self.cached_image = None
         self.step = 0
         self.episode_num = -1 # the first reset changes this to 0
         self.save_images_path  = f'{self.config.save_root}/images/episode_{self.episode_num:06d}'
         self.save_images_interval = 5
+
+        if hasattr(self.config, 'restore_from'):
+            self.restore()
+
+    def restore(self):
+        with open(f'{self.config.restore_from}/rewards.npy', 'rb') as f:
+            self.episode_num = len(np.load(f))
+        weight_root = f'{self.config.restore_from}/weights'
+        weight_names = sorted(os.listdir(weight_root))
+        weight_path = f'{weight_root}/{weight_names[-1]}'
+        self.model.load(weight_path)
 
     def sensors(self):
         return [
@@ -71,6 +84,7 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
 
     def reset(self):
         self.step = 0
+        self.cached_reward = 0
         self.episode_num += 1
         self.save_images_path  = f'{self.config.save_root}/images/episode_{self.episode_num:06d}'
         if self.config.save_images:
