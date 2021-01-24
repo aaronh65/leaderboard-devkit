@@ -11,11 +11,17 @@ from waypoint_agent import WaypointAgent
 from env import CarlaEnv
 from carla import Client
 
+RESTORE = int(os.environ.get("RESTORE", 0))
+
+# returns the beginning timestep
 def restore(path, save_dict):
     for metric_name in save_dict.keys():
         with open(f'{path}/{metric_name}.npy', 'rb') as f:
             save_dict[metric_name] = np.load(f)
-        pass
+    weight_names = sorted(os.listdir(f'{path}/weights'))
+    last_weight = weight_names[-1].split('.')[0]
+    begin_step = int(last_weight)
+    return begin_step, save_dict
 
 def train(config, agent, env):
 
@@ -32,10 +38,13 @@ def train(config, agent, env):
         'entropies' : episode_entropies
         }
 
-    if hasattr(config, 'restore_from'):
-        restore(config.restore_from, save_dict)
+    if RESTORE:
+        begin_step, save_dict = restore(config.save_root, save_dict)
         config.burn_timesteps = agent.model.batch_size
+    else:
+        begin_step = 0
 
+    # per episode counts
     total_reward = 0
     total_policy_loss = 0
     total_value_loss = 0
@@ -44,26 +53,22 @@ def train(config, agent, env):
 
     # start environment and run
     obs = env.reset()
-    for step in tqdm(range(config.total_timesteps)):
+    for step in tqdm(range(begin_step, config.total_timesteps)):
         
-        # perform random exploration at the beginning
-        burn_in = step < config.burn_timesteps
+        # random exploration at the beginning
+        burn_in = (step - begin_step) < config.burn_timesteps
 
         # get SAC prediction, step the env
         action = agent.predict(obs, burn_in=burn_in)
         new_obs, reward, done, info = env.step(action)
 
         # store in replay buffer
-        if env.frame > 60: # 3 seconds of warmup time
+        if env.frame > 60: # 3 seconds of warmup time @ 20Hz
             agent.model.replay_buffer.add(obs, action, reward, new_obs, float(done))
         total_reward += reward
         episode_steps += 1
 
         if done:
-
-            # cleanup and reset
-            env.cleanup()
-            obs = env.reset()
 
             # record then reset metrics
             episode_rewards.append(total_reward)
@@ -71,11 +76,21 @@ def train(config, agent, env):
             episode_value_losses.append(total_value_loss/episode_steps)
             episode_entropies.append(total_entropy/episode_steps)
 
+            for name, arr in save_dict.items():
+                save_path = f'{config.save_root}/{name}.npy'
+                with open(save_path, 'wb') as f:
+                    np.save(f, arr)
+
             total_reward = 0
             total_policy_loss = 0
             total_value_loss = 0
             total_entropy = 0
             episode_steps = 0
+
+            # cleanup and reset
+            env.cleanup()
+            obs = env.reset()
+
         
         # train at this timestep if applicable
         if step % config.train_frequency == 0 and not burn_in:

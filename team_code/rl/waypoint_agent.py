@@ -14,6 +14,7 @@ from carla import VehicleControl
 import cv2
 import numpy as np
 
+RESTORE = int(os.environ.get("RESTORE", 0))
 
 def get_entry_point():
     return 'WaypointAgent'
@@ -41,13 +42,13 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
         self.save_images_path  = f'{self.config.save_root}/images/episode_{self.episode_num:06d}'
         self.save_images_interval = 5
 
-        if hasattr(self.config, 'restore_from'):
+        if RESTORE:
             self.restore()
 
     def restore(self):
-        with open(f'{self.config.restore_from}/rewards.npy', 'rb') as f:
+        with open(f'{self.config.save_root}/rewards.npy', 'rb') as f:
             self.episode_num = len(np.load(f))
-        weight_root = f'{self.config.restore_from}/weights'
+        weight_root = f'{self.config.save_root}/weights'
         weight_names = sorted(os.listdir(weight_root))
         weight_path = f'{weight_root}/{weight_names[-1]}'
         self.model.load(weight_path)
