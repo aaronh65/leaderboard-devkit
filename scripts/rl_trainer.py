@@ -27,9 +27,9 @@ args = parser.parse_args()
 # set carla version variables
 carla_root = f'/home/aaron/workspace/carla/CARLA_0.9.{args.version}'
 if args.version == 10:
-    carla_server = f'{carla_root}.1'
+    carla_root = f'{carla_root}.1'
 carla_api = f'{carla_root}/PythonAPI/carla'
-carla_egg = f'{carla_root}/PythonAPI/carla/dist/carla-0.9.{args.version}-py3.7-linux-x86-64.egg'
+carla_egg = f'{carla_root}/PythonAPI/carla/dist/carla-0.9.{args.version}-py3.7-linux-x86_64.egg'
 
 # save path for images/logs/videos/plots
 project_root = '/home/aaron/workspace/carla/leaderboard-devkit'
@@ -66,10 +66,10 @@ sac_config = {
         'project_root': project_root,
         'save_images': args.save_images,
         'mode': 'train',
-        #'total_timesteps': 500000,
-        #'burn_timesteps': 2000,
-        'total_timesteps': 1000,
-        'burn_timesteps': 500,
+        'total_timesteps': 500000,
+        'burn_timesteps': 2000,
+        #'total_timesteps': 1000,
+        #'burn_timesteps': 500,
         'train_frequency': 1,
         'gradient_steps': 1,
         'target_update_interval': 1,
