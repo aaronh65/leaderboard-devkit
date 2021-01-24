@@ -6,9 +6,10 @@ from utils import *
 
 parser = argparse.ArgumentParser()
 
-parser.add_argument('--version', type=int, choices=[10,11], default=11)
+parser.add_argument('--restore_from', type=str, default=None)
 
-# indexing + setup
+# setup
+parser.add_argument('--version', type=int, choices=[10,11], default=11)
 parser.add_argument('--split', type=str, default='training', choices=['debug', 'devtest', 'testing', 'training'])
 parser.add_argument('--routenum', type=int)
 parser.add_argument('--scenarios', action='store_true')
@@ -16,7 +17,7 @@ parser.add_argument('--repetitions', type=int, default=1)
 parser.add_argument('--empty', action='store_true')
 
 # logging
-parser.add_argument('--restore_from', type=str)
+parser.add_argument('-d', '--desc', type=str, default='no description')
 parser.add_argument('--save_images', action='store_true')
 parser.add_argument('--verbose', action='store_true')
 parser.add_argument('--debug', action='store_true')
@@ -90,7 +91,7 @@ else:
             'verbose': args.verbose,
             }
 
-    config = {'env_config': env_config, 'sac_config': sac_config}
+    config = {'description': args.desc, 'env_config': env_config, 'sac_config': sac_config}
     config_path = f'{save_root}/config.yml'
     with open(config_path, 'w') as f:
         yaml.dump(config, f, default_flow_style=False)
@@ -100,7 +101,7 @@ os.environ["PROJECT_ROOT"] = project_root
 os.environ["SAVE_ROOT"] = save_root
 os.environ["CARLA_EGG"] = carla_egg
 os.environ["CARLA_API"] = carla_api
-os.environ["RESTORE"] = "1" if restore is not None else "0"
+os.environ["RESTORE"] = "1" if restore else "0"
 
 cmd = f'bash sh/rl_trainer.sh {config_path}'
 os.system(cmd)
