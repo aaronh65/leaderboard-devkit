@@ -129,3 +129,6 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
         self.step += 1 
         return control
 
+    def make_visualization(self, input_data):
+
+        pass

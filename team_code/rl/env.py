@@ -131,10 +131,11 @@ class CarlaEnv(gym.Env):
         targets = closest_aligned_transform(
                 hero_transform, 
                 self.route_transforms, 
-                self.forward_vectors)
+                self.forward_vectors,
+                num_targets=5)
         if len(targets) == 0:
             return np.zeros(6), 0, True, {'no_targets': True}
-        target_waypoint = self.route_waypoints[targets[0]]
+        target_waypoint = self.route_waypoints[targets[1]]
 
         draw_waypoints(self.world, 
                 [target_waypoint], 
@@ -149,6 +150,7 @@ class CarlaEnv(gym.Env):
 
         obs = self._get_observation(hero_transform, target_waypoint)
         reward, done = self._get_reward(hero_transform, target_waypoint)
+        self.agent_instance.cached_reward = reward
         return obs, reward, done, {}
 
     def cleanup(self):
