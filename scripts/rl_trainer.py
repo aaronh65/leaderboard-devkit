@@ -56,8 +56,9 @@ else:
             else 'no_traffic_scenarios.json'
 
     if args.debug:
-        total_timesteps = 1000
-        burn_timesteps = 400
+        total_timesteps = 2000
+        burn_timesteps = 300
+        save_frequency = 100
     else:
         total_timesteps = 500000
         burn_timesteps = 2000
@@ -81,7 +82,7 @@ else:
             'train_frequency': 1,
             'gradient_steps': 1,
             'target_update_interval': 1,
-            'save_frequency': 1000,
+            'save_frequency': save_frequency,
             'log_frequency': 1000,
             'save_images': args.save_images,
             'verbose': args.verbose,

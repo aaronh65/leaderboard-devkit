@@ -13,36 +13,31 @@ from carla import Client
 
 RESTORE = int(os.environ.get("RESTORE", 0))
 
-# returns the beginning timestep
-def restore(path, save_dict):
-    for metric_name in save_dict.keys():
-        with open(f'{path}/{metric_name}.npy', 'rb') as f:
-            save_dict[metric_name] = np.load(f)
-    weight_names = sorted(os.listdir(f'{path}/weights'))
-    last_weight = weight_names[-1].split('.')[0]
-    begin_step = int(last_weight)
-    return begin_step, save_dict
+# setup metrics
+def setup(config):
+
+    metric_names = ['rewards', 'policy_losses', 'value_losses', 'entropies']
+    if RESTORE:
+        weight_names = sorted(os.listdir(f'{config.save_root}/weights'))
+        weight_last = weight_names[-1].split('.')[0]
+        begin_step = int(weight_last)
+
+        metric_arrs = []
+        for name in metric_names:
+            with open(f'{config.save_root}/{name}.npy', 'rb') as f:
+                metric_arrs.append(np.load(f).tolist())
+        metrics = {name: arr for name, arr in zip(metric_names, metric_arrs)}
+    else:
+        begin_step = 0
+        metrics = {name: [] for name in metric_names}
+
+    return begin_step, metrics
 
 def train(config, agent, env):
 
-    # metrics
-    episode_rewards = []
-    episode_policy_losses = []
-    episode_value_losses = []
-    episode_entropies = []
-
-    save_dict = {
-        'rewards' : episode_rewards, 
-        'policy_losses' : episode_policy_losses,
-        'value_losses' : episode_value_losses,
-        'entropies' : episode_entropies
-        }
-
-    if RESTORE:
-        begin_step, save_dict = restore(config.save_root, save_dict)
-        config.sac.burn_timesteps = agent.model.batch_size
-    else:
-        begin_step = 0
+    begin_step, metrics = setup(config)
+    print(begin_step)
+    print(len(metrics['rewards']))
 
     # per episode counts
     total_reward = 0
@@ -71,12 +66,12 @@ def train(config, agent, env):
         if done:
 
             # record then reset metrics
-            episode_rewards.append(total_reward)
-            episode_policy_losses.append(total_policy_loss/episode_steps)
-            episode_value_losses.append(total_value_loss/episode_steps)
-            episode_entropies.append(total_entropy/episode_steps)
+            metrics['rewards'].append(total_reward)
+            metrics['policy_losses'].append(total_policy_loss/episode_steps)
+            metrics['value_losses'].append(total_value_loss/episode_steps)
+            metrics['entropies'].append(total_entropy/episode_steps)
 
-            for name, arr in save_dict.items():
+            for name, arr in metrics.items():
                 save_path = f'{config.save_root}/{name}.npy'
                 with open(save_path, 'wb') as f:
                     np.save(f, arr)
@@ -90,7 +85,6 @@ def train(config, agent, env):
             # cleanup and reset
             env.cleanup()
             obs = env.reset()
-
         
         # train at this timestep if applicable
         if step % config.sac.train_frequency == 0 and not burn_in:
@@ -119,11 +113,6 @@ def train(config, agent, env):
         if step % config.sac.save_frequency == 0 and not burn_in:
             weights_path = f'{config.save_root}/weights/{step:07d}'
             agent.model.save(weights_path)
-
-            for name, arr in save_dict.items():
-                save_path = f'{config.save_root}/{name}.npy'
-                with open(save_path, 'wb') as f:
-                    np.save(f, arr)
 
         obs = new_obs
 

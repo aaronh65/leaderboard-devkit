@@ -25,23 +25,28 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
         config = parse_config(path_to_conf_file)
         self.config = config.sac
         self.save_root = config.save_root
-
         self.track = autonomous_agent.Track.SENSORS
-        self.model = SAC(MlpPolicy, NullEnv(6,3))
+
+        # setup model and episode counter
+        if RESTORE:
+            print('restoring')
+            self.restore()
+        else:
+            self.model = SAC(MlpPolicy, NullEnv(6,3))
+            self.episode_num = -1 # the first reset changes this to 0
+
+        self.save_images_path  = f'{self.save_root}/images/episode_{self.episode_num:06d}'
+        self.save_images_interval = 5
+
         self.cached_control = None
         self.cached_rinfo = 0
         self.cached_image = None
         self.step = 0
-        self.episode_num = -1 # the first reset changes this to 0
-        self.save_images_path  = f'{self.save_root}/images/episode_{self.episode_num:06d}'
-        self.save_images_interval = 5
-
-        if RESTORE:
-            self.restore()
 
     def restore(self):
         with open(f'{self.save_root}/rewards.npy', 'rb') as f:
             self.episode_num = len(np.load(f))
+            print(f'restoring at episode {self.episode_num}')
         weight_root = f'{self.save_root}/weights'
         weight_names = sorted(os.listdir(weight_root))
         print(f'restoring model from {weight_names[-1]}')
@@ -141,8 +146,7 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
                 f'Reward: {reward:.3f}',
                 f'RewDst: {rewdst:.3f}',
                 f'RewYaw: {rewyaw:.3f}',
-                f'RewVel: {rewvel:.3f}',
-                ]
+                f'RewVel: {rewvel:.3f}',]
 
         for i, text in enumerate(text_strs):
             draw_text(image, text, (5, 20*(i+1)))
