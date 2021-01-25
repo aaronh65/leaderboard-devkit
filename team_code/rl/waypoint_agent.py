@@ -3,7 +3,7 @@ import os, yaml
 from leaderboard.autoagents import autonomous_agent
 from leaderboard.envs.sensor_interface import SensorInterface
 
-from team_code.common.utils import *
+from team_code.common.utils import mkdir_if_not_exists, parse_config
 from team_code.rl.null_env import NullEnv
 from team_code.rl.viz_utils import draw_text
 from stable_baselines.sac.policies import MlpPolicy
@@ -22,16 +22,9 @@ def get_entry_point():
 
 class WaypointAgent(autonomous_agent.AutonomousAgent):
     def setup(self, path_to_conf_file=None):
-        config_type = type(path_to_conf_file)
-        if config_type == str:
-            self.config_path = path_to_conf_file
-            with open(self.config_path, 'r') as f:
-                config = yaml.load(f, Loader=yaml.Loader)
-            self.config = Bunch(config)
-        elif config_type == dict:
-            self.config = Bunch(path_to_conf_file)
-        elif config_type == Bunch:
-            self.config = path_to_conf_file
+        config = parse_config(path_to_conf_file)
+        self.config = config.sac
+        self.save_root = config.save_root
 
         self.track = autonomous_agent.Track.SENSORS
         self.model = SAC(MlpPolicy, NullEnv(6,3))
@@ -40,16 +33,16 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
         self.cached_image = None
         self.step = 0
         self.episode_num = -1 # the first reset changes this to 0
-        self.save_images_path  = f'{self.config.save_root}/images/episode_{self.episode_num:06d}'
+        self.save_images_path  = f'{self.save_root}/images/episode_{self.episode_num:06d}'
         self.save_images_interval = 5
 
         if RESTORE:
             self.restore()
 
     def restore(self):
-        with open(f'{self.config.save_root}/rewards.npy', 'rb') as f:
+        with open(f'{self.save_root}/rewards.npy', 'rb') as f:
             self.episode_num = len(np.load(f))
-        weight_root = f'{self.config.save_root}/weights'
+        weight_root = f'{self.save_root}/weights'
         weight_names = sorted(os.listdir(weight_root))
         weight_path = f'{weight_root}/{weight_names[-1]}'
         self.model.load(weight_path)
@@ -91,7 +84,7 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
         self.cached_rinfo = 0
         self.cached_image = None
         self.episode_num += 1
-        self.save_images_path  = f'{self.config.save_root}/images/episode_{self.episode_num:06d}'
+        self.save_images_path  = f'{self.save_root}/images/episode_{self.episode_num:06d}'
         if self.config.save_images:
             mkdir_if_not_exists(self.save_images_path)
 

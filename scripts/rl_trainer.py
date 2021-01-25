@@ -64,9 +64,7 @@ else:
 
     project_root = '/home/aaron/workspace/carla/leaderboard-devkit'
     env_config = {
-            'save_root': save_root,
-            'project_root': project_root,
-            'save_images': args.save_images,
+            'carla_version': carla_root.split('/')[-1],
             'world_port': 2000,
             'trafficmanager_port': 8000,
             'trafficmanager_seed': 0,
@@ -77,9 +75,6 @@ else:
             }
 
     sac_config = {
-            'save_root': save_root,
-            'project_root': project_root,
-            'save_images': args.save_images,
             'mode': 'train',
             'total_timesteps': total_timesteps,
             'burn_timesteps': burn_timesteps,
@@ -88,13 +83,21 @@ else:
             'target_update_interval': 1,
             'save_frequency': 1000,
             'log_frequency': 1000,
+            'save_images': args.save_images,
             'verbose': args.verbose,
             }
 
-    config = {'description': args.desc, 'env_config': env_config, 'sac_config': sac_config}
+    config = {
+            'description': args.desc, 
+            'project_root': project_root,
+            'save_root': save_root,
+            'env': env_config, 
+            'sac': sac_config
+            }
+
     config_path = f'{save_root}/config.yml'
     with open(config_path, 'w') as f:
-        yaml.dump(config, f, default_flow_style=False)
+        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
 
 os.environ["CONDA_ENV"] = 'lbrl'
 os.environ["PROJECT_ROOT"] = project_root

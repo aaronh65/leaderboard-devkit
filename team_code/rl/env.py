@@ -16,7 +16,7 @@ from leaderboard.utils.route_indexer import RouteIndexer
 
 class CarlaEnv(gym.Env):
 
-    def __init__(self, econfig, client, agent):
+    def __init__(self, config, client, agent):
         super(CarlaEnv, self).__init__()
 
         self.observation_space = gym.spaces.Box(
@@ -30,7 +30,7 @@ class CarlaEnv(gym.Env):
                 shape=(3,), 
                 dtype=np.float32)
 
-        self.econfig = econfig
+        self.config = config.env
         self.agent_instance = agent
         self.manager = ScenarioManager(60, False)
         self.scenario = None
@@ -43,24 +43,23 @@ class CarlaEnv(gym.Env):
         self.blocking_distance = 3.0
 
         # route indexer
-        project_root = os.environ.get('PROJECT_ROOT', 0)
-        data_path = f'{project_root}/leaderboard/data'
-        routes = f'{data_path}/{econfig.routes}'
-        scenarios = f'{data_path}/{econfig.scenarios}'
-        self.indexer = RouteIndexer(routes, scenarios, econfig.repetitions)
+        data_path = f'{config.project_root}/leaderboard/data'
+        routes = f'{data_path}/{self.config.routes}'
+        scenarios = f'{data_path}/{self.config.scenarios}'
+        self.indexer = RouteIndexer(routes, scenarios, self.config.repetitions)
         
         # setup client and data provider
         self.client = Client('localhost', 2000)
         self.world = self.client.get_world()
         self.traffic_manager = self.client.get_trafficmanager(
-                econfig.trafficmanager_port)
+                self.config.trafficmanager_port)
         self.traffic_manager.set_random_device_seed(
-                econfig.trafficmanager_seed)
+                self.config.trafficmanager_seed)
 
         CarlaDataProvider.set_client(self.client)
         CarlaDataProvider.set_world(self.world)
         CarlaDataProvider.set_traffic_manager_port(
-                econfig.trafficmanager_port)
+                self.config.trafficmanager_port)
 
         signal.signal(signal.SIGINT, self._signal_handler)
 
@@ -205,14 +204,14 @@ class CarlaEnv(gym.Env):
         self.world.apply_settings(settings)
         self.world.reset_all_traffic_lights()
         self.traffic_manager = self.client.get_trafficmanager(
-                self.econfig.trafficmanager_port)
+                self.config.trafficmanager_port)
         self.traffic_manager.set_synchronous_mode(True)
 
         # setup provider and tick to check correctness
         CarlaDataProvider.set_client(self.client)
         CarlaDataProvider.set_world(self.world)
         CarlaDataProvider.set_traffic_manager_port(
-                self.econfig.trafficmanager_port)
+                self.config.trafficmanager_port)
         self.map = CarlaDataProvider.get_map()
         
         if CarlaDataProvider.is_sync_mode():
@@ -225,7 +224,7 @@ class CarlaEnv(gym.Env):
                 self.world, 
                 rconfig, 
                 criteria_enable=False, 
-                env_config=self.econfig)
+                env_config=self.config)
         self.manager.load_scenario(
                 self.scenario, 
                 rconfig.agent,

@@ -6,7 +6,7 @@ import numpy as np
 from tqdm import tqdm
 from datetime import datetime
 
-from team_code.common.utils import Bunch
+from team_code.common.utils import dict_to_sns
 from waypoint_agent import WaypointAgent
 from env import CarlaEnv
 from carla import Client
@@ -40,7 +40,7 @@ def train(config, agent, env):
 
     if RESTORE:
         begin_step, save_dict = restore(config.save_root, save_dict)
-        config.burn_timesteps = agent.model.batch_size
+        config.sac.burn_timesteps = agent.model.batch_size
     else:
         begin_step = 0
 
@@ -53,10 +53,10 @@ def train(config, agent, env):
 
     # start environment and run
     obs = env.reset()
-    for step in tqdm(range(begin_step, config.total_timesteps)):
+    for step in tqdm(range(begin_step, config.sac.total_timesteps)):
         
         # random exploration at the beginning
-        burn_in = (step - begin_step) < config.burn_timesteps
+        burn_in = (step - begin_step) < config.sac.burn_timesteps
 
         # get SAC prediction, step the env
         action = agent.predict(obs, burn_in=burn_in)
@@ -93,12 +93,12 @@ def train(config, agent, env):
 
         
         # train at this timestep if applicable
-        if step % config.train_frequency == 0 and not burn_in:
+        if step % config.sac.train_frequency == 0 and not burn_in:
             mb_info_vals = []
-            for grad_step in range(config.gradient_steps):
+            for grad_step in range(config.sac.gradient_steps):
 
                 # policy and value network update
-                frac = 1.0 - step/config.total_timesteps
+                frac = 1.0 - step/config.sac.total_timesteps
                 lr = agent.model.learning_rate*frac
                 train_vals = agent.model._train_step(step, None, lr)
                 policy_loss, _, _, value_loss, entropy, _, _ = train_vals
@@ -108,15 +108,15 @@ def train(config, agent, env):
                 total_entropy += entropy
 
                 # target network update
-                if step % config.target_update_interval == 0:
+                if step % config.sac.target_update_interval == 0:
                     agent.model.sess.run(agent.model.target_update_op)
 
-                if config.verbose and step % config.log_frequency == 0:
+                if config.sac.verbose and step % config.sac.log_frequency == 0:
                     write_str = f'\nstep {step}\npolicy_loss = {policy_loss:.3f}\nvalue_loss = {value_loss:.3f}\nentropy = {entropy:.3f}'
                     tqdm.write(write_str)
 
         # save model if applicable
-        if step % config.save_frequency == 0 and not burn_in:
+        if step % config.sac.save_frequency == 0 and not burn_in:
             weights_path = f'{config.save_root}/weights/{step:07d}'
             agent.model.save(weights_path)
 
@@ -135,14 +135,14 @@ def main(args):
     # get configs and spin up agent
     with open(args.config_path, 'r') as f:
         config = yaml.load(f, Loader=yaml.Loader)
-    env_config = Bunch(config['env_config'])
-    sac_config = Bunch(config['sac_config'])
-
-    agent = WaypointAgent(sac_config)
+    config = dict_to_sns(config)
+    config.env = dict_to_sns(config.env)
+    config.sac = dict_to_sns(config.sac)
 
     try:
-        env = CarlaEnv(env_config, client, agent)
-        train(sac_config, agent, env)
+        agent = WaypointAgent(config)
+        env = CarlaEnv(config, client, agent)
+        train(config, agent, env)
     except KeyboardInterrupt:
         print('caught KeyboardInterrupt')
     except Exception as e:
