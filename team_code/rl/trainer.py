@@ -36,8 +36,6 @@ def setup(config):
 def train(config, agent, env):
 
     begin_step, metrics = setup(config)
-    print(begin_step)
-    print(len(metrics['rewards']))
 
     # per episode counts
     total_reward = 0

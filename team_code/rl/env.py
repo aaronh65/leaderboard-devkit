@@ -41,6 +41,7 @@ class CarlaEnv(gym.Env):
         self.last_hero_positions = deque()
         self.max_positions_len = 60 
         self.blocking_distance = 3.0
+        self.target_idx = 0
 
         # route indexer
         data_path = f'{config.project_root}/leaderboard/data'
@@ -109,10 +110,43 @@ class CarlaEnv(gym.Env):
 
         self.manager._tick_scenario(timestamp) # ticks
         hero_transform = CarlaDataProvider.get_transform(self.hero_actor)
-        hero_vector = transform_to_vector(hero_transform)
 
         # check if blocked
-        if self.frame > 60: # give agent 3 seconds to move
+        if self._check_blocked(hero_transform):
+            return np.zeros(6), 0, True, {'blocked': True}
+        
+        # get target
+        idxs = self._get_target_idxs(hero_transform, num_targets=5) # idxs
+        target_idx = idxs[self.target_idx]
+        if len(idxs) < self.target_idx + 1:
+            return np.zeros(6), 0, True, {'no_targets': True}
+        target_waypoint = self.route_waypoints[target_idx]
+        
+        # get new state, reward, done, and update agent's cached reward for viz
+        obs = self._get_observation(hero_transform, target_waypoint)
+        reward_info, done = self._get_reward(hero_transform, target_waypoint)
+
+        # refine the done flag
+        if target_idx > 0:
+            previous_waypoint = self.route_waypoints[target_idx-1]
+            done = done and previous_waypoint.road_id == target_waypoint.road_id
+            done = done and previous_waypoint.lane_id == target_waypoint.lane_id
+
+        # make visualizations
+        #draw_waypoints(self.world, [hero_waypoint], color=(189, 0, 189), size=0.5)
+        draw_waypoints(self.world, [target_waypoint], color=(0,255,0), size=0.5)
+        draw_arrow(self.world, hero_transform.location,
+                target_waypoint.transform.location, color=(255,0,0), size=0.5)
+
+        self.agent_instance.cached_rinfo = reward_info
+        self.agent_instance.make_visualization()
+
+        return obs, reward_info['reward'], done, {}
+
+    def _check_blocked(self, hero_transform):
+
+        hero_vector = transform_to_vector(hero_transform)
+        if self.frame > 60:
             if len(self.last_hero_positions) < self.max_positions_len:
                 self.last_hero_positions.append(hero_vector[:2])
             else:
@@ -122,41 +156,42 @@ class CarlaEnv(gym.Env):
                 end = self.last_hero_positions[-1]
                 traveled = np.linalg.norm(end-start)
                 if traveled < self.blocking_distance:
-                    return np.zeros(6), 0, True, {'blocked': True}
+                    return True
+                    
+        return False
 
-        # get target waypoint to compute reward
-        targets = get_target(
-                hero_transform, 
-                self.route_transforms, 
-                self.forward_vectors,
-                num_targets=5)
+    def _get_target_idxs(self, hero_transform, num_targets=1):
 
-        if len(targets) <= 2:
-            return np.zeros(6), 0, True, {'no_targets': True}
-        else:
-            target_waypoint = self.route_waypoints[targets[2]]
+        # distance criteria
+        hero_transform_vec = transform_to_vector(hero_transform)
+        hero2pt = self.route_transforms[:,:3] - hero_transform_vec[:3]
+        dist2pt = np.linalg.norm(hero2pt, axis=1)
+        indices = np.argsort(dist2pt).flatten()
 
-        draw_waypoints(self.world, 
-                [target_waypoint], 
-                color=(0,255,0), 
-                size=0.5)
-        draw_arrow(
-                self.world, 
-                hero_transform.location, 
-                target_waypoint.transform.location, 
-                color=(255,0,0),
-                size=0.5)
+        hero_fvec = hero_transform.get_forward_vector()
+        hero_fvec = np.array([cvector_to_array(hero_fvec)]).T # 3x1
 
-        # get new state, reward, done, and update agent's cached reward for viz
-        obs = self._get_observation(hero_transform, target_waypoint)
-        reward_info, done = self._get_reward(hero_transform, target_waypoint)
+        # reachable criteria - does it take a >90 deg turn to get to waypoint?
+        reachable = np.matmul(hero2pt, hero_fvec)
+        reachable = reachable > 0
 
-        # make visualizations
-        self.agent_instance.cached_rinfo = reward_info
-        self.agent_instance.make_visualization()
+        # aligned criteria - is the waypoint pointing the same direction we are?
+        yaw_diffs = self.route_transforms[:, 4] - hero_transform_vec[4]
+        yaw_diffs = (yaw_diffs + 180) % 360 - 180
+        yaw_diffs = np.array([np.abs(yaw_diffs)]).T
+        aligned = yaw_diffs < 120 # some sharp right/left turns are > 90 degrees
+        
+        #maybe_aligned = np.matmul(fvectors, hero_fvec)
+        #aligned = maybe_aligned > 0
 
-        return obs, reward_info['reward'], done, {}
+        criteria = np.hstack([reachable, aligned]) # Nx2
+        valid = np.prod(criteria, axis=1).flatten()
+        valid = valid[indices] # reorder by distance criteria
+        valid_indices = indices[valid] # slice out valid indices
 
+        targets = valid_indices[:num_targets]
+        return targets
+    
     def cleanup(self):
 
         self.manager.stop_scenario(analyze=False)
@@ -240,6 +275,9 @@ class CarlaEnv(gym.Env):
 
         # retrieve new hero route
         self.route = CarlaDataProvider.get_ego_vehicle_route()
+
+        # fill in the gaps
+        
 
         route_locations = [route_elem[0] for route_elem in self.route]
         self.route_waypoints = [
