@@ -44,8 +44,9 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
             self.episode_num = len(np.load(f))
         weight_root = f'{self.save_root}/weights'
         weight_names = sorted(os.listdir(weight_root))
+        print(f'restoring model from {weight_names[-1]}')
         weight_path = f'{weight_root}/{weight_names[-1]}'
-        self.model.load(weight_path)
+        self.model = SAC.load(weight_path)
 
     def sensors(self):
         return [

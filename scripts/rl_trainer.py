@@ -36,8 +36,8 @@ if restore:
     config_path = f'{args.restore_from}/config.yml'
     with open(config_path, 'r') as f:
         config = yaml.load(f, Loader=yaml.Loader)
-    project_root = config['sac_config']['project_root']
-    save_root = config['sac_config']['save_root']
+    project_root = config['project_root']
+    save_root = config['save_root']
 else:
     date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
     suffix = f'debug/{date_str}' if args.debug else f'{date_str}' 

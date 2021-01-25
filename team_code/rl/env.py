@@ -131,10 +131,10 @@ class CarlaEnv(gym.Env):
                 self.forward_vectors,
                 num_targets=5)
 
-        if len(targets) == 0:
+        if len(targets) <= 2:
             return np.zeros(6), 0, True, {'no_targets': True}
         else:
-            target_waypoint = self.route_waypoints[targets[1]]
+            target_waypoint = self.route_waypoints[targets[2]]
 
         draw_waypoints(self.world, 
                 [target_waypoint], 
@@ -313,6 +313,7 @@ class CarlaEnv(gym.Env):
         yaw_diff = yaw_diff if yaw_diff < 180 else 360 - yaw_diff
         yaw_max = 90
         yaw_reward = 1 - min(yaw_diff/yaw_max, 1)
+        yaw_reward = yaw_reward * 0.5
 
         # speed reward
         hvel = CarlaDataProvider.get_velocity(self.hero_actor) # m/s
