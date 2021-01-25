@@ -8,7 +8,7 @@ def sgn_angle_diff(t1, t2):
     return diff
 
 # index of closest transform in candidates (vector form)
-def closest_aligned_transform(hero_transform, transforms, fvectors, num_targets=1, world=None):
+def get_target(hero_transform, transforms, fvectors, num_targets=1, world=None):
 
     # distance criteria
     hero_transform_vec = transform_to_vector(hero_transform)

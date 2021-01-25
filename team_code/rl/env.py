@@ -14,8 +14,6 @@ from leaderboard.scenarios.scenario_manager import ScenarioManager
 from leaderboard.scenarios.route_scenario import RouteScenario
 from leaderboard.utils.route_indexer import RouteIndexer
 
-from pympler import refbrowser
-
 class CarlaEnv(gym.Env):
 
     def __init__(self, econfig, client, agent):
@@ -75,8 +73,8 @@ class CarlaEnv(gym.Env):
         
         # load next RouteScenario
         num_configs = len(self.indexer._configs_list)
-        #rconfig = self.indexer.get(np.random.randint(num_configs))
-        rconfig = self.indexer.get(0)
+        rconfig = self.indexer.get(np.random.randint(num_configs))
+        #rconfig = self.indexer.get(0)
         rconfig.agent = self.agent_instance
 
         self._load_world_and_scenario(rconfig)
@@ -128,14 +126,16 @@ class CarlaEnv(gym.Env):
                     return np.zeros(6), 0, True, {'blocked': True}
 
         # get target waypoint to compute reward
-        targets = closest_aligned_transform(
+        targets = get_target(
                 hero_transform, 
                 self.route_transforms, 
                 self.forward_vectors,
                 num_targets=5)
+
         if len(targets) == 0:
             return np.zeros(6), 0, True, {'no_targets': True}
-        target_waypoint = self.route_waypoints[targets[1]]
+        else:
+            target_waypoint = self.route_waypoints[targets[1]]
 
         draw_waypoints(self.world, 
                 [target_waypoint], 
@@ -148,10 +148,15 @@ class CarlaEnv(gym.Env):
                 color=(255,0,0),
                 size=0.5)
 
+        # get new state, reward, done, and update agent's cached reward for viz
         obs = self._get_observation(hero_transform, target_waypoint)
-        reward, done = self._get_reward(hero_transform, target_waypoint)
-        self.agent_instance.cached_reward = reward
-        return obs, reward, done, {}
+        reward_info, done = self._get_reward(hero_transform, target_waypoint)
+
+        # make visualizations
+        self.agent_instance.cached_rinfo = reward_info
+        self.agent_instance.make_visualization()
+
+        return obs, reward_info['reward'], done, {}
 
     def cleanup(self):
 
@@ -324,8 +329,13 @@ class CarlaEnv(gym.Env):
         #print(f'reward: {dist_reward:.2f} + {yaw_reward:.2f} + {vel_reward:.2f} = {reward:.2f}')
         #print(f'done: {done}')
         #print()
+        reward_info = {
+                'reward': reward, 
+                'dist_reward': dist_reward,
+                'yaw_reward': yaw_reward,
+                'vel_reward': vel_reward}
 
-        return reward, done
+        return reward_info, done
         
 
     def render(self):

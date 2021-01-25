@@ -1,11 +1,11 @@
 import os, yaml
 
-#from team_code.base_agent import BaseAgent
 from leaderboard.autoagents import autonomous_agent
 from leaderboard.envs.sensor_interface import SensorInterface
 
 from team_code.common.utils import *
 from team_code.rl.null_env import NullEnv
+from team_code.rl.viz_utils import draw_text
 from stable_baselines.sac.policies import MlpPolicy
 from stable_baselines import SAC
 
@@ -13,6 +13,7 @@ from carla import VehicleControl
 
 import cv2
 import numpy as np
+from PIL import Image, ImageDraw, ImageFont
 
 RESTORE = int(os.environ.get("RESTORE", 0))
 
@@ -35,7 +36,7 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
         self.track = autonomous_agent.Track.SENSORS
         self.model = SAC(MlpPolicy, NullEnv(6,3))
         self.cached_control = None
-        self.cached_reward = 0
+        self.cached_rinfo = 0
         self.cached_image = None
         self.step = 0
         self.episode_num = -1 # the first reset changes this to 0
@@ -60,6 +61,7 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
                     'x': 0.0, 'y': 0.0, 'z': 25,
                     'roll': 0.0, 'pitch': -90.0, 'yaw': 0.0,
                     'width': 384, 'height': 384, 'fov': 75,
+                    #'width': 256, 'height': 256, 'fov': 75,
                     'id': 'bev'
                     },
                  
@@ -85,7 +87,9 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
 
     def reset(self):
         self.step = 0
-        self.cached_reward = 0
+        self.cached_control = None
+        self.cached_rinfo = 0
+        self.cached_image = None
         self.episode_num += 1
         self.save_images_path  = f'{self.config.save_root}/images/episode_{self.episode_num:06d}'
         if self.config.save_images:
@@ -110,14 +114,12 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
 
     def run_step(self, input_data, timestamp):
         
-        if self.config.save_images:
-            image = input_data['bev'][1][:, :, :3] # what's the last number?
-            cv2.imshow('debug', image)
-            cv2.waitKey(1)
-            if self.step % self.save_images_interval == 0:
-                frame = self.step // self.save_images_interval
-                save_path = f'{self.save_images_path}/{frame:06d}.png'
-                cv2.imwrite(save_path, image)
+        # make the last timestep's visualization
+        # now that we know what the reward was
+        #if self.step > 0:
+        #    self.make_visualization(input_data)
+
+        self.cached_image = input_data['bev'][1][:,:,:3]
 
         control = VehicleControl()
         if self.config.mode == 'train': # use cached training prediction           
@@ -129,6 +131,34 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
         self.step += 1 
         return control
 
-    def make_visualization(self, input_data):
+    def make_visualization(self):
+        image = np.array(self.cached_image)
 
-        pass
+        rinfo = self.cached_rinfo
+        reward = rinfo['reward']
+        rewdst = rinfo['dist_reward']
+        rewyaw = rinfo['yaw_reward']
+        rewvel = rinfo['vel_reward']
+
+        text_strs = [
+                f'Steer: {self.cached_control.steer:.3f}',
+                f'Throttle: {self.cached_control.throttle:.3f}',
+                f'Brake: {self.cached_control.brake:.3f}',
+                f'Reward: {reward:.3f}',
+                f'RewDst: {rewdst:.3f}',
+                f'RewYaw: {rewyaw:.3f}',
+                f'RewVel: {rewvel:.3f}',
+                ]
+
+        for i, text in enumerate(text_strs):
+            draw_text(image, text, (5, 20*(i+1)))
+
+        cv2.imshow('debug', image)
+        cv2.waitKey(1)
+
+        if self.step % self.save_images_interval == 0:
+            frame = self.step // self.save_images_interval
+            save_path = f'{self.save_images_path}/{frame:06d}.png'
+            cv2.imwrite(save_path, image)
+
+
