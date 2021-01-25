@@ -127,13 +127,14 @@ class CarlaEnv(gym.Env):
         reward_info, done = self._get_reward(hero_transform, target_waypoint)
 
         # refine the done flag
+        # the distance metric only applies for waypoints in the same road/section/lane
         if target_idx > 0:
             previous_waypoint = self.route_waypoints[target_idx-1]
             done = done and previous_waypoint.road_id == target_waypoint.road_id
             done = done and previous_waypoint.lane_id == target_waypoint.lane_id
+            done = done and previous_waypoint.section_id == target_waypoint.section_id
 
         # make visualizations
-        #draw_waypoints(self.world, [hero_waypoint], color=(189, 0, 189), size=0.5)
         draw_waypoints(self.world, [target_waypoint], color=(0,255,0), size=0.5)
         draw_arrow(self.world, hero_transform.location,
                 target_waypoint.transform.location, color=(255,0,0), size=0.5)
