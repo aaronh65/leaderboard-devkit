@@ -20,14 +20,10 @@ class CarlaEnv(gym.Env):
         super(CarlaEnv, self).__init__()
 
         self.observation_space = gym.spaces.Box(
-                low=-1, 
-                high=1, 
-                shape=(6,), 
+                low=-1, high=1, shape=(6,), 
                 dtype=np.float32)
         self.action_space = gym.spaces.Box(
-                low=-1, 
-                high=1, 
-                shape=(3,), 
+                low=-1, high=1, shape=(3,), 
                 dtype=np.float32)
 
         self.config = config.env
