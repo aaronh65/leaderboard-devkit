@@ -1,5 +1,5 @@
-import os, sys, signal
-import time, yaml, json
+import os, sys, time, signal
+import yaml, json, pickle
 import argparse
 import traceback
 import numpy as np
@@ -92,6 +92,8 @@ def train(config, agent, env):
                 json.dump(log, f, indent=4, sort_keys=False)
             with open(f'{config.save_root}/logs/rewards/{episode_idx:06d}.npy', 'wb') as f:
                 np.save(f, rewards)
+            with open(f'{config.save_root}/logs/replay_buffer.pkl', 'wb') as f:
+                pickle.dump(agent.model.replay_buffer, f)
 
             # cleanup and reset
             env.cleanup()
