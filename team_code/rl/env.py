@@ -182,15 +182,15 @@ class CarlaEnv(gym.Env):
         valid = valid[indices] # reorder by distance criteria
         valid_indices = indices[valid] # slice out valid indices
 
-        if len(valid_indices) == 0:
+        if len(valid_indices) <= 1:
             target = None
             done = True
             return target, done
 
         # 
-        idx = valid_indices[0]
+        idx = valid_indices[1]
         target = self.route_waypoints[idx]
-        if valid_indices[0] > 0:
+        if idx > 0:
             prev = self.route_waypoints[idx-1]
             lenient = \
                     prev.section_id != target.section_id or \
@@ -317,7 +317,7 @@ class CarlaEnv(gym.Env):
         # distance reward
         dist = np.linalg.norm(hero[:3] - target[:3])
         dist_max = 5
-        dist_reward = 1 - min(dist/dist_max, 1)
+        dist_reward = 0 - min(dist/dist_max, 1)
 
         # rotation reward
         yaw_diff = (hero[4]-target[4]) % 360

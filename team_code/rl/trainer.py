@@ -47,15 +47,25 @@ def setup_episode_log(episode_idx):
     episode_log['sac'] = sac_log
     return episode_log
 
+def restore(config):
+    with open(f'{config.save_root}/logs/log.json', 'r') as f:
+        log = json.load(f)
+    weight_names = sorted(os.listdir(f'{config.save_root}/weights'))
+    weight_last = weight_names[-1].split('.')[0]
+    begin_step = int(weight_last)
+    return log, begin_step
+
 def train(config, agent, env):
 
-    log = {'checkpoints': []}
-
-    #begin_step, metrics = setup(config)
-    begin_step = 0
+    if RESTORE:
+        log, begin_step = restore(config)
+        episode_idx = log['checkpoints'][-1]['index'] + 1
+    else:
+        log = {'checkpoints': []}
+        begin_step = 0
+        episode_idx = 0
 
     # start environment and run
-    episode_idx = 0 # restore
     episode_log = setup_episode_log(episode_idx)
     obs = env.reset(log=episode_log)
     sac_log = episode_log['sac']
@@ -63,7 +73,6 @@ def train(config, agent, env):
 
     for step in tqdm(range(begin_step, config.sac.total_timesteps)):
         
-
         # get SAC prediction, step the env
         burn_in = (step - begin_step) < config.sac.burn_timesteps # exploration
         action = agent.predict(obs, burn_in=burn_in)

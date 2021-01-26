@@ -1,4 +1,4 @@
-import os, yaml
+import os, yaml, json
 
 from leaderboard.autoagents import autonomous_agent
 from leaderboard.envs.sensor_interface import SensorInterface
@@ -44,13 +44,13 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
         self.step = 0
 
     def restore(self):
-        with open(f'{self.save_root}/rewards.npy', 'rb') as f:
-            self.episode_num = len(np.load(f))
-            print(f'restoring at episode {self.episode_num}')
-        weight_root = f'{self.save_root}/weights'
-        weight_names = sorted(os.listdir(weight_root))
+        with open(f'{self.save_root}/logs/log.json', 'r') as f:
+            log = json.load(f)
+            self.episode_num = log['checkpoints'][-1]['index']
+            print(f'restoring at episode {self.episode_num + 1}')
+        weight_names = sorted(os.listdir(f'{self.save_root}/weights'))
         print(f'restoring model from {weight_names[-1]}')
-        weight_path = f'{weight_root}/{weight_names[-1]}'
+        weight_path = f'{self.save_root}/weights/{weight_names[-1]}'
         self.model = SAC.load(weight_path)
 
     def sensors(self):
@@ -98,7 +98,7 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
     def predict(self, state, burn_in=False):
 
         # compute controls
-        if burn_in:
+        if burn_in and not RESTORE:
             action = np.random.uniform(-1, 1, size=3)
         else:
             action, _states = self.model.predict(state)
