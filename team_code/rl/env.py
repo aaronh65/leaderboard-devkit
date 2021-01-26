@@ -31,14 +31,8 @@ class CarlaEnv(gym.Env):
         self.manager = ScenarioManager(60, False)
         self.scenario = None
         self.hero_actor = None
-        self.frame = 0
 
-        # set up blocking checks
-        self.last_hero_positions = deque()
-        self.max_positions_len = 60 
-        self.blocking_distance = 3.0
-        self.target_idx = 0
-
+        
         # route indexer
         data_path = f'{config.project_root}/leaderboard/data'
         routes = f'{data_path}/{self.config.routes}'
@@ -60,6 +54,15 @@ class CarlaEnv(gym.Env):
 
         signal.signal(signal.SIGINT, self._signal_handler)
 
+        # set up blocking checks
+        self.last_hero_positions = deque()
+        self.max_positions_len = 60 
+        self.blocking_distance = 3.0
+        self.frame = 0
+        self.target_idx = 0
+        self.last_waypoint = 0
+        
+
     def _signal_handler(self, signum, frame):
         if self.manager:
             self.manager.signal_handler(signum, frame)
@@ -80,7 +83,8 @@ class CarlaEnv(gym.Env):
             log['env'] = env_log
 
         self._load_world_and_scenario(rconfig)
-        self._get_hero_route(draw=True)
+        #self._get_hero_route(draw=True)
+        self._get_hero_route()
 
         self.manager.start_system_time = time.time()
         self.manager.start_game_time = GameTime.get_time()
@@ -90,6 +94,7 @@ class CarlaEnv(gym.Env):
         self.agent_instance.reset()
         self.frame = 0
         self.last_hero_positions = deque()
+        self.last_waypoint = 0
 
         return np.zeros(6)
 
@@ -121,6 +126,9 @@ class CarlaEnv(gym.Env):
         target_waypoint, done = self._get_target(hero_transform, num_targets=5) # idxs
         if target_waypoint is None or done:
             return np.zeros(6), 0, True, {'no_targets': True}
+
+        if self.frame >= 6000: # 5 minutes
+            return np.zeros(6), 0, True, {'time_limit': True}
         
         # get new state, reward, done, and update agent's cached reward for viz
         obs = self._get_observation(hero_transform, target_waypoint)
@@ -154,53 +162,54 @@ class CarlaEnv(gym.Env):
         return False
 
     def _get_target(self, hero_transform, num_targets=1):
+        winsize = 100
+        end_idx = min(self.last_waypoint + winsize, len(self.route_transforms))
+        route_transforms = self.route_transforms[self.last_waypoint:end_idx]
 
         # distance criteria
         hero_transform_vec = transform_to_vector(hero_transform)
-        hero2pt = self.route_transforms[:,:3] - hero_transform_vec[:3]
-        dist2pt = np.linalg.norm(hero2pt, axis=1)
-        indices = np.argsort(dist2pt).flatten()
-
+        hero2pt = route_transforms[:,:3] - hero_transform_vec[:3] # Nx3
         hero_fvec = hero_transform.get_forward_vector()
         hero_fvec = np.array([cvector_to_array(hero_fvec)]).T # 3x1
 
         # reachable criteria - does it take a >90 deg turn to get to waypoint?
-        reachable = np.matmul(hero2pt, hero_fvec)
-        reachable = reachable > 0
+        reachable = np.matmul(hero2pt, hero_fvec).flatten()
+        reachable_b = reachable > 0
 
         # aligned criteria - is the waypoint pointing the same direction we are?
-        yaw_diffs = self.route_transforms[:, 4] - hero_transform_vec[4]
+        yaw_diffs = route_transforms[:, 4] - hero_transform_vec[4]
         yaw_diffs = (yaw_diffs + 180) % 360 - 180
-        yaw_diffs = np.array([np.abs(yaw_diffs)]).T
-        aligned = yaw_diffs < 120 # some sharp right/left turns are > 90 degrees
+        yaw_diffs = np.array([np.abs(yaw_diffs)]).flatten()
+        aligned_b = yaw_diffs < 120 # some sharp right/left turns are > 90 degrees
         
-        #maybe_aligned = np.matmul(fvectors, hero_fvec)
-        #aligned = maybe_aligned > 0
+        # past criteria - have we already passed this waypoint?
+        #passed = np.arange(winsize)
+        #passed_b = passed >= self.last_waypoint
 
-        criteria = np.hstack([reachable, aligned]) # Nx2
-        valid = np.prod(criteria, axis=1).flatten()
-        valid = valid[indices] # reorder by distance criteria
-        valid_indices = indices[valid] # slice out valid indices
+        criteria = np.array([reachable_b, aligned_b]) # 2xN
+        #criteria = np.array([reachable_b, aligned_b, passed_b]) # 2xN
+        valid = np.prod(criteria, axis=0).flatten().astype(bool)
+        valid_indices = np.arange(winsize)[valid]
 
         if len(valid_indices) <= 1:
-            target = None
-            done = True
-            return target, done
+            return None, True # usually when we're at the end of a route
 
-        # 
-        idx = valid_indices[1]
+        # retrieve target and check for distance
+        idx = self.last_waypoint + valid_indices[0]
         target = self.route_waypoints[idx]
         if idx > 0:
             prev = self.route_waypoints[idx-1]
-            lenient = \
-                    prev.section_id != target.section_id or \
-                    prev.road_id != target.road_id or \
-                    prev.lane_id != target.lane_id
+            lenient = prev.section_id != target.section_id or \
+                      prev.road_id != target.road_id or \
+                      prev.lane_id != target.lane_id
         else:
             lenient = False
-        dist_max = 10 if lenient else 5
-        done = dist2pt[idx] > dist_max
 
+        dist2pt = np.linalg.norm(self.route_transforms[idx][:3] - hero_transform_vec[:3])
+        dist_max = 10 if lenient else 5
+        done = dist2pt > dist_max
+
+        self.last_waypoint = max(self.last_waypoint, idx)
         return target, done
     
     

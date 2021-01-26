@@ -36,7 +36,7 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
             self.episode_num = -1 # the first reset changes this to 0
 
         self.save_images_path  = f'{self.save_root}/images/episode_{self.episode_num:06d}'
-        self.save_images_interval = 5
+        self.save_images_interval = 4
 
         self.cached_control = None
         self.cached_rinfo = 0
