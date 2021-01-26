@@ -1,15 +1,16 @@
-import signal
-import os, sys, time, yaml
+import os, sys, signal
+import time, yaml, json
 import argparse
 import traceback
 import numpy as np
+
 from tqdm import tqdm
 from datetime import datetime
+from env import CarlaEnv
+from carla import Client
 
 from team_code.common.utils import dict_to_sns
 from waypoint_agent import WaypointAgent
-from env import CarlaEnv
-from carla import Client
 
 RESTORE = int(os.environ.get("RESTORE", 0))
 
@@ -33,57 +34,70 @@ def setup(config):
 
     return begin_step, metrics
 
+def setup_episode_log(episode_idx):
+
+    episode_log = {}
+    episode_log['index'] = episode_idx
+    sac_log = {}
+    sac_log['total_steps'] = 0
+    sac_log['total_reward'] = 0
+    sac_log['mean_policy_loss'] = 0
+    sac_log['mean_value_loss'] = 0
+    sac_log['mean_entropy'] = 0
+    episode_log['sac'] = sac_log
+    return episode_log
+
 def train(config, agent, env):
 
-    begin_step, metrics = setup(config)
+    log = {'checkpoints': []}
 
-    # per episode counts
-    total_reward = 0
-    total_policy_loss = 0
-    total_value_loss = 0
-    total_entropy = 0
-    episode_steps = 0
+    #begin_step, metrics = setup(config)
+    begin_step = 0
 
     # start environment and run
-    obs = env.reset()
+    episode_idx = 0 # restore
+    episode_log = setup_episode_log(episode_idx)
+    obs = env.reset(log=episode_log)
+    sac_log = episode_log['sac']
+    rewards = []
+
     for step in tqdm(range(begin_step, config.sac.total_timesteps)):
         
-        # random exploration at the beginning
-        burn_in = (step - begin_step) < config.sac.burn_timesteps
 
         # get SAC prediction, step the env
+        burn_in = (step - begin_step) < config.sac.burn_timesteps # exploration
         action = agent.predict(obs, burn_in=burn_in)
         new_obs, reward, done, info = env.step(action)
-
-        # store in replay buffer
-        if env.frame > 60: # 3 seconds of warmup time @ 20Hz
-            agent.model.replay_buffer.add(obs, action, reward, new_obs, float(done))
-        total_reward += reward
-        episode_steps += 1
+        sac_log['total_steps'] += 1
 
         if done:
 
             # record then reset metrics
-            metrics['rewards'].append(total_reward)
-            metrics['policy_losses'].append(total_policy_loss/episode_steps)
-            metrics['value_losses'].append(total_value_loss/episode_steps)
-            metrics['entropies'].append(total_entropy/episode_steps)
+            episode_steps = sac_log['total_steps']
+            sac_log['mean_policy_loss'] /= episode_steps
+            sac_log['mean_value_loss'] /= episode_steps
+            sac_log['mean_entropy'] /= episode_steps
 
-            for name, arr in metrics.items():
-                save_path = f'{config.save_root}/{name}.npy'
-                with open(save_path, 'wb') as f:
-                    np.save(f, arr)
-
-            total_reward = 0
-            total_policy_loss = 0
-            total_value_loss = 0
-            total_entropy = 0
-            episode_steps = 0
+            log['checkpoints'].append(episode_log)
+            with open(f'{config.save_root}/logs/log.json', 'w') as f:
+                json.dump(log, f, indent=4, sort_keys=False)
+            with open(f'{config.save_root}/logs/rewards/{episode_idx:06d}.npy', 'wb') as f:
+                np.save(f, rewards)
 
             # cleanup and reset
             env.cleanup()
-            obs = env.reset()
-        
+            episode_idx += 1
+            episode_log = setup_episode_log(episode_idx)
+            obs = env.reset(log=episode_log)
+            sac_log = episode_log['sac']
+            rewards = []
+
+        # store in replay buffer
+        rewards.append(reward)
+        sac_log['total_reward'] += reward
+        if sac_log['total_steps'] > 60: # 3 seconds of warmup time @ 20Hz
+            agent.model.replay_buffer.add(obs, action, reward, new_obs, float(done))
+
         # train at this timestep if applicable
         if step % config.sac.train_frequency == 0 and not burn_in:
             mb_info_vals = []
@@ -95,9 +109,9 @@ def train(config, agent, env):
                 train_vals = agent.model._train_step(step, None, lr)
                 policy_loss, _, _, value_loss, entropy, _, _ = train_vals
 
-                total_policy_loss += policy_loss
-                total_value_loss += value_loss
-                total_entropy += entropy
+                sac_log['mean_policy_loss'] += policy_loss
+                sac_log['mean_value_loss'] += value_loss
+                sac_log['mean_entropy'] += entropy
 
                 # target network update
                 if step % config.sac.target_update_interval == 0:

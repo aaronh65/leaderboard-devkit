@@ -65,13 +65,19 @@ class CarlaEnv(gym.Env):
             self.manager.signal_handler(signum, frame)
         raise KeyboardInterrupt
 
-    def reset(self):
+    def reset(self, log=None):
         
         # load next RouteScenario
         num_configs = len(self.indexer._configs_list)
         rconfig = self.indexer.get(np.random.randint(num_configs))
         #rconfig = self.indexer.get(0)
         rconfig.agent = self.agent_instance
+
+        if log is not None:
+            env_log = {}
+            env_log['town'] = rconfig.town
+            env_log['name'] = rconfig.name
+            log['env'] = env_log
 
         self._load_world_and_scenario(rconfig)
         self._get_hero_route(draw=True)

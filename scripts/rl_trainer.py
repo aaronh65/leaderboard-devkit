@@ -46,6 +46,8 @@ else:
     if args.save_images:
         mkdir_if_not_exists(f'{save_root}/images')
     mkdir_if_not_exists(f'{save_root}/weights')
+    mkdir_if_not_exists(f'{save_root}/logs')
+    mkdir_if_not_exists(f'{save_root}/logs/rewards')
 
     # route indexer information
     routes = f'routes_{args.split}'
@@ -57,11 +59,11 @@ else:
 
     if args.debug:
         total_timesteps = 2000
-        burn_timesteps = 300
+        burn_timesteps = 500
         save_frequency = 100
     else:
         total_timesteps = 500000
-        burn_timesteps = 2000
+        burn_timesteps = 500
 
     project_root = '/home/aaron/workspace/carla/leaderboard-devkit'
     env_config = {
