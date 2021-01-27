@@ -1,11 +1,10 @@
-import os, yaml
-import json
+import os, yaml, json
 import argparse
 import numpy as np
+import matplotlib.pyplot as plt
 import seaborn as sns
 sns.set()
 colors = sns.color_palette("Paired")
-import matplotlib.pyplot as plt
 
 
 infraction_types = ['collisions_pedestrian', 'collisions_vehicle', 'collisions_layout', 'red_light', 'stop_infraction', 'route_dev', 'route_timeout', 'vehicle_blocked', 'outside_route_lanes']
