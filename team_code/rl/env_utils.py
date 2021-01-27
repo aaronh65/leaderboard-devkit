@@ -3,6 +3,8 @@ import math
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
+
+''' object transformations '''
 # carla 3d vector to np array
 def cvector_to_array(carla_vector):
     v = carla_vector
@@ -14,16 +16,34 @@ def transform_to_vector(transform):
     rot = transform.rotation
     return np.array([loc.x, loc.y, loc.z, rot.pitch, rot.yaw, rot.roll])
 
-# 6-d vector to carla Transform
+# 6d vector to carla Transform
 def vector_to_transform(vector):
     x,y,z,pitch,yaw,roll = vector
     loc = carla.Location(x,y,z)
     rot = carla.Rotation(pitch,yaw,roll)
     return carla.Transform(loc, rot)
 
+# carla Waypoint to 6d vector
 def waypoint_to_vector(waypoint):
-    return transform_to_vector(waypoint.transform)
+    transform = waypoint.transform
+    return transform_to_vector(transform)
 
+# 6d vector to carla Waypoint
+def vector_to_waypoint(vector):
+    transform = vector_to_transform(vector)
+    return carla.Waypoint(transform)
+
+
+''' given a ref and target transform, return a transform that goes from
+the reference frame to the target frame '''
+def chain_transform(ref_transform, tgt_transform):
+    ref2world = np.array(ref_transform.get_matrix())
+    world2tgt = np.array(tgt_transform.get_inverse_matrix())
+    ref2tgt = np.matmul(world2tgt, ref2world)
+    return ref2tgt
+
+
+''' adding transforms together '''
 def add_location(location, dx=0, dy=0, dz=0):
     return carla.Location(
             location.x + dx,
@@ -41,6 +61,8 @@ def add_transform(transform, dx=0, dy=0, dz=0, dp=0, dyaw=0, dr=0):
     rotation = add_rotation(transform.rotation,dp,dyaw,dr)
     return carla.Transform(location, rotation)
 
+
+''' visualizations '''
 def draw_transforms(world, transforms, color=(255,0,0), z=0.5, life_time=0.06, size=0.3):
     r,g,b = color
     ccolor = carla.Color(r,g,b)
