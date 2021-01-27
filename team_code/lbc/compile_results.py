@@ -136,7 +136,6 @@ def main(args):
     if not os.path.exists(plot_dir):
         os.makedirs(plot_dir)
     log_fnames = sorted([os.path.join(log_dir, fname) for fname in os.listdir(log_dir) if fname.startswith('route')])
-    print(log_fnames)
 
     routes = []
 
