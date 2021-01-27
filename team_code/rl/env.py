@@ -181,7 +181,7 @@ class CarlaEnv(gym.Env):
         
         criteria = np.array([reachable_b, aligned_b]) # 2xN
         valid = np.prod(criteria, axis=0).flatten().astype(bool)
-        valid_indices = np.arange(winsize)[valid]
+        valid_indices = np.arange(len(route_transforms))[valid]
 
         if len(valid_indices) <= 1:
             return None, True # usually when we're at the end of a route

@@ -1,4 +1,4 @@
-import os, yaml, json
+import os, yaml, json, pickle
 
 from leaderboard.autoagents import autonomous_agent
 from leaderboard.envs.sensor_interface import SensorInterface
@@ -52,6 +52,9 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
         print(f'restoring model from {weight_names[-1]}')
         weight_path = f'{self.save_root}/weights/{weight_names[-1]}'
         self.model = SAC.load(weight_path)
+
+        with open(f'{self.save_root}/logs/replay_buffer.pkl', 'rb') as f:
+            self.model.replay_buffer = pickle.load(f)
 
     def sensors(self):
         return [
