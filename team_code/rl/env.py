@@ -141,7 +141,6 @@ class CarlaEnv(gym.Env):
             if i != 0:
                 draw_waypoints(self.world, [wpt], color=(0,100,100), size=0.5)
             obs[6*i:6*(i+1)] = self._get_waypoint_state(hero_transform, wpt)
-        print(obs.shape)
 
         #obs = self._get_waypoint_state(hero_transform, target_waypoint)
         reward_info = self._get_reward(hero_transform, target_waypoint)
