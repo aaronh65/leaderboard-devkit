@@ -32,7 +32,8 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
             print('restoring')
             self.restore()
         else:
-            self.model = SAC(MlpPolicy, NullEnv(6*self.config.num_state_waypoints,3))
+            self.obs_dim = self.config.num_state_waypoints * self.config.waypoint_state_dim + 1
+            self.model = SAC(MlpPolicy, NullEnv(self.obs_dim,3))
             self.episode_num = -1 # the first reset changes this to 0
         self.save_images_path  = f'{self.save_root}/images/episode_{self.episode_num:06d}'
         self.save_images_interval = 4
