@@ -72,6 +72,12 @@ def train(config, agent, env):
     rewards = []
 
     for step in tqdm(range(begin_step, config.sac.total_timesteps)):
+
+        #write_str = '['
+        #for elem in obs:
+        #    write_str += f'{elem:.2f}, '
+        #write_str = write_str[0:-2] + ']'
+        #tqdm.write(write_str)
         
         # get SAC prediction, step the env
         burn_in = (step - begin_step) < config.sac.burn_timesteps # exploration
@@ -107,7 +113,7 @@ def train(config, agent, env):
         rewards.append(reward)
         sac_log['total_reward'] += reward
         if sac_log['total_steps'] > 60: # 3 seconds of warmup time @ 20Hz
-            agent.model.replay_buffer.add(obs, action, reward, new_obs, float(done))
+            agent.model.replay_buffer_add(obs, action, reward, new_obs, float(done), {})
 
         # train at this timestep if applicable
         if step % config.sac.train_frequency == 0 and not burn_in:

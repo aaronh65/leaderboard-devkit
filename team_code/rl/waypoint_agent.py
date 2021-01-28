@@ -29,12 +29,13 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
 
         # setup model and episode counter
         if RESTORE:
-            print('restoring')
             self.restore()
         else:
-            self.obs_dim = self.config.num_state_waypoints * self.config.waypoint_state_dim + 1
-            self.model = SAC(MlpPolicy, NullEnv(self.obs_dim,3))
             self.episode_num = -1 # the first reset changes this to 0
+            obs_dim = self.config.num_state_waypoints * self.config.waypoint_state_dim + 2
+            action_dim = 3
+            self.model = SAC(MlpPolicy, NullEnv(obs_dim, action_dim))
+
         self.save_images_path  = f'{self.save_root}/images/episode_{self.episode_num:06d}'
         self.save_images_interval = 4
 
@@ -116,11 +117,6 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
 
     def run_step(self, input_data, timestamp):
         
-        # make the last timestep's visualization
-        # now that we know what the reward was
-        #if self.step > 0:
-        #    self.make_visualization(input_data)
-
         self.cached_image = input_data['bev'][1][:,:,:3]
 
         control = VehicleControl()
@@ -141,6 +137,7 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
         rewdst = rinfo['dist_reward']
         rewyaw = rinfo['yaw_reward']
         rewvel = rinfo['vel_reward']
+        rewcmp = rinfo['route_reward']
 
         text_strs = [
                 f'Steer: {self.cached_control.steer:.3f}',
@@ -149,7 +146,8 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
                 f'Reward: {reward:.3f}',
                 f'RewDst: {rewdst:.3f}',
                 f'RewYaw: {rewyaw:.3f}',
-                f'RewVel: {rewvel:.3f}',]
+                f'RewVel: {rewvel:.3f}',
+                f'RewCmp: {rewcmp:.3f}',]
 
         for i, text in enumerate(text_strs):
             draw_text(image, text, (5, 20*(i+1)))

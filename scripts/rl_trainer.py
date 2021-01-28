@@ -69,6 +69,7 @@ else:
         burn_timesteps = 500
         save_frequency=1000
 
+    
     project_root = '/home/aaron/workspace/carla/leaderboard-devkit'
     env_config = {
             'carla_version': carla_root.split('/')[-1],
