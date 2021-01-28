@@ -15,6 +15,8 @@ parser.add_argument('--routenum', type=int)
 parser.add_argument('--scenarios', action='store_true')
 parser.add_argument('--repetitions', type=int, default=1)
 parser.add_argument('--empty', action='store_true')
+parser.add_argument('--hop_resolution', type=float, default=1)
+parser.add_argument('--num_state_waypoints', type=int, default=1)
 
 # logging
 parser.add_argument('-d', '--desc', type=str, default='no description')
@@ -76,10 +78,12 @@ else:
             'scenarios': scenarios,
             'repetitions': args.repetitions,
             'empty': args.empty,
+            'hop_resolution': args.hop_resolution,
             }
 
     sac_config = {
             'mode': 'train',
+            'num_state_waypoints': args.num_state_waypoints,
             'total_timesteps': total_timesteps,
             'burn_timesteps': burn_timesteps,
             'train_frequency': 1,
