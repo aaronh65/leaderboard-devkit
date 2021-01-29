@@ -202,7 +202,7 @@ class CarlaEnv(gym.Env):
         obs = self._get_observation(hero_transform, target_idx)
         
         #obs = self._get_waypoint_state(hero_transform, target_waypoint)
-        reward_info = self._get_reward(hero_transform, target_waypoint, distance_done)
+        reward_info = self._get_reward(hero_transform, target_waypoint, distance_done or blocked_done)
         self.agent_instance.cached_rinfo = reward_info
         self.agent_instance.make_visualization()
 
@@ -220,7 +220,8 @@ class CarlaEnv(gym.Env):
         hero_vector = transform_to_vector(hero_transform)
         if self.frame > 60:
             if len(self.last_hero_positions) < self.max_positions_len:
-                self.last_hero_positions.append(hero_vector[:2])
+                #self.last_hero_positions.append(hero_vector[:2])
+                self.last_hero_positions.append(hero_transform)
             else:
                 self.last_hero_positions.popleft()
                 self.last_hero_positions.append(hero_vector[:2])
@@ -290,7 +291,17 @@ class CarlaEnv(gym.Env):
     
     def _get_observation(self, hero_transform, target_idx):
 
-        # 4d state per waypoint (x,y,z in agent frame + yaw diff) and agent velocity
+        # last 5 positions transformed into our frame
+        history_size = 5
+        if len(self.last_hero_positions) < history_size + 1:
+            history = np.zeros(4*history_size)
+        else:
+            history = self.last_hero_positions[-(history_size+1):-1] # last position is current one
+            positions = np.hstack([history[:,:3], np.ones((history_size,1)])
+            world_to_hero = hero_transform.get_inverse_matrix()
+            positions = np.matmul(world_to_hero, positions)
+
+        # state per waypoint (x,y,z in agent frame + yaw diff) and agent velocity
         obs = np.zeros(self.obs_dim)
 
         max_len = 1e-9
@@ -343,7 +354,7 @@ class CarlaEnv(gym.Env):
         state = np.array([x, y, z, dyaw])
         return state
 
-    def _get_reward(self, hero_transform, target_waypoint, blocked_done):
+    def _get_reward(self, hero_transform, target_waypoint, blocked_or_distance_done):
         hero = transform_to_vector(hero_transform)
         target = waypoint_to_vector(target_waypoint)
 
@@ -371,7 +382,7 @@ class CarlaEnv(gym.Env):
 
         # route reward
         route_reward = self.last_waypoint / self.route_len
-        if blocked_done:
+        if blocked_or_distance_done:
             route_reward = 10 if self.last_waypoint == self.route_len-1 else -5
 
         reward = dist_reward + yaw_reward + vel_reward + route_reward

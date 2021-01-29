@@ -66,8 +66,8 @@ else:
         save_frequency = 100
     else:
         total_timesteps = 500000
-        burn_timesteps = 500
-        save_frequency=1000
+        burn_timesteps = 2000
+        save_frequency = 1000
 
     
     project_root = '/home/aaron/workspace/carla/leaderboard-devkit'

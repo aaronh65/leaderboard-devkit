@@ -85,36 +85,13 @@ def train(config, agent, env):
         new_obs, reward, done, info = env.step(action)
         sac_log['total_steps'] += 1
 
-        if done:
-
-            # record then reset metrics
-            episode_steps = sac_log['total_steps']
-            sac_log['mean_policy_loss'] /= episode_steps
-            sac_log['mean_value_loss'] /= episode_steps
-            sac_log['mean_entropy'] /= episode_steps
-
-            log['checkpoints'].append(episode_log)
-            with open(f'{config.save_root}/logs/log.json', 'w') as f:
-                json.dump(log, f, indent=4, sort_keys=False)
-            with open(f'{config.save_root}/logs/rewards/{episode_idx:06d}.npy', 'wb') as f:
-                np.save(f, rewards)
-            with open(f'{config.save_root}/logs/replay_buffer.pkl', 'wb') as f:
-                pickle.dump(agent.model.replay_buffer, f)
-
-            # cleanup and reset
-            env.cleanup()
-            episode_idx += 1
-            episode_log = setup_episode_log(episode_idx)
-            obs = env.reset(log=episode_log)
-            sac_log = episode_log['sac']
-            rewards = []
-
         # store in replay buffer
         rewards.append(reward)
         sac_log['total_reward'] += reward
         if sac_log['total_steps'] > 60: # 3 seconds of warmup time @ 20Hz
             agent.model.replay_buffer_add(obs, action, reward, new_obs, float(done), {})
 
+                
         # train at this timestep if applicable
         if step % config.sac.train_frequency == 0 and not burn_in:
             mb_info_vals = []
@@ -143,7 +120,31 @@ def train(config, agent, env):
             weights_path = f'{config.save_root}/weights/{step:07d}'
             agent.model.save(weights_path)
 
-        obs = new_obs
+        if done:
+            # record then reset metrics
+            episode_steps = sac_log['total_steps']
+            sac_log['mean_policy_loss'] /= episode_steps
+            sac_log['mean_value_loss'] /= episode_steps
+            sac_log['mean_entropy'] /= episode_steps
+
+            log['checkpoints'].append(episode_log)
+            with open(f'{config.save_root}/logs/log.json', 'w') as f:
+                json.dump(log, f, indent=4, sort_keys=False)
+            with open(f'{config.save_root}/logs/rewards/{episode_idx:06d}.npy', 'wb') as f:
+                np.save(f, rewards)
+            with open(f'{config.save_root}/logs/replay_buffer.pkl', 'wb') as f:
+                pickle.dump(agent.model.replay_buffer, f)
+
+            # cleanup and reset
+            env.cleanup()
+            episode_idx += 1
+            episode_log = setup_episode_log(episode_idx)
+            obs = env.reset(log=episode_log)
+            sac_log = episode_log['sac']
+            rewards = []
+
+        else:
+            obs = new_obs
 
     #print('done training')
 
