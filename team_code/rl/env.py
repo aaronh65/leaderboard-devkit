@@ -3,6 +3,7 @@ import time, os
 import gym
 import numpy as np
 from collections import deque
+import itertools
 
 from env_utils import *
 from reward_utils import *
@@ -25,9 +26,10 @@ class CarlaEnv(gym.Env):
         self.hero_actor = None
 
         # RL params
+        self.history_size = config.sac.history_size
         self.nstate_waypoints = config.sac.num_state_waypoints
         self.waypoint_state_dim = config.sac.waypoint_state_dim
-        self.obs_dim = self.nstate_waypoints*self.waypoint_state_dim + 2 # velocity + completion
+        self.obs_dim = (self.nstate_waypoints+self.history_size)*self.waypoint_state_dim + 2 # velocity + completion
         self.observation_space = gym.spaces.Box(
                 #low=-1, high=1, shape=(6,), 
                 low=-1, high=1, shape=(self.obs_dim,), 
@@ -61,7 +63,7 @@ class CarlaEnv(gym.Env):
         signal.signal(signal.SIGINT, self._signal_handler)
 
         # set up blocking checks
-        self.last_hero_positions = deque()
+        self.last_hero_transforms = deque()
         self.max_positions_len = 60 
         self.blocking_distance = 3.0
         self.frame = 0
@@ -93,7 +95,7 @@ class CarlaEnv(gym.Env):
 
         self.agent_instance.reset()
         self.frame = 0
-        self.last_hero_positions = deque()
+        self.last_hero_transforms = deque()
         self.last_waypoint = 0
 
         if log is not None:
@@ -217,17 +219,19 @@ class CarlaEnv(gym.Env):
 
     def _check_blocked(self, hero_transform):
 
-        hero_vector = transform_to_vector(hero_transform)
+        #hero_vector = transform_to_vector(hero_transform)
         if self.frame > 60:
-            if len(self.last_hero_positions) < self.max_positions_len:
-                #self.last_hero_positions.append(hero_vector[:2])
-                self.last_hero_positions.append(hero_transform)
+            if len(self.last_hero_transforms) < self.max_positions_len:
+                #self.last_hero_transforms.append(hero_vector[:2])
+                self.last_hero_transforms.append(hero_transform)
             else:
-                self.last_hero_positions.popleft()
-                self.last_hero_positions.append(hero_vector[:2])
-                start = self.last_hero_positions[0]
-                end = self.last_hero_positions[-1]
-                traveled = np.linalg.norm(end-start)
+                self.last_hero_transforms.popleft()
+                #self.last_hero_transforms.append(hero_vector[:2])
+                self.last_hero_transforms.append(hero_transform)
+                start = self.last_hero_transforms[0].location
+                end = self.last_hero_transforms[-1].location
+
+                traveled = ((end.x-start.x)**2 + (end.y-start.y)**2)**0.5
                 if traveled < self.blocking_distance:
                     return True
                     
@@ -291,20 +295,30 @@ class CarlaEnv(gym.Env):
     
     def _get_observation(self, hero_transform, target_idx):
 
-        # last 5 positions transformed into our frame
-        history_size = 5
-        if len(self.last_hero_positions) < history_size + 1:
-            history = np.zeros(4*history_size)
-        else:
-            history = self.last_hero_positions[-(history_size+1):-1] # last position is current one
-            positions = np.hstack([history[:,:3], np.ones((history_size,1)])
-            world_to_hero = hero_transform.get_inverse_matrix()
-            positions = np.matmul(world_to_hero, positions)
-
-        # state per waypoint (x,y,z in agent frame + yaw diff) and agent velocity
         obs = np.zeros(self.obs_dim)
 
+        # last 5 positions transformed into our frame
+        if len(self.last_hero_transforms) < self.history_size + 1:
+            history = np.zeros(4*self.history_size)
+        else:
+
+            start, end = len(self.last_hero_transforms) - self.history_size - 1, len(self.last_hero_transforms) - 1
+            transforms = list(itertools.islice(self.last_hero_transforms, start, end))
+            transforms = np.array([transform_to_vector(transform) for transform in transforms])
+            locations = np.hstack([transforms[:,:3], np.ones((self.history_size,1))])
+            world_to_hero = hero_transform.get_inverse_matrix()
+            locations = np.matmul(world_to_hero, locations.T).T
+            locations = locations[:,:3]
+            distances = np.linalg.norm(locations, axis=1)
+            locations = locations / np.amax(distances)
+
+            dyaw = np.array([transforms[:, 4] - hero_transform.rotation.yaw]).T
+            dyaw = (dyaw + 180) % 360 - 180
+            history = np.hstack([locations, dyaw]).flatten()
+
+        # state per waypoint (x,y,z in agent frame + yaw diff) and agent velocity
         max_len = 1e-9
+        waypoints = np.zeros(4*self.nstate_waypoints)
         for i in range(self.nstate_waypoints):
 
             idx = min(len(self.route_waypoints)-1, target_idx + i)
@@ -312,27 +326,27 @@ class CarlaEnv(gym.Env):
             if i != 0:
                 draw_waypoints(self.world, [wpt], color=(0,100,100), size=0.5)
             start, end = self.waypoint_state_dim*i, self.waypoint_state_dim*(i+1)
-            obs[start:end] = self._get_waypoint_state(hero_transform, wpt)
-            dist = np.linalg.norm(obs[start:start+3])
+            waypoints[start:end] = self._get_waypoint_state(hero_transform, wpt)
+            dist = np.linalg.norm(waypoints[start:start+3])
             max_len = max(max_len, dist)
 
         # norm distance and dyaw
         for i in range(self.nstate_waypoints):
             start, end = self.waypoint_state_dim*i, self.waypoint_state_dim*(i+1)
-            obs[start:start+3] /= max_len
-            obs[start+4] /= 180
+            waypoints[start:start+3] /= max_len
+            waypoints[start+3] /= 180
 
         # velocity
         velocity = CarlaDataProvider.get_velocity(self.hero_actor)
         velocity = velocity * 3600 / 1000 # km/h
         norm_velocity = max(min(velocity, 80), 0) # clip to 0, 80
         norm_velocity = norm_velocity / 40 - 1 # squash to -1, 1
-        obs[-2] = norm_velocity
 
         # completion
         completion = self.last_waypoint / self.route_len
         norm_completion = completion * 2 - 1
-        obs[-1] = norm_completion
+
+        obs = np.hstack([history, waypoints, [norm_velocity, norm_completion]])
         return obs
 
     def _get_waypoint_state(self, hero_transform, target_waypoint):

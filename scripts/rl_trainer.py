@@ -16,7 +16,8 @@ parser.add_argument('--scenarios', action='store_true')
 parser.add_argument('--repetitions', type=int, default=1)
 parser.add_argument('--empty', action='store_true')
 parser.add_argument('--hop_resolution', type=float, default=1)
-parser.add_argument('--num_state_waypoints', type=int, default=1)
+parser.add_argument('--history_size', type=int, default=5)
+parser.add_argument('--num_state_waypoints', type=int, default=3)
 parser.add_argument('--waypoint_state_dim', type=int, default=4)
 
 # logging
@@ -87,6 +88,7 @@ else:
             'mode': 'train',
             'num_state_waypoints': args.num_state_waypoints,
             'waypoint_state_dim': args.waypoint_state_dim,
+            'history_size': args.history_size,
             'total_timesteps': total_timesteps,
             'burn_timesteps': burn_timesteps,
             'train_frequency': 1,
