@@ -32,7 +32,7 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
             self.restore()
         else:
             self.episode_num = -1 # the first reset changes this to 0
-            obs_dim = (self.config.history_size + self.config.num_state_waypoints) * self.config.waypoint_state_dim + 2
+            obs_dim = (self.config.history_size + self.config.num_state_waypoints) * self.config.waypoint_state_dim + 3
             action_dim = 3
             self.model = SAC(MlpPolicy, NullEnv(obs_dim, action_dim))
 
@@ -106,7 +106,6 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
             action = np.random.uniform(-1, 1, size=3)
         else:
             action, _states = self.model.predict(state)
-
         throttle, steer, brake = action
         throttle = float(throttle/2 + 0.5)
         steer = float(steer)

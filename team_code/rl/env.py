@@ -29,7 +29,7 @@ class CarlaEnv(gym.Env):
         self.history_size = config.sac.history_size
         self.nstate_waypoints = config.sac.num_state_waypoints
         self.waypoint_state_dim = config.sac.waypoint_state_dim
-        self.obs_dim = (self.nstate_waypoints+self.history_size)*self.waypoint_state_dim + 2 # velocity + completion
+        self.obs_dim = (self.nstate_waypoints+self.history_size)*self.waypoint_state_dim + 3 # velocity + completion
         self.observation_space = gym.spaces.Box(
                 #low=-1, high=1, shape=(6,), 
                 low=-1, high=1, shape=(self.obs_dim,), 
@@ -80,12 +80,9 @@ class CarlaEnv(gym.Env):
         
         # load next RouteScenario
         num_configs = len(self.indexer._configs_list)
-        rconfig = self.indexer.get(np.random.randint(num_configs))
+        rconfig = self.indexer.get(np.random.randint(num_configs)) # change to high loss routes?
         rconfig.agent = self.agent_instance
-
-        
         self._load_world_and_scenario(rconfig)
-        #self._get_hero_route(draw=True)
         self._get_hero_route()
 
         self.manager.start_system_time = time.time()
@@ -93,10 +90,10 @@ class CarlaEnv(gym.Env):
         self.manager._watchdog.start()
         self.manager._running = True
 
-        self.agent_instance.reset()
         self.frame = 0
-        self.last_hero_transforms = deque()
         self.last_waypoint = 0
+        self.last_hero_transforms = deque()
+        self.agent_instance.reset()
 
         if log is not None:
             self.env_log = {}
@@ -105,7 +102,6 @@ class CarlaEnv(gym.Env):
             self.env_log['total_waypoints'] = len(self.route_waypoints)
             self.env_log['last_waypoint'] = 0
             log['env'] = self.env_log
-
 
         return np.zeros(self.obs_dim)
 
@@ -154,8 +150,8 @@ class CarlaEnv(gym.Env):
         # retrieve new hero route
         self.route = CarlaDataProvider.get_ego_vehicle_route()
 
-        route_locations = [route_elem[0] for route_elem in self.route]
-        self.route_waypoints = [self.map.get_waypoint(loc) for loc in route_locations]
+        route_waypoints = [route_elem[0] for route_elem in self.route]
+        self.route_waypoints = [self.map.get_waypoint(loc) for loc in route_waypoints]
         self.route_transforms = [waypoint_to_vector(wp) for wp in self.route_waypoints]
         self.route_transforms = np.array(self.route_transforms)
         self.forward_vectors = [wp.transform.get_forward_vector() for wp in self.route_waypoints]
@@ -178,59 +174,49 @@ class CarlaEnv(gym.Env):
 
         else:
             raise Exception
-            return np.zeros(self.obs_dim), -10, True, {'running': False}
 
     def _tick(self, timestamp):
 
-        self.manager._tick_scenario(timestamp) # ticks
-        hero_transform = CarlaDataProvider.get_transform(self.hero_actor)
+        # calls the agent's run_step method and advances the sim
+        self.manager._tick_scenario(timestamp)
 
         # check blocked and timeout
         info = {}
+        hero_transform = CarlaDataProvider.get_transform(self.hero_actor)
         blocked_done = self._check_blocked(hero_transform)
-        if blocked_done:
-            info['blocked'] = True
-        timeout_done = self.frame >= 6000
-        if timeout_done:
-            info['timeout'] = True
+        timeout_done = self.frame >= 6000 # remove?
 
-        # get target
+        # get target and next observation
         target_idx, distance_done = self._get_target(hero_transform) # idxs
         target_waypoint = self.route_waypoints[target_idx]
-        if distance_done:
-            info['too_far'] = True
-                
-        # get new state, reward, done, and update agent's cached reward for viz
         obs = self._get_observation(hero_transform, target_idx)
         
-        #obs = self._get_waypoint_state(hero_transform, target_waypoint)
+        # compute reward and visualize
         reward_info = self._get_reward(hero_transform, target_waypoint, distance_done or blocked_done)
         self.agent_instance.cached_rinfo = reward_info
         self.agent_instance.make_visualization()
 
-        # make visualizations
         draw_waypoints(self.world, [target_waypoint], color=(0,255,0), size=0.5)
         draw_arrow(self.world, hero_transform.location,
                 target_waypoint.transform.location, color=(255,0,0), size=0.5)
         
+
         criteria = [blocked_done, timeout_done, distance_done]
         done = any(criteria)
+        info = {'blocked': blocked_done, 'timeout': timeout_done, 'too_far': distance_done}
         return obs, reward_info['reward'], done, info
 
     def _check_blocked(self, hero_transform):
 
-        #hero_vector = transform_to_vector(hero_transform)
         if self.frame > 60:
             if len(self.last_hero_transforms) < self.max_positions_len:
                 #self.last_hero_transforms.append(hero_vector[:2])
                 self.last_hero_transforms.append(hero_transform)
             else:
                 self.last_hero_transforms.popleft()
-                #self.last_hero_transforms.append(hero_vector[:2])
                 self.last_hero_transforms.append(hero_transform)
                 start = self.last_hero_transforms[0].location
                 end = self.last_hero_transforms[-1].location
-
                 traveled = ((end.x-start.x)**2 + (end.y-start.y)**2)**0.5
                 if traveled < self.blocking_distance:
                     return True
@@ -252,17 +238,18 @@ class CarlaEnv(gym.Env):
         # reachable criteria - does it take a >90 deg turn to get to waypoint?
         R_world2hero = np.array(hero_transform.get_inverse_matrix())[:3,:3]
         heading_vector = np.matmul(R_world2hero, hero2pt.T).T # Nx3
-        y_cart, x_cart = heading_vector[:,1], heading_vector[:,0] # in carla coordinate system
-        heading_angles = np.arctan2(y_cart, x_cart) * 180 / np.pi
-        reachable_b = np.abs(heading_angles) < 100
+        y, x = heading_vector[:,1], heading_vector[:,0] # in carla coordinate system
+        heading_angles = np.arctan2(y, x) * 180 / np.pi
+        reachable= np.abs(heading_angles) < 100
 
         # aligned criteria - is the waypoint pointing the same direction we are?
         yaw_diffs = route_transforms[:, 4] - hero_transform_vec[4]
         yaw_diffs = (yaw_diffs + 180) % 360 - 180
         yaw_diffs = np.array([np.abs(yaw_diffs)]).flatten()
-        aligned_b = yaw_diffs < 120 # some sharp right/left turns are > 90 degrees
+        aligned= yaw_diffs < 120 # some sharp right/left turns are > 90 degrees
 
-        criteria = np.array([reachable_b, aligned_b]) # 2xN
+        # replace with an np.all call?
+        criteria = np.array([reachable, aligned]) # 2xN
         valid = np.prod(criteria, axis=0).flatten().astype(bool)
         valid_indices = np.arange(len(route_transforms))[valid]
 
@@ -272,8 +259,7 @@ class CarlaEnv(gym.Env):
         # retrieve target
         target_idx = self.last_waypoint + valid_indices[0]
         target = self.route_waypoints[target_idx]
-        self.last_waypoint = self.last_waypoint + valid_indices[0]
-        self.env_log['last_waypoint'] = int(self.last_waypoint)
+        self.last_waypoint = target_idx
 
         # check for distance
         tgt2hero = -np.array([hero2pt[valid_indices[0]]]).T # 3x1
@@ -290,6 +276,7 @@ class CarlaEnv(gym.Env):
                 self.world, self.route_waypoints[start_draw:end_draw], 
                 color=(0,0,255), life_time=0.06)
         
+        self.env_log['last_waypoint'] = int(self.last_waypoint)
         return target_idx, done
     
     
@@ -342,11 +329,21 @@ class CarlaEnv(gym.Env):
         norm_velocity = max(min(velocity, 80), 0) # clip to 0, 80
         norm_velocity = norm_velocity / 40 - 1 # squash to -1, 1
 
+        # steer
+        steer = self.agent_instance.cached_control.steer # already [-1, 1]
+
         # completion
         completion = self.last_waypoint / self.route_len
         norm_completion = completion * 2 - 1
 
-        obs = np.hstack([history, waypoints, [norm_velocity, norm_completion]])
+        # traffic lights
+        #maybe_traffic_light = CarlaDataProvider.get_next_traffic_light(self.hero_actor)
+        #if maybe_traffic_light is not None:
+        #    traffic_light, distance_to_light = maybe_traffic_light
+        #    draw_transforms(self.world, [traffic_light.get_transform()], z=2.0, life_time = 0.06, size=0.6)
+        #    #print(distance_to_light)
+
+        obs = np.hstack([history, waypoints, [norm_velocity, steer, norm_completion]])
         return obs
 
     def _get_waypoint_state(self, hero_transform, target_waypoint):
@@ -375,16 +372,16 @@ class CarlaEnv(gym.Env):
         # distance reward
         dist_max = (4**2 + self.config.hop_resolution**2)**0.5
         dist = min(np.linalg.norm(hero[:3] - target[:3]), dist_max)
-        dist_reward = (dist/dist_max - 1)**2 - 1
-        #dist_reward = 0 - min(dist/dist_max, 1)
+        #dist_reward = (dist/dist_max - 1)**2 - 1
+        dist_reward = 0 - min(dist/dist_max, 1)
 
         # rotation reward
         yaw_diff = (hero[4]-target[4]) % 360
         yaw_diff = yaw_diff if yaw_diff < 180 else 360 - yaw_diff
         yaw_max = 90
         yaw_frac = min(yaw_diff/yaw_max, 1)
-        yaw_reward = -yaw_frac**2 + 1
-        #yaw_reward = 1 - min(yaw_diff/yaw_max, 1)
+        #yaw_reward = -yaw_frac**2 + 1
+        yaw_reward = 1 - min(yaw_diff/yaw_max, 1)
         #yaw_reward = yaw_reward * 0.5
 
         # speed reward
