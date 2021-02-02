@@ -15,7 +15,7 @@ export PYTHONPATH=$PYTHONPATH:$PROJECT_ROOT
 export PYTHONPATH=$PYTHONPATH:$PROJECT_ROOT/leaderboard
 export PYTHONPATH=$PYTHONPATH:$PROJECT_ROOT/scenario_runner
 
-python $PROJECT_ROOT/team_code/rl/trainer.py \
+python $PROJECT_ROOT/team_code/rl/$AGENT/trainer.py \
 	--config_path=$CONFIG_PATH
 
 echo "Done. See $SAVE_ROOT for detailed results."

@@ -4,8 +4,9 @@ from leaderboard.autoagents import autonomous_agent
 from leaderboard.envs.sensor_interface import SensorInterface
 
 from team_code.common.utils import mkdir_if_not_exists, parse_config
-from team_code.rl.null_env import NullEnv
-from team_code.rl.viz_utils import draw_text
+from team_code.rl.common.null_env import NullEnv
+from team_code.rl.common.viz_utils import draw_text
+from team_code.lbc.carla_project.src.common import CONVERTER, COLOR
 from stable_baselines.sac.policies import MlpPolicy
 from stable_baselines import SAC
 
@@ -38,13 +39,14 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
             self.action_dim = 2
             self.model = SAC(MlpPolicy, NullEnv(self.obs_dim, self.action_dim))
 
+        self.save_images = self.config.save_images
         self.save_images_path  = f'{self.save_root}/images/episode_{self.episode_num:06d}'
         self.save_images_interval = 4
 
         self.cached_state = None
         self.cached_control = None
         self.cached_rinfo = 0
-        self.cached_image = None
+        self.cached_bev = None
         self.step = 0
 
     def restore(self):
@@ -67,10 +69,8 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
                     'x': 0.0, 'y': 0.0, 'z': 25,
                     'roll': 0.0, 'pitch': -90.0, 'yaw': 0.0,
                     'width': 384, 'height': 384, 'fov': 75,
-                    #'width': 256, 'height': 256, 'fov': 75,
                     'id': 'bev'
                     },
-                 
                 {
                     'type': 'sensor.other.imu',
                     'x': 0.0, 'y': 0.0, 'z': 0.0,
@@ -95,7 +95,7 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
         self.step = 0
         self.cached_control = None
         self.cached_rinfo = 0
-        self.cached_image = None
+        self.cached_bev = None
         self.episode_num += 1
         self.save_images_path  = f'{self.save_root}/images/episode_{self.episode_num:06d}'
         if self.config.save_images:
@@ -123,7 +123,8 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
 
     def run_step(self, input_data, timestamp):
         
-        self.cached_image = input_data['bev'][1][:,:,:3]
+        self.cached_bev = input_data['bev'][1][:,:,:3]
+        #self.cached_map = COLOR[CONVERTER[input_data['map'][1][:,:,2]]]
 
         control = VehicleControl()
         if self.config.mode == 'train': # use cached training prediction           
@@ -136,8 +137,11 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
         return control
 
     def make_visualization(self, obs_norm):
-        image = np.array(self.cached_image)
-        height, width = image.shape[:2]
+        #smap = np.array(self.cached_map)
+        #cv2.imshow('smap', smap)
+
+        bev = np.array(self.cached_bev)
+        height, width = bev.shape[:2]
 
         rinfo = self.cached_rinfo
         reward = rinfo['reward']
@@ -165,16 +169,16 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
                 f'RewCmp: {rewcmp:.3f}',]
 
         for i, text in enumerate(left_text_strs):
-            draw_text(image, text, (5, 20*(i+1)))
+            draw_text(bev, text, (5, 20*(i+1)))
         for i, text in enumerate(right_text_strs):
-            draw_text(image, text, (width-130, 20*(i+1)))
+            draw_text(bev, text, (width-130, 20*(i+1)))
 
-        cv2.imshow('debug', image)
+        cv2.imshow('bev', bev)
         cv2.waitKey(1)
 
-        if self.step % self.save_images_interval == 0:
+        if self.save_images and self.step % self.save_images_interval == 0:
             frame = self.step // self.save_images_interval
             save_path = f'{self.save_images_path}/{frame:06d}.png'
-            cv2.imwrite(save_path, image)
+            cv2.imwrite(save_path, bev)
 
 

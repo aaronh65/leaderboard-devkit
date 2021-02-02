@@ -1,16 +1,16 @@
-import os, sys, time
+import os, sys, time, signal
 import yaml, json, pickle
 import argparse
 import traceback
 import numpy as np
-from datetime import datetime
-from tqdm import tqdm
 
-from carla import Client
+from tqdm import tqdm
+from datetime import datetime
 from env import CarlaEnv
-from agent import WaypointAgent
+from carla import Client
 
 from team_code.common.utils import dict_to_sns
+from agent import WaypointAgent
 
 RESTORE = int(os.environ.get("RESTORE", 0))
 

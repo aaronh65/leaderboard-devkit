@@ -9,6 +9,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--restore_from', type=str, default=None)
 
 # setup
+parser.add_argument('--agent', type=str, default='manual', choices=['manual_obs', 'semantic_bev', 'semantic_enc'])
 parser.add_argument('--version', type=int, choices=[10,11], default=11)
 parser.add_argument('--split', type=str, default='training', choices=['debug', 'devtest', 'testing', 'training'])
 parser.add_argument('--routenum', type=int)
@@ -44,7 +45,7 @@ if restore:
 else:
     date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
     suffix = f'debug/{date_str}' if args.debug else f'{date_str}' 
-    save_root = f'/data/leaderboard/results/rl/waypoint_agent/{suffix}'
+    save_root = f'/data/leaderboard/results/rl/{args.agent}/{suffix}'
 
     if args.save_images:
         mkdir_if_not_exists(f'{save_root}/images')
@@ -111,6 +112,7 @@ else:
         yaml.dump(config, f, default_flow_style=False, sort_keys=False)
 
 os.environ["CONDA_ENV"] = 'lbrl'
+os.environ["AGENT"] = args.agent
 os.environ["PROJECT_ROOT"] = project_root
 os.environ["SAVE_ROOT"] = save_root
 os.environ["CARLA_EGG"] = carla_egg

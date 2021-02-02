@@ -42,6 +42,11 @@ def chain_transform(ref_transform, tgt_transform):
     ref2tgt = np.matmul(world2tgt, ref2world)
     return ref2tgt
 
+# signed angle difference w/target angle t2 and reference angle t1
+def sgn_angle_diff(t1, t2):
+    diff = t2 - t1
+    diff = (diff + 180) % 360 - 180
+    return diff
 
 ''' adding transforms together '''
 def add_location(location, dx=0, dy=0, dz=0):
