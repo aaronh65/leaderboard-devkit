@@ -32,13 +32,16 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
             self.restore()
         else:
             self.episode_num = -1 # the first reset changes this to 0
-            obs_dim = (self.config.history_size + self.config.num_state_waypoints) * self.config.waypoint_state_dim + 3
-            action_dim = 3
-            self.model = SAC(MlpPolicy, NullEnv(obs_dim, action_dim))
+            #obs_dim = (self.config.history_size + self.config.num_state_waypoints) * self.config.waypoint_state_dim + 3
+            self.obs_dim = self.config.waypoint_state_dim + 4
+            #action_dim = 3
+            self.action_dim = 2
+            self.model = SAC(MlpPolicy, NullEnv(self.obs_dim, self.action_dim))
 
         self.save_images_path  = f'{self.save_root}/images/episode_{self.episode_num:06d}'
         self.save_images_interval = 4
 
+        self.cached_state = None
         self.cached_control = None
         self.cached_rinfo = 0
         self.cached_image = None
@@ -103,14 +106,18 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
 
         # compute controls
         if burn_in and not RESTORE:
-            action = np.random.uniform(-1, 1, size=3)
+            action = np.random.uniform(-1, 1, size=self.action_dim)
         else:
             action, _states = self.model.predict(state)
-        throttle, steer, brake = action
+
+        #throttle, steer, brake = action
+        throttle, steer = action
         throttle = float(throttle/2 + 0.5)
         steer = float(steer)
         #brake = float(brake/2 + 0.5)
         brake = False
+
+        self.cached_state = state
         self.cached_control = VehicleControl(throttle, steer, brake)
         return action
 
@@ -128,28 +135,39 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
         self.step += 1 
         return control
 
-    def make_visualization(self):
+    def make_visualization(self, obs_norm):
         image = np.array(self.cached_image)
+        height, width = image.shape[:2]
 
         rinfo = self.cached_rinfo
         reward = rinfo['reward']
         rewdst = rinfo['dist_reward']
-        rewyaw = rinfo['yaw_reward']
         rewvel = rinfo['vel_reward']
         rewcmp = rinfo['route_reward']
 
-        text_strs = [
+        distance = (self.cached_state[0]+1) / 2 * obs_norm[0]
+        heading = self.cached_state[1] * obs_norm[1]
+        z = self.cached_state[2] * obs_norm[2]
+        curvature = self.cached_state[3] * 180
+        
+        left_text_strs = [
+                f'Distance: {distance:.3f}', # add curvature after?
+                f'Heading: {heading:.3f}',
+                f'Height: {z:.3f}',
+                f'Curve: {curvature:.3f}',]
+
+        right_text_strs = [
                 f'Steer: {self.cached_control.steer:.3f}',
                 f'Throttle: {self.cached_control.throttle:.3f}',
-                f'Brake: {self.cached_control.brake:.3f}',
                 f'Reward: {reward:.3f}',
                 f'RewDst: {rewdst:.3f}',
-                f'RewYaw: {rewyaw:.3f}',
                 f'RewVel: {rewvel:.3f}',
                 f'RewCmp: {rewcmp:.3f}',]
 
-        for i, text in enumerate(text_strs):
+        for i, text in enumerate(left_text_strs):
             draw_text(image, text, (5, 20*(i+1)))
+        for i, text in enumerate(right_text_strs):
+            draw_text(image, text, (width-130, 20*(i+1)))
 
         cv2.imshow('debug', image)
         cv2.waitKey(1)

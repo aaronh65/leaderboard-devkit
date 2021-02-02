@@ -26,15 +26,14 @@ class CarlaEnv(gym.Env):
         self.hero_actor = None
 
         # RL params
-        self.history_size = config.sac.history_size
         self.nstate_waypoints = config.sac.num_state_waypoints
         self.waypoint_state_dim = config.sac.waypoint_state_dim
-        self.obs_dim = (self.nstate_waypoints+self.history_size)*self.waypoint_state_dim + 3 # velocity + completion
+        self.obs_dim = self.waypoint_state_dim + 4
         self.observation_space = gym.spaces.Box(
                 #low=-1, high=1, shape=(6,), 
                 low=-1, high=1, shape=(self.obs_dim,), 
                 dtype=np.float32)
-        self.action_dim = 3
+        self.action_dim = 2
         self.action_space = gym.spaces.Box(
                 low=-1, high=1, shape=(self.action_dim,), 
                 dtype=np.float32)
@@ -66,6 +65,8 @@ class CarlaEnv(gym.Env):
         self.last_hero_transforms = deque()
         self.max_positions_len = 60 
         self.blocking_distance = 3.0
+        max_dist = (4**2 + (self.config.hop_resolution*(self.nstate_waypoints+1))**2)**0.5
+        self.obs_norm = np.array([max_dist, 180, 5]) # distance, heading, z
         self.frame = 0
         self.target_idx = 0
         self.last_waypoint = 0
@@ -194,7 +195,7 @@ class CarlaEnv(gym.Env):
         # compute reward and visualize
         reward_info = self._get_reward(hero_transform, target_waypoint, distance_done or blocked_done)
         self.agent_instance.cached_rinfo = reward_info
-        self.agent_instance.make_visualization()
+        self.agent_instance.make_visualization(self.obs_norm)
 
         draw_waypoints(self.world, [target_waypoint], color=(0,255,0), size=0.5)
         draw_arrow(self.world, hero_transform.location,
@@ -240,13 +241,13 @@ class CarlaEnv(gym.Env):
         heading_vector = np.matmul(R_world2hero, hero2pt.T).T # Nx3
         y, x = heading_vector[:,1], heading_vector[:,0] # in carla coordinate system
         heading_angles = np.arctan2(y, x) * 180 / np.pi
-        reachable= np.abs(heading_angles) < 100
+        reachable = np.abs(heading_angles) < 90
 
         # aligned criteria - is the waypoint pointing the same direction we are?
         yaw_diffs = route_transforms[:, 4] - hero_transform_vec[4]
         yaw_diffs = (yaw_diffs + 180) % 360 - 180
         yaw_diffs = np.array([np.abs(yaw_diffs)]).flatten()
-        aligned= yaw_diffs < 120 # some sharp right/left turns are > 90 degrees
+        aligned = yaw_diffs < 120 # some sharp right/left turns are > 90 degrees
 
         # replace with an np.all call?
         criteria = np.array([reachable, aligned]) # 2xN
@@ -284,56 +285,55 @@ class CarlaEnv(gym.Env):
 
         obs = np.zeros(self.obs_dim)
 
-        # last 5 positions transformed into our frame
-        if len(self.last_hero_transforms) < self.history_size + 1:
-            history = np.zeros(4*self.history_size)
-        else:
-
-            start, end = len(self.last_hero_transforms) - self.history_size - 1, len(self.last_hero_transforms) - 1
-            transforms = list(itertools.islice(self.last_hero_transforms, start, end))
-            transforms = np.array([transform_to_vector(transform) for transform in transforms])
-            locations = np.hstack([transforms[:,:3], np.ones((self.history_size,1))])
-            world_to_hero = hero_transform.get_inverse_matrix()
-            locations = np.matmul(world_to_hero, locations.T).T
-            locations = locations[:,:3]
-            distances = np.linalg.norm(locations, axis=1)
-            locations = locations / np.amax(distances)
-
-            dyaw = np.array([transforms[:, 4] - hero_transform.rotation.yaw]).T
-            dyaw = (dyaw + 180) % 360 - 180
-            history = np.hstack([locations, dyaw]).flatten()
-
         # state per waypoint (x,y,z in agent frame + yaw diff) and agent velocity
-        max_len = 1e-9
-        waypoints = np.zeros(4*self.nstate_waypoints)
+        wstates = np.zeros((self.nstate_waypoints, self.waypoint_state_dim))
         for i in range(self.nstate_waypoints):
 
             idx = min(len(self.route_waypoints)-1, target_idx + i)
             wpt = self.route_waypoints[idx]
+            wstates[i] = self._get_waypoint_state(hero_transform, wpt)
             if i != 0:
                 draw_waypoints(self.world, [wpt], color=(0,100,100), size=0.5)
-            start, end = self.waypoint_state_dim*i, self.waypoint_state_dim*(i+1)
-            waypoints[start:end] = self._get_waypoint_state(hero_transform, wpt)
-            dist = np.linalg.norm(waypoints[start:start+3])
-            max_len = max(max_len, dist)
+        norm_wstate = np.mean(wstates, axis=0)
+        norm_wstate = norm_wstate / self.obs_norm # heading and z are already [-1, 1] after clipping
+        norm_wstate[0] = norm_wstate[0] * 2 - 1 # from [0, 1] to [-1, 1]
+        norm_wstate = np.clip(norm_wstate, -1, 1)
 
-        # norm distance and dyaw
-        for i in range(self.nstate_waypoints):
-            start, end = self.waypoint_state_dim*i, self.waypoint_state_dim*(i+1)
-            waypoints[start:start+3] /= max_len
-            waypoints[start+3] /= 180
+        # average curvature
+        max_curvature = 0
+        for i in range(self.nstate_waypoints-1):
+            idx = target_idx + i
+            if idx >= len(self.route_waypoints) - 1:
+                max_curvature += 0
+            else:
+                location1 = waypoint_to_vector(self.route_waypoints[target_idx])[:3]
+                location2 = waypoint_to_vector(self.route_waypoints[idx+1])[:3]
+                ref2tgt = np.array([location2-location1]).T # 3x1
+
+                R_world2ref = np.array(self.route_waypoints[target_idx].transform.get_inverse_matrix())
+                R_world2ref = R_world2ref[:3,:3]
+                ref2tgt = np.matmul(R_world2ref, ref2tgt).flatten()
+                heading = np.arctan2(ref2tgt[1], ref2tgt[0]) * 180 / np.pi
+                if abs(heading) > 120:
+                    continue
+                if abs(heading) > abs(max_curvature):
+                    max_curvature = heading
+
+        norm_curvature = max_curvature / 180
+        norm_curvature = np.clip(norm_curvature, -1, 1)
+
 
         # velocity
         velocity = CarlaDataProvider.get_velocity(self.hero_actor)
         velocity = velocity * 3600 / 1000 # km/h
-        norm_velocity = max(min(velocity, 80), 0) # clip to 0, 80
+        norm_velocity = np.clip(velocity, 0, 80)
         norm_velocity = norm_velocity / 40 - 1 # squash to -1, 1
 
         # steer
-        steer = self.agent_instance.cached_control.steer # already [-1, 1]
+        norm_steer = self.agent_instance.cached_control.steer # already [-1, 1]
 
         # completion
-        completion = self.last_waypoint / self.route_len
+        completion = self.last_waypoint / self.route_len # fraction in [0, 1]
         norm_completion = completion * 2 - 1
 
         # traffic lights
@@ -343,7 +343,7 @@ class CarlaEnv(gym.Env):
         #    draw_transforms(self.world, [traffic_light.get_transform()], z=2.0, life_time = 0.06, size=0.6)
         #    #print(distance_to_light)
 
-        obs = np.hstack([history, waypoints, [norm_velocity, steer, norm_completion]])
+        obs = np.hstack([norm_wstate, [norm_curvature, norm_velocity, norm_steer, norm_completion]])
         return obs
 
     def _get_waypoint_state(self, hero_transform, target_waypoint):
@@ -356,13 +356,10 @@ class CarlaEnv(gym.Env):
         target_in_hero = np.matmul(world_to_hero, target_location).flatten()
         target_in_hero = target_in_hero[:3]
         x,y,z = target_in_hero
+        heading = np.arctan2(y,x) * 180 / np.pi
+        flat_distance = (x**2 + y**2)**0.5
 
-        # compute difference in yaws
-        hyaw = hero_transform.rotation.yaw
-        tyaw = target_waypoint.transform.rotation.yaw
-        dyaw = sgn_angle_diff(hyaw, tyaw)
-        
-        state = np.array([x, y, z, dyaw])
+        state = np.array([flat_distance, heading, z])
         return state
 
     def _get_reward(self, hero_transform, target_waypoint, blocked_or_distance_done):
@@ -370,10 +367,17 @@ class CarlaEnv(gym.Env):
         target = waypoint_to_vector(target_waypoint)
 
         # distance reward
-        dist_max = (4**2 + self.config.hop_resolution**2)**0.5
-        dist = min(np.linalg.norm(hero[:3] - target[:3]), dist_max)
+        #dist_max = (4**2 + self.config.hop_resolution**2)**0.5
+        #dist = min(np.linalg.norm(hero[:3] - target[:3]), dist_max)
         #dist_reward = (dist/dist_max - 1)**2 - 1
-        dist_reward = 0 - min(dist/dist_max, 1)
+        #dist_reward = 0 - min(dist/dist_max, 1)
+        lat_max = 4
+        tgt2hero = hero[:3] - target[:3]
+        R_world2tgt = np.array(target_waypoint.transform.get_inverse_matrix())[:3,:3]
+        tgt2hero = np.matmul(R_world2tgt, tgt2hero).flatten()
+        long_dist, lat_dist = np.abs(tgt2hero[:2])
+        dist_reward = 0 - min(lat_dist/lat_max, 1)
+
 
         # rotation reward
         yaw_diff = (hero[4]-target[4]) % 360
@@ -382,7 +386,6 @@ class CarlaEnv(gym.Env):
         yaw_frac = min(yaw_diff/yaw_max, 1)
         #yaw_reward = -yaw_frac**2 + 1
         yaw_reward = 1 - min(yaw_diff/yaw_max, 1)
-        #yaw_reward = yaw_reward * 0.5
 
         # speed reward
         hvel = CarlaDataProvider.get_velocity(self.hero_actor) # m/s
@@ -391,16 +394,17 @@ class CarlaEnv(gym.Env):
         vel_diff = abs(hvel-tvel)
         vel_reward = 1 - min(vel_diff/tvel, 1)
 
+
         # route reward
         route_reward = self.last_waypoint / self.route_len
         if blocked_or_distance_done:
             route_reward = 10 if self.last_waypoint == self.route_len-1 else -5
 
-        reward = dist_reward + yaw_reward + vel_reward + route_reward
+        #reward = dist_reward + yaw_reward + vel_reward + route_reward
+        reward = dist_reward + vel_reward + route_reward
         reward_info = {
                 'reward': reward, 
                 'dist_reward': dist_reward,
-                'yaw_reward': yaw_reward,
                 'vel_reward': vel_reward,
                 'route_reward': route_reward}
         return reward_info
