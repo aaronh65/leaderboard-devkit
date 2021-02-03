@@ -18,14 +18,13 @@ class CarlaEnv(BaseEnv):
         # RL params
         self.nstate_waypoints = config.sac.num_state_waypoints
         self.waypoint_state_dim = config.sac.waypoint_state_dim
-        self.obs_dim = self.waypoint_state_dim + 4
+        self.obs_dim = (self.waypoint_state_dim + 4,)
         self.observation_space = gym.spaces.Box(
-                #low=-1, high=1, shape=(6,), 
-                low=-1, high=1, shape=(self.obs_dim,), 
+                low=-1, high=1, shape=self.obs_dim, 
                 dtype=np.float32)
-        self.action_dim = 2
+        self.action_dim = (2,)
         self.action_space = gym.spaces.Box(
-                low=-1, high=1, shape=(self.action_dim,), 
+                low=-1, high=1, shape=self.action_dim, 
                 dtype=np.float32)
 
         # set up blocking checks

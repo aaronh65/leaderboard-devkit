@@ -6,8 +6,9 @@ from leaderboard.envs.sensor_interface import SensorInterface
 from team_code.common.utils import mkdir_if_not_exists, parse_config
 from team_code.rl.common.null_env import NullEnv
 from team_code.rl.common.viz_utils import draw_text
-from team_code.lbc.carla_project.src.common import CONVERTER, COLOR
+from team_code.rl.common.semantic_utils import CONVERTER, COLOR
 from stable_baselines.sac.policies import MlpPolicy
+from stable_baselines.sac.policies import CnnPolicy
 from stable_baselines import SAC
 
 from carla import VehicleControl
@@ -33,19 +34,26 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
             self.restore()
         else:
             self.episode_num = -1
-            self.obs_dim = self.config.waypoint_state_dim + 4
-            self.action_dim = 2
-            self.model = SAC(MlpPolicy, NullEnv(self.obs_dim, self.action_dim))
+            self.obs_dim = (256,256,3,)
+            #self.obs_dim = (8,)
+            self.action_dim = (2,)
+            print('CREATING MODEL')
+            self.model = SAC(CnnPolicy, NullEnv(self.obs_dim, self.action_dim, odtype=np.uint8, adtype=np.float32), buffer_size=1000, batch_size=16)
+            print('CREATED MODEL')
+            #self.model = SAC(CnnPolicy, NullEnv(self.obs_dim, self.action_dim),
 
         self.save_images = self.config.save_images
         self.save_images_path  = f'{self.save_root}/images/episode_{self.episode_num:06d}'
         self.save_images_interval = 4
 
-        self.cached_state = None
-        self.cached_control = None
-        self.cached_rinfo = 0
-        self.cached_bev = None
         self.step = 0
+        self.cached_map = None
+        self.cached_action = None
+        self.cached_prev_map = None
+        self.cached_prev_action = None
+        self.cached_rinfo = {'reward': 0}
+        self.cached_done = None
+        self.burn_in = False
 
     def restore(self):
         with open(f'{self.save_root}/logs/log.json', 'r') as f:
@@ -66,56 +74,62 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
                     'type': 'sensor.camera.semantic_segmentation',
                     'x': 0.0, 'y': 0.0, 'z': 50.0,
                     'roll': 0.0, 'pitch': -90.0, 'yaw': 0.0,
-                    'width': 384, 'height': 384, 'fov': 5 * 10.0,
+                    'width': 256, 'height': 256, 'fov': 5 * 10.0,
                     'id': 'map'
                     },
-
                 ]
 
     def destroy(self):
         if self.config.mode == 'train':
             self.sensor_interface = SensorInterface()
 
+    def set_burn_in(self, burn_in):
+        self.burn_in = burn_in
+
     def reset(self):
-        self.step = 0
-        self.cached_control = None
-        self.cached_rinfo = 0
+
         self.episode_num += 1
+
+        self.step = 0
+        self.cached_map = None
+        self.cached_action = None
+        self.cached_prev_map = None
+        self.cached_prev_action = None
+        self.cached_rinfo = {'reward': 0}
+        self.cached_done = False
+
         self.save_images_path  = f'{self.save_root}/images/episode_{self.episode_num:06d}'
         if self.config.save_images:
             mkdir_if_not_exists(self.save_images_path)
 
-    def predict(self, state, burn_in=False):
+    def run_step(self, input_data, timestamp):
 
+        # new state
+        state = COLOR[CONVERTER[input_data['map'][1][:,:,2]]]
+        
         # compute controls
-        if burn_in and not RESTORE:
+        if self.burn_in and not RESTORE:
             action = np.random.uniform(-1, 1, size=self.action_dim)
         else:
             action, _states = self.model.predict(state)
-
-        #throttle, steer, brake = action
+        
+        # add PID controller step?
         throttle, steer = action
         throttle = float(throttle/2 + 0.5)
         steer = float(steer)
-        #brake = float(brake/2 + 0.5)
         brake = False
+        control = VehicleControl(throttle, steer, brake)
 
-        self.cached_state = state
-        self.cached_control = VehicleControl(throttle, steer, brake)
-        return action
+        # record things
+        if self.step == 0:
+            self.cached_prev_map = state 
+            self.cached_prev_action = np.zeros(self.action_dim)
+        else:
+            self.cached_prev_map = self.cached_map
+            self.cached_prev_action = self.cached_action
+        self.cached_map = state
+        self.cached_action = action
 
-    def run_step(self, input_data, timestamp):
-        
-        #self.cached_bev = input_data['bev'][1][:,:,:3]
-        self.cached_map = COLOR[CONVERTER[input_data['map'][1][:,:,2]]]
-
-        control = VehicleControl()
-        if self.config.mode == 'train': # use cached training prediction           
-            if self.cached_control:
-                control = self.cached_control
-        else: 
-            # predict the action
-            pass
         self.step += 1 
         return control
 

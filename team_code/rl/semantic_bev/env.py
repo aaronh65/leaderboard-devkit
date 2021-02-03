@@ -18,14 +18,13 @@ class CarlaEnv(BaseEnv):
         # RL params
         self.nstate_waypoints = config.sac.num_state_waypoints
         self.waypoint_state_dim = config.sac.waypoint_state_dim
-        self.obs_dim = self.waypoint_state_dim + 4
+        self.obs_dim = (256,256,3,)
         self.observation_space = gym.spaces.Box(
-                #low=-1, high=1, shape=(6,), 
-                low=-1, high=1, shape=(384,384,3,), 
-                dtype=np.float32)
-        self.action_dim = 2
+                low=-1, high=1, shape=self.obs_dim,
+                dtype=np.uint8)
+        self.action_dim = (2,)
         self.action_space = gym.spaces.Box(
-                low=-1, high=1, shape=(self.action_dim,), 
+                low=-1, high=1, shape=self.action_dim, 
                 dtype=np.float32)
 
         # set up blocking checks
@@ -36,6 +35,8 @@ class CarlaEnv(BaseEnv):
         self.last_waypoint = 0
         max_dist = (4**2 + (self.config.hop_resolution*(self.nstate_waypoints+1))**2)**0.5
         self.obs_norm = np.array([max_dist, 180, 5]) # distance, heading, z
+
+        self.cached_experience = [None, None, None, None, None, {}] 
 
     
     def reset(self, log=None):
@@ -67,33 +68,50 @@ class CarlaEnv(BaseEnv):
 
 
     def step(self, action):
-        # ticks the scenario
+        # ticks the scenario and makes visual with new semantic bev image and cached info
         super().step(action) 
+        self.hero_agent.make_visualization()
 
         # check blocked and timeout
         info = {}
         hero_transform = CarlaDataProvider.get_transform(self.hero_actor)
         blocked_done = self._check_blocked(hero_transform)
-        timeout_done = self.frame >= 6000 # remove?
+        #timeout_done = self.frame >= 6000 # remove?
+        timeout_done = False
 
-        # get target and next observation
+        # get target and compute reward
         target_idx, distance_done = self._get_target(hero_transform) # idxs
         target_waypoint = self.route_waypoints[target_idx]
-        obs = self._get_observation(hero_transform, target_idx)
-        
-        # compute reward and visualize
-        reward_info = self._get_reward(hero_transform, target_waypoint, distance_done or blocked_done)
-        self.hero_agent.cached_rinfo = reward_info
-        self.hero_agent.make_visualization(self.obs_norm)
-
-        draw_waypoints(self.world, [target_waypoint], color=(0,255,0), size=0.5)
-        draw_arrow(self.world, hero_transform.location,
-                target_waypoint.transform.location, color=(255,0,0), size=0.5)
-        
+        reward_info = self._get_reward(
+                hero_transform, 
+                target_waypoint, 
+                distance_done or blocked_done)
 
         criteria = [blocked_done, timeout_done, distance_done]
         done = any(criteria)
         info = {'blocked': blocked_done, 'timeout': timeout_done, 'too_far': distance_done}
+
+        # set up experience from last step
+        if done:
+            obs = self.hero_agent.cached_map
+            action = self.hero_agent.cached_action
+            reward = reward_info['reward']
+            done = done
+            new_obs = obs
+        else:
+            obs = self.hero_agent.cached_prev_map
+            action = self.hero_agent.cached_action
+            reward = self.hero_agent.cached_rinfo['reward']
+            done = self.hero_agent.cached_done
+            new_obs = self.hero_agent.cached_map
+
+        self.exp = [obs, action, reward, new_obs, done, {}]
+
+
+        # update hero cache for next step
+        self.hero_agent.cached_rinfo = reward_info
+        self.hero_agent.cached_done = done
+
         return obs, reward_info['reward'], done, info
 
     def _check_blocked(self, hero_transform):
@@ -113,7 +131,7 @@ class CarlaEnv(BaseEnv):
                     
         return False
 
-    def _get_target(self, hero_transform):
+    def _get_target(self, hero_transform, visualize=False):
 
         winsize = 100
         end_idx = min(self.last_waypoint + winsize, self.route_len)
@@ -167,6 +185,12 @@ class CarlaEnv(BaseEnv):
                 color=(0,0,255), life_time=0.06)
         
         self.env_log['last_waypoint'] = int(self.last_waypoint)
+
+        if visualize:
+            draw_waypoints(self.world, [target], color=(0,255,0), size=0.5)
+            draw_arrow(self.world, hero_transform.location,
+                    target.transform.location, color=(255,0,0), size=0.5)
+
         return target_idx, done
     
     

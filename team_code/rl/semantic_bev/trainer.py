@@ -3,14 +3,14 @@ import yaml, json, pickle
 import argparse
 import traceback
 import numpy as np
-
-from tqdm import tqdm
 from datetime import datetime
+from tqdm import tqdm
+
 from env import CarlaEnv
 from carla import Client
+from agent import WaypointAgent
 
 from team_code.common.utils import dict_to_sns
-from agent import WaypointAgent
 
 RESTORE = int(os.environ.get("RESTORE", 0))
 
@@ -75,16 +75,18 @@ def train(config, agent, env):
 
         # get SAC prediction, step the env
         burn_in = (step - begin_step) < config.sac.burn_timesteps # exploration
-        action = agent.predict(obs, burn_in=burn_in)
-        new_obs, reward, done, info = env.step(action)
+        agent.set_burn_in(burn_in)
+        #action = agent.predict(obs, burn_in=burn_in)
+        new_obs, reward, done, info = env.step(None)
+        action = agent.cached_action
         sac_log['total_steps'] += 1
 
         # store in replay buffer
         rewards.append(reward)
         sac_log['total_reward'] += reward
         if sac_log['total_steps'] > 60: # 3 seconds of warmup time @ 20Hz
-            agent.model.replay_buffer_add(obs, action, reward, new_obs, float(done), {})
-
+            _obs, _action, _reward, _new_obs, _done, _ = env.exp
+            agent.model.replay_buffer_add(_obs, _action, _reward, _new_obs, _done, _)
                 
         # train at this timestep if applicable
         if step % config.sac.train_frequency == 0 and not burn_in:
@@ -171,5 +173,6 @@ def parse_args():
     return args
 
 if __name__ == '__main__':
+    print('entered main')
     args = parse_args()
     main(args)
