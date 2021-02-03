@@ -2,28 +2,18 @@ import signal
 import time, os
 import gym
 import numpy as np
-from collections import deque
 import itertools
+from collections import deque
 
-from env_utils import *
-from reward_utils import *
-from carla import Client
-
-from srunner.scenariomanager.timer import GameTime
+from team_code.rl.common.env_utils import *
+from team_code.rl.common.base_env import BaseEnv
 from srunner.scenariomanager.carla_data_provider import CarlaDataProvider
-from leaderboard.scenarios.scenario_manager import ScenarioManager
-from leaderboard.scenarios.route_scenario import RouteScenario
-from leaderboard.utils.route_indexer import RouteIndexer
 
-class CarlaEnv(gym.Env):
+
+class CarlaEnv(BaseEnv):
 
     def __init__(self, config, client, agent):
-        super(CarlaEnv, self).__init__()
-
-        self.config = config.env
-        self.manager = ScenarioManager(60, False)
-        self.scenario = None
-        self.hero_actor = None
+        super().__init__(config, client, agent)
 
         # RL params
         self.nstate_waypoints = config.sac.num_state_waypoints
@@ -31,120 +21,35 @@ class CarlaEnv(gym.Env):
         self.obs_dim = self.waypoint_state_dim + 4
         self.observation_space = gym.spaces.Box(
                 #low=-1, high=1, shape=(6,), 
-                low=-1, high=1, shape=(self.obs_dim,), 
+                low=-1, high=1, shape=(384,384,3,), 
                 dtype=np.float32)
         self.action_dim = 2
         self.action_space = gym.spaces.Box(
                 low=-1, high=1, shape=(self.action_dim,), 
                 dtype=np.float32)
 
-        self.agent_instance = agent
-        
-        # route indexer
-        data_path = f'{config.project_root}/leaderboard/data'
-        routes = f'{data_path}/{self.config.routes}'
-        scenarios = f'{data_path}/{self.config.scenarios}'
-        self.indexer = RouteIndexer(routes, scenarios, self.config.repetitions)
-        
-        # setup client and data provider
-        self.client = Client('localhost', 2000)
-        self.world = self.client.get_world()
-        self.traffic_manager = self.client.get_trafficmanager(
-                self.config.trafficmanager_port)
-        self.traffic_manager.set_random_device_seed(
-                self.config.trafficmanager_seed)
-
-        CarlaDataProvider.set_client(self.client)
-        CarlaDataProvider.set_world(self.world)
-        CarlaDataProvider.set_traffic_manager_port(
-                self.config.trafficmanager_port)
-
-        signal.signal(signal.SIGINT, self._signal_handler)
-
         # set up blocking checks
         self.last_hero_transforms = deque()
         self.max_positions_len = 60 
         self.blocking_distance = 3.0
-        max_dist = (4**2 + (self.config.hop_resolution*(self.nstate_waypoints+1))**2)**0.5
-        self.obs_norm = np.array([max_dist, 180, 5]) # distance, heading, z
-        self.frame = 0
         self.target_idx = 0
         self.last_waypoint = 0
-        
+        max_dist = (4**2 + (self.config.hop_resolution*(self.nstate_waypoints+1))**2)**0.5
+        self.obs_norm = np.array([max_dist, 180, 5]) # distance, heading, z
 
-    def _signal_handler(self, signum, frame):
-        if self.manager:
-            self.manager.signal_handler(signum, frame)
-        raise KeyboardInterrupt
-
+    
     def reset(self, log=None):
+        super().reset(log)
         
-        # load next RouteScenario
-        num_configs = len(self.indexer._configs_list)
-        rconfig = self.indexer.get(np.random.randint(num_configs)) # change to high loss routes?
-        rconfig.agent = self.agent_instance
-        self._load_world_and_scenario(rconfig)
-        self._get_hero_route()
-
-        self.manager.start_system_time = time.time()
-        self.manager.start_game_time = GameTime.get_time()
-        self.manager._watchdog.start()
-        self.manager._running = True
-
-        self.frame = 0
         self.last_waypoint = 0
         self.last_hero_transforms = deque()
-        self.agent_instance.reset()
+        self._get_hero_route()
 
         if log is not None:
-            self.env_log = {}
-            self.env_log['town'] = rconfig.town
-            self.env_log['name'] = rconfig.name
             self.env_log['total_waypoints'] = len(self.route_waypoints)
             self.env_log['last_waypoint'] = 0
-            log['env'] = self.env_log
 
         return np.zeros(self.obs_dim)
-
-    def _load_world_and_scenario(self, rconfig):
-
-        # setup world and retrieve map
-        self.world = self.client.load_world(rconfig.town)
-        settings = self.world.get_settings()
-        settings.fixed_delta_seconds = 1.0 / 20.0
-        settings.synchronous_mode = True
-        self.world.apply_settings(settings)
-        self.world.reset_all_traffic_lights()
-        self.traffic_manager = self.client.get_trafficmanager(
-                self.config.trafficmanager_port)
-        self.traffic_manager.set_synchronous_mode(True)
-
-        # setup provider and tick to check correctness
-        CarlaDataProvider.set_client(self.client)
-        CarlaDataProvider.set_world(self.world)
-        CarlaDataProvider.set_traffic_manager_port(
-                self.config.trafficmanager_port)
-        self.map = CarlaDataProvider.get_map()
-        
-        if CarlaDataProvider.is_sync_mode():
-            self.world.tick()
-        else:
-            self.world.wait_for_tick()
-        
-        # setup scenario and scenario manager
-        self.scenario = RouteScenario(
-                self.world, rconfig, 
-                criteria_enable=False, 
-                env_config=self.config)
-        self.manager.load_scenario(
-                self.scenario, rconfig.agent,
-                rconfig.repetition_index)
-
-        self.hero_actor = CarlaDataProvider.get_hero_actor()
-        if CarlaDataProvider.is_sync_mode():
-            self.world.tick()
-        else:
-            self.world.wait_for_tick()
 
     def _get_hero_route(self):
 
@@ -161,25 +66,9 @@ class CarlaEnv(gym.Env):
         self.route_len = len(self.route_transforms)
 
 
-    # convert action to vehicle control and tick scenario
     def step(self, action):
-        if self.manager._running:
-            timestamp = None
-            snapshot = self.world.get_snapshot()
-            if snapshot:
-                timestamp = snapshot.timestamp
-            if timestamp:
-                obs, reward, done, info = self._tick(timestamp)
-            self.frame += 1
-            return obs, reward, done, info
-
-        else:
-            raise Exception
-
-    def _tick(self, timestamp):
-
-        # calls the agent's run_step method and advances the sim
-        self.manager._tick_scenario(timestamp)
+        # ticks the scenario
+        super().step(action) 
 
         # check blocked and timeout
         info = {}
@@ -194,8 +83,8 @@ class CarlaEnv(gym.Env):
         
         # compute reward and visualize
         reward_info = self._get_reward(hero_transform, target_waypoint, distance_done or blocked_done)
-        self.agent_instance.cached_rinfo = reward_info
-        self.agent_instance.make_visualization(self.obs_norm)
+        self.hero_agent.cached_rinfo = reward_info
+        self.hero_agent.make_visualization(self.obs_norm)
 
         draw_waypoints(self.world, [target_waypoint], color=(0,255,0), size=0.5)
         draw_arrow(self.world, hero_transform.location,
@@ -330,7 +219,7 @@ class CarlaEnv(gym.Env):
         norm_velocity = norm_velocity / 40 - 1 # squash to -1, 1
 
         # steer
-        norm_steer = self.agent_instance.cached_control.steer # already [-1, 1]
+        norm_steer = self.hero_agent.cached_control.steer # already [-1, 1]
 
         # completion
         completion = self.last_waypoint / self.route_len # fraction in [0, 1]
@@ -408,46 +297,3 @@ class CarlaEnv(gym.Env):
                 'vel_reward': vel_reward,
                 'route_reward': route_reward}
         return reward_info
-        
-    def cleanup(self):
-
-        self.manager.stop_scenario(analyze=False)
-
-        # Simulation still running and in synchronous mode?
-        if self.manager and self.manager.get_running_status() and self.world:
-            # Reset to asynchronous mode
-            settings = self.world.get_settings()
-            settings.synchronous_mode = False
-            settings.fixed_delta_seconds = None
-            self.world.apply_settings(settings)
-            self.traffic_manager.set_synchronous_mode(False)
-
-        if self.manager:
-            self.manager.cleanup()
-
-        CarlaDataProvider.cleanup()
-
-        self.world = None
-        self.map = None
-        self.scenario = None
-        self.traffic_manager = None
-
-        self.hero_actor = None
-
-        if self.agent_instance:
-            # just clears sensor interface for resetting
-            self.agent_instance.destroy() 
-
-    def __del__(self):
-        if hasattr(self, 'manager') and self.manager:
-            del self.manager
-        if hasattr(self, 'world') and self.world:
-            del self.world
-        if hasattr(self, 'scenario') and self.scenario:
-            del self.scenario
-
-    def render(self):
-        pass
-
-    def close(self):
-        pass
