@@ -10,10 +10,11 @@ import torch
 
 from PIL import Image, ImageDraw
 
-from carla_project.src.common import CONVERTER, COLOR
-from carla_project.src.converter import Converter
+from team_code.lbc.carla_project.src.common import CONVERTER, COLOR
+from team_code.lbc.carla_project.src.converter import Converter
 from team_code.lbc.map_agent import MapAgent
 from team_code.lbc.pid_controller import PIDController
+from leaderboard.envs.sensor_interface import SensorInterface
 
 
 #HAS_DISPLAY = True
@@ -87,21 +88,27 @@ class AutoPilot(MapAgent):
         self.save_images_path = pathlib.Path(f'{self.config.save_root}/images/{ROUTE_NAME}')
 
         # if block is untested
-        if self.config.save_data:
+        if self.config.agent.save_data:
             now = datetime.datetime.now()
-            string = pathlib.Path(os.environ['ROUTES']).stem + '_'
-            string += '_'.join(map(lambda x: '%02d' % x, (now.month, now.day, now.hour, now.minute, now.second)))
+            #string = pathlib.Path(os.environ['ROUTES']).stem + '_'
+            #string += '_'.join(map(lambda x: '%02d' % x, (now.month, now.day, now.hour, now.minute, now.second)))
 
-            print(string)
+            #print(string)
 
-            self.save_path = pathlib.Path(self.config.save_root) / 'data'
-            self.save_path.mkdir(exist_ok=False)
+            self.save_path = pathlib.Path(self.config.save_root)
+            #self.save_path.mkdir(exist_ok=True)
 
-            (self.save_path / 'rgb').mkdir()
-            (self.save_path / 'rgb_left').mkdir()
-            (self.save_path / 'rgb_right').mkdir()
             (self.save_path / 'topdown').mkdir()
-            (self.save_path / 'measurements').mkdir()
+            #(self.save_path / 'rgb').mkdir()
+            #(self.save_path / 'rgb_left').mkdir()
+            #(self.save_path / 'rgb_right').mkdir()
+            #(self.save_path / 'measurements').mkdir()
+    
+    def reset(self):
+        pass
+
+    def destroy(self):
+        self.sensor_interface=SensorInterface()
 
     def _init(self):
         super()._init()
@@ -195,25 +202,25 @@ class AutoPilot(MapAgent):
         theta = tick_data['compass']
         speed = tick_data['speed']
 
-        data = {
-                'x': pos[0],
-                'y': pos[1],
-                'theta': theta,
-                'speed': speed,
-                'target_speed': target_speed,
-                'x_command': far_node[0],
-                'y_command': far_node[1],
-                'command': near_command.value,
-                'steer': steer,
-                'throttle': throttle,
-                'brake': brake,
-                }
+        #data = {
+        #        'x': pos[0],
+        #        'y': pos[1],
+        #        'theta': theta,
+        #        'speed': speed,
+        #        'target_speed': target_speed,
+        #        'x_command': far_node[0],
+        #        'y_command': far_node[1],
+        #        'command': near_command.value,
+        #        'steer': steer,
+        #        'throttle': throttle,
+        #        'brake': brake,
+        #        }
 
-        (self.save_path / 'measurements' / ('%04d.json' % frame)).write_text(str(data))
+        #(self.save_path / 'measurements' / ('%04d.json' % frame)).write_text(str(data))
 
-        Image.fromarray(tick_data['rgb']).save(self.save_path / 'rgb' / ('%04d.png' % frame))
-        Image.fromarray(tick_data['rgb_left']).save(self.save_path / 'rgb_left' / ('%04d.png' % frame))
-        Image.fromarray(tick_data['rgb_right']).save(self.save_path / 'rgb_right' / ('%04d.png' % frame))
+        #Image.fromarray(tick_data['rgb']).save(self.save_path / 'rgb' / ('%04d.png' % frame))
+        #Image.fromarray(tick_data['rgb_left']).save(self.save_path / 'rgb_left' / ('%04d.png' % frame))
+        #Image.fromarray(tick_data['rgb_right']).save(self.save_path / 'rgb_right' / ('%04d.png' % frame))
         Image.fromarray(tick_data['topdown']).save(self.save_path / 'topdown' / ('%04d.png' % frame))
 
     def _should_brake(self):

@@ -17,11 +17,8 @@ class BaseAgent(autonomous_agent.AutonomousAgent):
             with open(self.config_path, 'r') as f:
                 config = yaml.load(f, Loader=yaml.Loader)
             self.config = Bunch(config)
-        elif config_type == dict:
-            self.config = Bunch(path_to_conf_file)
-        elif config_type == Bunch:
+        else:
             self.config = path_to_conf_file
-
         self.step = -1
         self.wall_start = time.time()
         self.initialized = False
