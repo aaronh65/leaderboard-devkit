@@ -173,6 +173,5 @@ def parse_args():
     return args
 
 if __name__ == '__main__':
-    print('entered main')
     args = parse_args()
     main(args)

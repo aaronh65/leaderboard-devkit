@@ -88,6 +88,6 @@ os.environ["ROUTE_NAME"] = route_name
 os.environ["REPETITIONS"] = str(args.repetitions)
 os.environ["PRIVILEGED"] = "1" if privileged else "0"
  
-cmd = f'bash sh/run_agent.sh'
+cmd = f'bash run_agent.sh'
 print(f'running {cmd} on {args.split}/{route_name} for {args.repetitions} repetitions')
 os.system(cmd)

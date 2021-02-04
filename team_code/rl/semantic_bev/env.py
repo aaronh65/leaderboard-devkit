@@ -70,7 +70,8 @@ class CarlaEnv(BaseEnv):
     def step(self, action):
         # ticks the scenario and makes visual with new semantic bev image and cached info
         super().step(action) 
-        self.hero_agent.make_visualization()
+        if self.frame > 1:
+            self.hero_agent.make_visualization()
 
         # check blocked and timeout
         info = {}
@@ -100,7 +101,7 @@ class CarlaEnv(BaseEnv):
             new_obs = obs
         else:
             obs = self.hero_agent.cached_prev_map
-            action = self.hero_agent.cached_action
+            action = self.hero_agent.cached_prev_action
             reward = self.hero_agent.cached_rinfo['reward']
             done = self.hero_agent.cached_done
             new_obs = self.hero_agent.cached_map

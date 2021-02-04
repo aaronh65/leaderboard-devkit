@@ -1,4 +1,5 @@
 import os, sys, time
+sys.path.append('..')
 import yaml
 import argparse 
 from datetime import datetime
@@ -85,6 +86,7 @@ else:
             }
 
     sac_config = {
+            'agent': args.agent,
             'mode': 'train',
             'num_state_waypoints': args.num_state_waypoints,
             'waypoint_state_dim': args.waypoint_state_dim,
@@ -119,5 +121,5 @@ os.environ["CARLA_EGG"] = carla_egg
 os.environ["CARLA_API"] = carla_api
 os.environ["RESTORE"] = "1" if restore else "0"
 
-cmd = f'bash sh/rl_trainer.sh {config_path}'
+cmd = f'bash run_rl_trainer.sh {config_path}'
 os.system(cmd)

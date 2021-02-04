@@ -178,7 +178,7 @@ try:
         env["PRIVILEGED"] = "1" if privileged else "0"
 
         # run command
-        cmd = f'bash sh/run_agent.sh &> {save_root}/logs/AGENT_{route_name}.txt'
+        cmd = f'bash run_agent.sh &> {save_root}/logs/AGENT_{route_name}.txt'
         print(f'running {cmd} on {args.split}/{route_name} for {args.repetitions} repetitions')
         lbc_procs.append(subprocess.Popen(cmd, env=env, shell=True))
 
