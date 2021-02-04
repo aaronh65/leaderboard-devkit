@@ -10,7 +10,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--restore_from', type=str, default=None)
 
 # setup
-parser.add_argument('--agent', type=str, default='manual_obs', choices=['manual_obs', 'semantic_bev', 'semantic_enc'])
+parser.add_argument('--agent', type=str, default='manual', choices=['manual_obs', 'semantic_bev', 'semantic_enc'])
 parser.add_argument('--version', type=int, choices=[10,11], default=11)
 parser.add_argument('--split', type=str, default='training', choices=['debug', 'devtest', 'testing', 'training'])
 parser.add_argument('--routenum', type=int)
@@ -44,7 +44,16 @@ if restore:
     project_root = config['project_root']
     save_root = config['save_root']
 else:
-    
+    date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+    suffix = f'debug/{date_str}' if args.debug else f'{date_str}' 
+    save_root = f'/data/leaderboard/results/rl/{args.agent}/{suffix}'
+
+    if args.save_images:
+        mkdir_if_not_exists(f'{save_root}/images')
+    mkdir_if_not_exists(f'{save_root}/weights')
+    mkdir_if_not_exists(f'{save_root}/logs')
+    mkdir_if_not_exists(f'{save_root}/logs/rewards')
+
     # route indexer information
     routes = f'routes_{args.split}'
     if args.routenum:
@@ -62,18 +71,8 @@ else:
         burn_timesteps = 2000
         save_frequency = 1000
 
-    date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-    suffix = f'debug/{date_str}' if args.debug else f'{date_str}' 
-    save_root = f'/data/leaderboard/results/rl/{args.agent}/{suffix}'
-
-    if args.save_images:
-        mkdir_if_not_exists(f'{save_root}/images')
-    mkdir_if_not_exists(f'{save_root}/weights')
-    mkdir_if_not_exists(f'{save_root}/logs')
-    mkdir_if_not_exists(f'{save_root}/logs/rewards')
-
+    
     project_root = '/home/aaron/workspace/carla/leaderboard-devkit'
-
     env_config = {
             'carla_version': carla_root.split('/')[-1],
             'world_port': 2000,
@@ -122,5 +121,5 @@ os.environ["CARLA_EGG"] = carla_egg
 os.environ["CARLA_API"] = carla_api
 os.environ["RESTORE"] = "1" if restore else "0"
 
-cmd = f'bash run_leaderboard_trainer.sh {config_path}'
+cmd = f'bash run_rl_trainer.sh {config_path}'
 os.system(cmd)

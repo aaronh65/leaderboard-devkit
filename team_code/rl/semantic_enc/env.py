@@ -70,8 +70,6 @@ class CarlaEnv(BaseEnv):
     def step(self, action):
         # ticks the scenario and makes visual with new semantic bev image and cached info
         super().step(action) 
-        if self.frame > 1:
-            self.hero_agent.make_visualization()
 
         # check blocked and timeout
         info = {}
@@ -107,7 +105,6 @@ class CarlaEnv(BaseEnv):
             new_obs = self.hero_agent.cached_map
 
         self.exp = [obs, action, reward, new_obs, done, {}]
-
 
         # update hero cache for next step
         self.hero_agent.cached_rinfo = reward_info
@@ -199,17 +196,12 @@ class CarlaEnv(BaseEnv):
         target = waypoint_to_vector(target_waypoint)
 
         # distance reward
-        #dist_max = (4**2 + self.config.hop_resolution**2)**0.5
-        #dist = min(np.linalg.norm(hero[:3] - target[:3]), dist_max)
-        #dist_reward = (dist/dist_max - 1)**2 - 1
-        #dist_reward = 0 - min(dist/dist_max, 1)
         lat_max = 4
         tgt2hero = hero[:3] - target[:3]
         R_world2tgt = np.array(target_waypoint.transform.get_inverse_matrix())[:3,:3]
         tgt2hero = np.matmul(R_world2tgt, tgt2hero).flatten()
         long_dist, lat_dist = np.abs(tgt2hero[:2])
         dist_reward = 0 - min(lat_dist/lat_max, 1)
-
 
         # rotation reward
         yaw_diff = (hero[4]-target[4]) % 360
