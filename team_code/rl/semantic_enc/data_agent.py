@@ -17,8 +17,8 @@ from team_code.lbc.pid_controller import PIDController
 from leaderboard.envs.sensor_interface import SensorInterface
 
 
-#HAS_DISPLAY = True
-HAS_DISPLAY = int(os.environ.get('HAS_DISPLAY', 0))
+HAS_DISPLAY = True
+#HAS_DISPLAY = int(os.environ.get('HAS_DISPLAY', 0))
 ROUTE_NAME = os.environ.get('ROUTE_NAME', 0)
 DEBUG = False
 WEATHERS = [
@@ -190,7 +190,9 @@ class AutoPilot(MapAgent):
 
                     
         if HAS_DISPLAY:
-            cv2.imshow('map', cv2.cvtColor(np.array(_combined), cv2.COLOR_BGR2RGB))
+            img = input_data['map'][1][:,:,2]
+            img = COLOR[CONVERTER[img]]
+            cv2.imshow('map', cv2.cvtColor(np.array(img), cv2.COLOR_BGR2RGB))
             cv2.waitKey(1)
 
         return control
