@@ -20,6 +20,7 @@ parser.add_argument('--empty', action='store_true')
 parser.add_argument('--hop_resolution', type=float, default=2)
 parser.add_argument('--num_state_waypoints', type=int, default=5)
 parser.add_argument('--waypoint_state_dim', type=int, default=3)
+parser.add_argument('--bev_size', type=int, default=360)
 
 # logging
 parser.add_argument('-d', '--desc', type=str, default='no description')
@@ -88,6 +89,7 @@ else:
 
     sac_config = {
             'agent': args.agent,
+            'bev_size': args.bev_size,
             'mode': 'train',
             'num_state_waypoints': args.num_state_waypoints,
             'waypoint_state_dim': args.waypoint_state_dim,
