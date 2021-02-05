@@ -35,6 +35,7 @@ def main(args):
             if done:
                 env.cleanup()
                 env.reset()
+
             if step % 100 == 0:
                 perturb_transform(env.hero_actor)
 

@@ -12,10 +12,10 @@ from PIL import Image, ImageDraw
 
 from team_code.rl.common.semantic_utils import CONVERTER, COLOR
 from team_code.lbc.carla_project.src.converter import Converter
+from team_code.lbc.carla_project.src.dataset import preprocess_semantic
 from team_code.lbc.map_agent import MapAgent
 from team_code.lbc.pid_controller import PIDController
 from leaderboard.envs.sensor_interface import SensorInterface
-
 
 HAS_DISPLAY = True
 #HAS_DISPLAY = int(os.environ.get('HAS_DISPLAY', 0))
@@ -117,7 +117,7 @@ class AutoPilot(MapAgent):
 
 
     def reset(self):
-        pass
+        self._init()
 
     def destroy(self):
         self.sensor_interface = SensorInterface()
@@ -182,7 +182,6 @@ class AutoPilot(MapAgent):
         data = self.tick(input_data, no_rgb=True)
         gps = self._get_position(data)
 
-
         wpt_route = self._waypoint_planner.run_step(gps)
         cmd_route = self._command_planner.run_step(gps)
         cmd_nodes = np.array([node for node, _ in cmd_route])
@@ -202,9 +201,8 @@ class AutoPilot(MapAgent):
 
                     
         if HAS_DISPLAY:
-            img = input_data['map'][1][:,:,2]
-            img = COLOR[CONVERTER[img]]
-            cv2.imshow('map', cv2.cvtColor(np.array(img), cv2.COLOR_BGR2RGB))
+            topdown = COLOR[CONVERTER[data['topdown']]]
+            cv2.imshow('topdown', topdown)
             cv2.waitKey(1)
 
         return control

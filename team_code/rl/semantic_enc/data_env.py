@@ -15,14 +15,6 @@ class CarlaEnv(BaseEnv):
     def __init__(self, config, client, agent):
         super().__init__(config, client, agent)
 
-        # RL params
-        #self.obs_dim = (256,256,3,) #self.observation_space = gym.spaces.Box( #        low=-1, high=1, shape=self.obs_dim,
-        #        dtype=np.uint8)
-        #self.action_dim = (2,)
-        #self.action_space = gym.spaces.Box(
-        #        low=-1, high=1, shape=self.action_dim, 
-        #        dtype=np.float32)
-
         # set up blocking checks
         self.last_hero_transforms = deque()
         self.max_positions_len = 60 
@@ -37,10 +29,6 @@ class CarlaEnv(BaseEnv):
         self.last_waypoint = 0
         self.last_hero_transforms = deque()
         self._get_hero_route()
-
-        #if log is not None:
-        #    self.env_log['total_waypoints'] = len(self.route_waypoints)
-        #    self.env_log['last_waypoint'] = 0
 
         return []
 
@@ -66,7 +54,8 @@ class CarlaEnv(BaseEnv):
         # check blocked and timeout
         info = {}
         hero_transform = CarlaDataProvider.get_transform(self.hero_actor)
-        blocked_done = self._check_blocked(hero_transform)
+        #blocked_done = self._check_blocked(hero_transform)
+        blocked_done = False
         timeout_done = False
 
         # get target and compute reward
@@ -145,13 +134,15 @@ class CarlaEnv(BaseEnv):
         done = lat_dist > 4 # 3/2 lane widths away from the center
 
         # visualize
-        start_draw = max(0, target_idx-25)
-        end_draw = min(self.route_len, target_idx+25)
+        start = max(0, target_idx-25)
+        midleft = max(target_idx-1, 0)
+        midright = min(target_idx+1, self.route_len)
+        end = min(self.route_len, target_idx+25)
         draw_waypoints(
-                self.world, self.route_waypoints[start_draw:target_idx], 
+                self.world, self.route_waypoints[start:midleft], 
                 color=(0,0,255), life_time=0.06, z=10)
         draw_waypoints(
-                self.world, self.route_waypoints[target_idx+1:end_draw], 
+                self.world, self.route_waypoints[midright:end], 
                 color=(0,0,255), life_time=0.06, z=10)
 
         
