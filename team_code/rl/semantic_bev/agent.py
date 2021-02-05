@@ -38,10 +38,12 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
             self.restore()
         else:
             self.episode_num = -1
+            nenv = NullEnv(self.obs_dim, self.action_dim, odtype=np.uint8, adtype=np.float32) 
+            nenv.create_obs_space('box', low=0, high=255, dim=self.obs_dim, dtype=np.uint8)
             print('CREATING MODEL')
             self.model = SAC(
                     CnnPolicy, 
-                    NullEnv(self.obs_dim, self.action_dim, odtype=np.uint8, adtype=np.float32), 
+                    nenv,
                     buffer_size=1000, 
                     batch_size=16)
             print('CREATED MODEL')
@@ -132,11 +134,11 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
         return control
 
     def make_visualization(self):
-        smap = np.array(COLOR[CONVERTER[self.cached_maps[0]]])
-        prev_smap = np.array(COLOR[CONVERTER[self.cached_maps[1]]])
+        #smap = np.array(COLOR[CONVERTER[self.cached_maps[0]]])
+        #prev_smap = np.array(COLOR[CONVERTER[self.cached_maps[1]]])
         #combined = np.hstack([prev_smap, smap])
-        #combined = prev_smap
-        combined = np.hstack(islice(self.cached_maps, 0, self.config.history_size+1))
+        combined = self.cached_maps[1]
+        #combined = np.hstack(islice(self.cached_maps, 0, self.config.history_size+1))
         combined = COLOR[CONVERTER[combined]]
 
         throttle, steer = self.cached_prev_action

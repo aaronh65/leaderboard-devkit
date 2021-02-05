@@ -22,7 +22,7 @@ class CarlaEnv(BaseEnv):
         self.history_size = config.sac.history_size
         self.obs_dim = (config.sac.bev_size, config.sac.bev_size, self.history_size,)
         self.observation_space = gym.spaces.Box(
-                low=-1, high=1, shape=self.obs_dim,
+                low=0, high=255, shape=self.obs_dim,
                 dtype=np.uint8)
         self.action_dim = (2,)
         self.action_space = gym.spaces.Box(
@@ -96,18 +96,12 @@ class CarlaEnv(BaseEnv):
 
         # set up experience from last step
         maps = self.hero_agent.cached_maps
-        if done:
-            obs = np.stack(islice(maps, 0, 5), axis=2)
-            action = self.hero_agent.cached_action
-            reward = reward_info['reward']
-            done = done
-            new_obs = obs
-        else:
-            obs = np.stack(islice(maps, 0, self.history_size), axis=2)
-            action = self.hero_agent.cached_prev_action
-            reward = self.hero_agent.cached_rinfo['reward']
-            done = self.hero_agent.cached_done
-            new_obs = np.stack(islice(maps, 1, self.history_size+1), axis=2)
+
+        obs = np.stack(islice(maps, 1, self.history_size + 1), axis=2)
+        action = self.hero_agent.cached_action
+        reward = reward_info['reward']
+        new_obs = np.stack(islice(maps, 0, self.history_size), axis=2)
+        done = done or self.hero_agent.cached_done
 
         self.exp = [obs, action, reward, new_obs, done, {}]
 
