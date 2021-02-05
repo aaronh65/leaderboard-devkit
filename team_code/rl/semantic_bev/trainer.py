@@ -1,5 +1,5 @@
 import os, sys, time, signal
-import yaml, json, pickle
+import yaml, json #, pickle
 import argparse
 import traceback
 import numpy as np
@@ -109,7 +109,7 @@ def train(config, agent, env):
 
                 if config.sac.verbose and step % config.sac.log_frequency == 0:
                     write_str = f'\nstep {step}\npolicy_loss = {policy_loss:.3f}\nvalue_loss = {value_loss:.3f}\nentropy = {entropy:.3f}'
-                    tqdm.write(write_str)
+                    #tqdm.write(write_str)
 
         # save model if applicable
         if step % config.sac.save_frequency == 0 and not burn_in:
@@ -117,7 +117,7 @@ def train(config, agent, env):
             agent.model.save(weights_path)
 
         if done:
-            tqdm.write(str(info))
+            #tqdm.write(str(info))
             # record then reset metrics
             episode_steps = sac_log['total_steps']
             sac_log['mean_policy_loss'] /= episode_steps
@@ -129,8 +129,8 @@ def train(config, agent, env):
                 json.dump(log, f, indent=4, sort_keys=False)
             with open(f'{config.save_root}/logs/rewards/{episode_idx:06d}.npy', 'wb') as f:
                 np.save(f, rewards)
-            with open(f'{config.save_root}/logs/replay_buffer.pkl', 'wb') as f:
-                pickle.dump(agent.model.replay_buffer, f)
+            #with open(f'{config.save_root}/logs/replay_buffer.pkl', 'wb') as f:
+            #    pickle.dump(agent.model.replay_buffer, f)
 
             # cleanup and reset
             env.cleanup()

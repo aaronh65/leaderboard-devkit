@@ -30,20 +30,21 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
         self.config = config.sac
         self.save_root = config.save_root
         self.track = autonomous_agent.Track.SENSORS
+        
         self.obs_dim = (self.config.bev_size,self.config.bev_size,self.config.history_size,)
-        self.action_dim = (2,)
+        self.act_dim = (2,)
 
         # setup model and episode counter
         if RESTORE:
             self.restore()
         else:
             self.episode_num = -1
-            nenv = NullEnv(self.obs_dim, self.action_dim, odtype=np.uint8, adtype=np.float32) 
-            nenv.create_obs_space('box', low=0, high=255, dim=self.obs_dim, dtype=np.uint8)
             print('CREATING MODEL')
+            obs_spec = ('box', 0, 255, self.obs_dim, np.uint8)
+            act_spec = ('box', -1, 1, self.act_dim, np.float32)
             self.model = SAC(
                     CnnPolicy, 
-                    nenv,
+                    NullEnv(obs_spec, act_spec),
                     buffer_size=1000, 
                     batch_size=16)
             print('CREATED MODEL')
@@ -64,8 +65,9 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
         weight_path = f'{self.save_root}/weights/{weight_names[-1]}'
         self.model = SAC.load(weight_path)
 
-        with open(f'{self.save_root}/logs/replay_buffer.pkl', 'rb') as f:
-            self.model.replay_buffer = pickle.load(f)
+        #print(f'{self.save_root}/logs/replay_buffer.pkl')
+        #with open(f'{self.save_root}/logs/replay_buffer.pkl', 'rb') as f:
+        #    self.model.replay_buffer = pickle.load(f)
 
     def sensors(self):
         return [
@@ -91,8 +93,8 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
 
         self.step = 0
         self.cached_maps = deque()
-        self.cached_action = np.zeros(self.action_dim)
-        self.cached_prev_action = np.zeros(self.action_dim)
+        self.cached_action = np.zeros(self.act_dim)
+        self.cached_prev_action = np.zeros(self.act_dim)
         self.cached_rinfo = {'reward': -10}
         self.cached_done = False
 
@@ -114,7 +116,7 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
         
         # compute controls
         if self.burn_in and not RESTORE:
-            action = np.random.uniform(-1, 1, size=self.action_dim)
+            action = np.random.uniform(-1, 1, size=self.act_dim)
         else:
             obs = np.stack(islice(self.cached_maps, 0, self.config.history_size), axis=2)
             action, _states = self.model.predict(obs)

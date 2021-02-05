@@ -45,8 +45,9 @@ if restore:
         config = yaml.load(f, Loader=yaml.Loader)
     project_root = config['project_root']
     save_root = config['save_root']
+    agent = config['sac']['agent']
 else:
-    
+    agent = args.agent
     # route indexer information
     routes = f'routes_{args.split}'
     if args.routenum:
@@ -119,7 +120,7 @@ else:
         yaml.dump(config, f, default_flow_style=False, sort_keys=False)
 
 os.environ["CONDA_ENV"] = 'lbrl'
-os.environ["AGENT"] = args.agent
+os.environ["AGENT"] = agent
 os.environ["PROJECT_ROOT"] = project_root
 os.environ["SAVE_ROOT"] = save_root
 os.environ["CARLA_EGG"] = carla_egg
