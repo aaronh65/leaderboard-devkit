@@ -86,8 +86,6 @@ def train(config, agent, env):
         sac_log['total_reward'] += reward
         if sac_log['total_steps'] > 60: # 3 seconds of warmup time @ 20Hz
             _obs, _action, _reward, _new_obs, _done, _ = env.exp
-            diff = np.sum(_new_obs - _obs)
-            #tqdm.write(f'{diff}')
             agent.model.replay_buffer_add(_obs, _action, _reward, _new_obs, _done, _)
                 
         # train at this timestep if applicable
@@ -119,6 +117,7 @@ def train(config, agent, env):
             agent.model.save(weights_path)
 
         if done:
+            tqdm.write(str(info))
             # record then reset metrics
             episode_steps = sac_log['total_steps']
             sac_log['mean_policy_loss'] /= episode_steps

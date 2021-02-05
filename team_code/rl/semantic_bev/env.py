@@ -4,6 +4,7 @@ import gym
 import numpy as np
 import itertools
 from collections import deque
+from itertools import islice
 
 from team_code.rl.common.env_utils import *
 from team_code.rl.common.base_env import BaseEnv
@@ -18,7 +19,8 @@ class CarlaEnv(BaseEnv):
         # RL params
         self.nstate_waypoints = config.sac.num_state_waypoints
         self.waypoint_state_dim = config.sac.waypoint_state_dim
-        self.obs_dim = (config.sac.bev_size, config.sac.bev_size, 1,)
+        self.history_size = config.sac.history_size
+        self.obs_dim = (config.sac.bev_size, config.sac.bev_size, self.history_size,)
         self.observation_space = gym.spaces.Box(
                 low=-1, high=1, shape=self.obs_dim,
                 dtype=np.uint8)
@@ -93,27 +95,27 @@ class CarlaEnv(BaseEnv):
         info = {'blocked': blocked_done, 'timeout': timeout_done, 'too_far': distance_done}
 
         # set up experience from last step
+        maps = self.hero_agent.cached_maps
         if done:
-            obs = self.hero_agent.cached_map
+            obs = np.stack(islice(maps, 0, 5), axis=2)
             action = self.hero_agent.cached_action
             reward = reward_info['reward']
             done = done
             new_obs = obs
         else:
-            obs = self.hero_agent.cached_prev_map
+            obs = np.stack(islice(maps, 0, self.history_size), axis=2)
             action = self.hero_agent.cached_prev_action
             reward = self.hero_agent.cached_rinfo['reward']
             done = self.hero_agent.cached_done
-            new_obs = self.hero_agent.cached_map
+            new_obs = np.stack(islice(maps, 1, self.history_size+1), axis=2)
 
         self.exp = [obs, action, reward, new_obs, done, {}]
-
 
         # update hero cache for next step
         self.hero_agent.cached_rinfo = reward_info
         self.hero_agent.cached_done = done
 
-        return obs, reward_info['reward'], done, info
+        return new_obs, reward, done, info
 
     def _check_blocked(self, hero_transform):
 

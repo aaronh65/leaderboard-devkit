@@ -1,4 +1,6 @@
 import os, yaml, json, pickle
+from collections import deque
+from itertools import islice
 
 from leaderboard.autoagents import autonomous_agent
 from leaderboard.envs.sensor_interface import SensorInterface
@@ -7,7 +9,7 @@ from team_code.common.utils import mkdir_if_not_exists, parse_config
 from team_code.rl.common.null_env import NullEnv
 from team_code.rl.common.viz_utils import draw_text
 from team_code.rl.common.semantic_utils import CONVERTER, COLOR
-from stable_baselines.sac.policies import MlpPolicy
+#from stable_baselines.sac.policies import MlpPolicy
 from stable_baselines.sac.policies import CnnPolicy
 from stable_baselines import SAC
 
@@ -28,7 +30,7 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
         self.config = config.sac
         self.save_root = config.save_root
         self.track = autonomous_agent.Track.SENSORS
-        self.obs_dim = (self.config.bev_size,self.config.bev_size,1,)
+        self.obs_dim = (self.config.bev_size,self.config.bev_size,self.config.history_size,)
         self.action_dim = (2,)
 
         # setup model and episode counter
@@ -86,9 +88,8 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
         self.episode_num += 1
 
         self.step = 0
-        self.cached_map = np.zeros(self.obs_dim)
+        self.cached_maps = deque()
         self.cached_action = np.zeros(self.action_dim)
-        self.cached_prev_map = np.zeros(self.obs_dim)
         self.cached_prev_action = np.zeros(self.action_dim)
         self.cached_rinfo = {'reward': -10}
         self.cached_done = False
@@ -101,13 +102,20 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
 
         # new state
         #$state = COLOR[CONVERTER[input_data['map'][1][:,:,2]]]
-        state = np.expand_dims(input_data['map'][1][:,:,2], 2)
+        state = input_data['map'][1][:,:,2]
+        if self.step == 0:
+            for _ in range(self.config.history_size+1):
+                self.cached_maps.append(state)
+        else:
+            self.cached_maps.pop()
+            self.cached_maps.appendleft(state)
         
         # compute controls
         if self.burn_in and not RESTORE:
             action = np.random.uniform(-1, 1, size=self.action_dim)
         else:
-            action, _states = self.model.predict(state)
+            obs = np.stack(islice(self.cached_maps, 0, self.config.history_size), axis=2)
+            action, _states = self.model.predict(obs)
         
         # add PID controller step?
         throttle, steer = action
@@ -117,19 +125,19 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
         control = VehicleControl(throttle, steer, brake)
 
         # record things
-        self.cached_prev_map = self.cached_map.copy()
-        self.cached_prev_action = self.cached_action.copy()
-        self.cached_map = state
         self.cached_action = action
+        self.cached_prev_action = self.cached_action.copy()
 
         self.step += 1 
         return control
 
     def make_visualization(self):
-        smap = np.array(COLOR[CONVERTER[np.squeeze(self.cached_map)]])
-        prev_smap = np.array(COLOR[CONVERTER[np.squeeze(self.cached_prev_map)]])
+        smap = np.array(COLOR[CONVERTER[self.cached_maps[0]]])
+        prev_smap = np.array(COLOR[CONVERTER[self.cached_maps[1]]])
         #combined = np.hstack([prev_smap, smap])
-        combined = prev_smap
+        #combined = prev_smap
+        combined = np.hstack(islice(self.cached_maps, 0, self.config.history_size+1))
+        combined = COLOR[CONVERTER[combined]]
 
         throttle, steer = self.cached_prev_action
         throttle = float(throttle/2 + 0.5)
