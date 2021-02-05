@@ -18,7 +18,7 @@ class CarlaEnv(BaseEnv):
         # RL params
         self.nstate_waypoints = config.sac.num_state_waypoints
         self.waypoint_state_dim = config.sac.waypoint_state_dim
-        self.obs_dim = (256,256,3,)
+        self.obs_dim = (config.sac.bev_size, config.sac.bev_size, 1,)
         self.observation_space = gym.spaces.Box(
                 low=-1, high=1, shape=self.obs_dim,
                 dtype=np.uint8)
@@ -179,11 +179,12 @@ class CarlaEnv(BaseEnv):
         done = lat_dist > 4 # 3/2 lane widths away from the center
 
         # visualize
-        start_draw = max(0, target_idx-25)
-        end_draw = min(self.route_len, target_idx+25)
-        draw_waypoints(
-                self.world, self.route_waypoints[start_draw:end_draw], 
-                color=(0,0,255), life_time=0.06)
+        draw_hero_route(self.world, self.route_waypoints, self.route_len, target_idx)
+        #start_draw = max(0, target_idx-25)
+        #end_draw = min(self.route_len, target_idx+25)
+        #draw_waypoints(
+        #        self.world, self.route_waypoints[start_draw:end_draw], 
+        #        color=(0,0,255), life_time=0.06)
         
         self.env_log['last_waypoint'] = int(self.last_waypoint)
 

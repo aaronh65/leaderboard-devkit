@@ -134,16 +134,17 @@ class CarlaEnv(BaseEnv):
         done = lat_dist > 4 # 3/2 lane widths away from the center
 
         # visualize
-        start = max(0, target_idx-25)
-        midleft = max(target_idx-1, 0)
-        midright = min(target_idx+1, self.route_len)
-        end = min(self.route_len, target_idx+25)
-        draw_waypoints(
-                self.world, self.route_waypoints[start:midleft], 
-                color=(0,0,255), life_time=0.06, z=10)
-        draw_waypoints(
-                self.world, self.route_waypoints[midright:end], 
-                color=(0,0,255), life_time=0.06, z=10)
+        draw_hero_route(self.world, self.route_waypoints, self.route_len, target_idx)
+        #start = max(0, target_idx-25)
+        #midleft = max(target_idx-1, 0)
+        #midright = min(target_idx+1, self.route_len)
+        #end = min(self.route_len, target_idx+25)
+        #draw_waypoints(
+        #        self.world, self.route_waypoints[start:midleft], 
+        #        color=(0,0,255), life_time=0.06, z=10)
+        #draw_waypoints(
+        #        self.world, self.route_waypoints[midright:end], 
+        #        color=(0,0,255), life_time=0.06, z=10)
 
         
         #self.env_log['last_waypoint'] = int(self.last_waypoint)

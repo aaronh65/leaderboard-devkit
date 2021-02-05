@@ -86,3 +86,16 @@ def draw_arrow(world, loc1, loc2, color=(255,0,0), z=0.5, life_time=0.06, size=0
     ccolor = carla.Color(r,g,b)
     world.debug.draw_arrow(loc1, loc2, arrow_size=size, life_time=life_time, color=ccolor, thickness=size)
 
+def draw_hero_route(world, route_waypoints, route_len, target_idx):
+    start = max(0, target_idx-25)
+    midleft = max(target_idx-1, 0)
+    midright = min(target_idx+1, route_len)
+    end = min(route_len, target_idx+25)
+    draw_waypoints(
+            world, route_waypoints[start:midleft], 
+            color=(0,0,255), life_time=0.06, z=3)
+    draw_waypoints(
+            world, route_waypoints[midright:end], 
+            color=(0,0,255), life_time=0.06, z=3)
+
+

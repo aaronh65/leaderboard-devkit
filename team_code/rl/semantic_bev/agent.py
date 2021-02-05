@@ -28,7 +28,7 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
         self.config = config.sac
         self.save_root = config.save_root
         self.track = autonomous_agent.Track.SENSORS
-        self.obs_dim = (256,256,3,)
+        self.obs_dim = (self.config.bev_size,self.config.bev_size,1,)
         self.action_dim = (2,)
 
         # setup model and episode counter
@@ -37,7 +37,11 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
         else:
             self.episode_num = -1
             print('CREATING MODEL')
-            self.model = SAC(CnnPolicy, NullEnv(self.obs_dim, self.action_dim, odtype=np.uint8, adtype=np.float32), buffer_size=1000, batch_size=16)
+            self.model = SAC(
+                    CnnPolicy, 
+                    NullEnv(self.obs_dim, self.action_dim, odtype=np.uint8, adtype=np.float32), 
+                    buffer_size=1000, 
+                    batch_size=16)
             print('CREATED MODEL')
 
         self.save_images = self.config.save_images
@@ -63,9 +67,9 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
         return [
                     {
                     'type': 'sensor.camera.semantic_segmentation',
-                    'x': 0.0, 'y': 0.0, 'z': 50.0,
+                    'x': 0.0, 'y': 0.0, 'z': 100.0,
                     'roll': 0.0, 'pitch': -90.0, 'yaw': 0.0,
-                    'width': 256, 'height': 256, 'fov': 5 * 10.0,
+                    'width': self.config.bev_size, 'height': self.config.bev_size, 'fov': 5 * 10.0,
                     'id': 'map'
                     },
                 ]
@@ -96,7 +100,8 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
     def run_step(self, input_data, timestamp):
 
         # new state
-        state = COLOR[CONVERTER[input_data['map'][1][:,:,2]]]
+        #$state = COLOR[CONVERTER[input_data['map'][1][:,:,2]]]
+        state = np.expand_dims(input_data['map'][1][:,:,2], 2)
         
         # compute controls
         if self.burn_in and not RESTORE:
@@ -121,8 +126,8 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
         return control
 
     def make_visualization(self):
-        smap = np.array(self.cached_map)
-        prev_smap = np.array(self.cached_prev_map)
+        smap = np.array(COLOR[CONVERTER[np.squeeze(self.cached_map)]])
+        prev_smap = np.array(COLOR[CONVERTER[np.squeeze(self.cached_prev_map)]])
         #combined = np.hstack([prev_smap, smap])
         combined = prev_smap
 
