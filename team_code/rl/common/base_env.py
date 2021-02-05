@@ -119,7 +119,8 @@ class BaseEnv(gym.Env):
             if timestamp:
                 self.manager._tick_scenario(timestamp)
             self.frame += 1
-            return [], 0, True, {}
+            done = not self.manager._running
+            return [], 0, done, {}
         else:
             raise Exception
 

@@ -39,14 +39,14 @@ class MapAgent(BaseAgent):
 
         self._traffic_lights = list()
 
-    def tick(self, input_data):
+    def tick(self, input_data, no_rgb=False):
         self._actors = self._world.get_actors()
         self._traffic_lights = get_nearby_lights(self._vehicle, self._actors.filter('*traffic_light*'))
 
         topdown = input_data['map'][1][:, :, 2]
         topdown = draw_traffic_lights(topdown, self._vehicle, self._traffic_lights)
 
-        result = super().tick(input_data)
+        result = super().tick(input_data, no_rgb=no_rgb)
         result['topdown'] = topdown
 
         return result

@@ -1,16 +1,17 @@
 import argparse, traceback
-import yaml
+import yaml, tqdm
 
 from carla import Client
 from data_agent import AutoPilot
-from team_code.rl.common.base_env import BaseEnv
+from data_env import CarlaEnv
 from team_code.common.utils import dict_to_sns
-from tqdm import tqdm
 from team_code.rl.common.env_utils import *
 
+from srunner.scenariomanager.carla_data_provider import CarlaDataProvider
+
 def perturb_transform(actor):
-    dyaw = np.random.randint(30) - 15
-    dx, dy = np.random.randint(2, size=2) - 1
+    dyaw = np.random.randint(90) - 45
+    dx, dy = np.random.randint(3, size=2) - 1.5
     transform = actor.get_transform()
     perturbed = add_transform(transform, dx=dx, dy=dy, dyaw=dyaw)
     actor.set_transform(perturbed)
@@ -26,12 +27,15 @@ def main(args):
 
     try:
         agent = AutoPilot(config)
-        env = BaseEnv(config, client, agent)
+        env = CarlaEnv(config, client, agent)
         env.reset()
-        for step in tqdm(range(config.env.num_steps)):
-            env.step(None)
+        for step in tqdm.tqdm(range(config.env.num_steps)):
+            _, _, done, _ = env.step(None)
 
-            if step % 10 == 0:
+            if done:
+                env.cleanup()
+                env.reset()
+            if step % 100 == 0:
                 perturb_transform(env.hero_actor)
 
     except KeyboardInterrupt:

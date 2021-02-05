@@ -6,7 +6,7 @@ from leaderboard.envs.sensor_interface import SensorInterface
 from team_code.common.utils import mkdir_if_not_exists, parse_config
 from team_code.rl.common.null_env import NullEnv
 from team_code.rl.common.viz_utils import draw_text
-from team_code.lbc.carla_project.src.common import CONVERTER, COLOR
+from team_code.rl.common.semantic_utils import CONVERTER, COLOR
 from stable_baselines.sac.policies import MlpPolicy
 from stable_baselines import SAC
 

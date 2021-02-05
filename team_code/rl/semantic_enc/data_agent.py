@@ -10,7 +10,7 @@ import torch
 
 from PIL import Image, ImageDraw
 
-from team_code.lbc.carla_project.src.common import CONVERTER, COLOR
+from team_code.rl.common.semantic_utils import CONVERTER, COLOR
 from team_code.lbc.carla_project.src.converter import Converter
 from team_code.lbc.map_agent import MapAgent
 from team_code.lbc.pid_controller import PIDController
@@ -83,6 +83,7 @@ class AutoPilot(MapAgent):
     def setup(self, path_to_conf_file):
         super().setup(path_to_conf_file)
 
+
         self.save_path = None
         self.converter = Converter()
         self.save_images_path = pathlib.Path(f'{self.config.save_root}/images/{ROUTE_NAME}')
@@ -104,11 +105,22 @@ class AutoPilot(MapAgent):
             #(self.save_path / 'rgb_right').mkdir()
             #(self.save_path / 'measurements').mkdir()
     
+    def sensors(self):
+        result = super().sensors()
+        result = result[3:] # no rgb cameras
+        spec = result[-1] # change semseg camera
+        spec['width'] = 512
+        spec['height'] = 512
+        spec['z'] = 100
+        result[-1] = spec
+        return result
+
+
     def reset(self):
         pass
 
     def destroy(self):
-        self.sensor_interface=SensorInterface()
+        self.sensor_interface = SensorInterface()
 
     def _init(self):
         super()._init()
@@ -167,7 +179,7 @@ class AutoPilot(MapAgent):
             index = (self.step // 100) % len(WEATHERS)
             self._world.set_weather(WEATHERS[index])
 
-        data = self.tick(input_data)
+        data = self.tick(input_data, no_rgb=True)
         gps = self._get_position(data)
 
 

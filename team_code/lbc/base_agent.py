@@ -78,12 +78,18 @@ class BaseAgent(autonomous_agent.AutonomousAgent):
                     }
                 ]
 
-    def tick(self, input_data):
+    def tick(self, input_data, no_rgb=False):
         self.step += 1
 
-        rgb = cv2.cvtColor(input_data['rgb'][1][:, :, :3], cv2.COLOR_BGR2RGB)
-        rgb_left = cv2.cvtColor(input_data['rgb_left'][1][:, :, :3], cv2.COLOR_BGR2RGB)
-        rgb_right = cv2.cvtColor(input_data['rgb_right'][1][:, :, :3], cv2.COLOR_BGR2RGB)
+        if not no_rgb:
+            rgb = cv2.cvtColor(input_data['rgb'][1][:, :, :3], cv2.COLOR_BGR2RGB)
+            rgb_left = cv2.cvtColor(input_data['rgb_left'][1][:, :, :3], cv2.COLOR_BGR2RGB)
+            rgb_right = cv2.cvtColor(input_data['rgb_right'][1][:, :, :3], cv2.COLOR_BGR2RGB)
+        else:
+            rgb = None
+            rgb_left = None
+            rgb_right = None
+
         gps = input_data['gps'][1][:2]
         speed = input_data['speed'][1]['speed']
         compass = input_data['imu'][1][-1]
