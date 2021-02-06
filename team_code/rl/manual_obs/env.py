@@ -34,7 +34,7 @@ class CarlaEnv(BaseEnv):
         self.target_idx = 0
         self.last_waypoint = 0
         max_dist = (4**2 + (self.config.hop_resolution*(self.nstate_waypoints+1))**2)**0.5
-        self.obs_norm = np.array([max_dist, 180, 5]) # distance, heading, z
+        self.obs_norm = np.array([max_dist, 180, 5, 180]) # distance, heading, z, dyaw
 
     
     def reset(self, log=None):
@@ -247,7 +247,9 @@ class CarlaEnv(BaseEnv):
         heading = np.arctan2(y,x) * 180 / np.pi
         flat_distance = (x**2 + y**2)**0.5
 
-        state = np.array([flat_distance, heading, z])
+        dyaw = sgn_angle_diff(hero_transform.rotation.yaw, target_waypoint.transform.rotation.yaw)
+
+        state = np.array([flat_distance, heading, z, dyaw])
         return state
 
     def _get_reward(self, hero_transform, target_waypoint, blocked_or_distance_done):
@@ -268,12 +270,10 @@ class CarlaEnv(BaseEnv):
 
 
         # rotation reward
-        yaw_diff = (hero[4]-target[4]) % 360
-        yaw_diff = yaw_diff if yaw_diff < 180 else 360 - yaw_diff
-        yaw_max = 90
-        yaw_frac = min(yaw_diff/yaw_max, 1)
+        dyaw = sgn_angle_diff(hero[4], target[4])
+        yaw_max = 180
         #yaw_reward = -yaw_frac**2 + 1
-        yaw_reward = 1 - min(yaw_diff/yaw_max, 1)
+        yaw_reward = 1 - min(dyaw/yaw_max, 1)
 
         # speed reward
         hvel = CarlaDataProvider.get_velocity(self.hero_actor) # m/s
@@ -288,11 +288,12 @@ class CarlaEnv(BaseEnv):
         if blocked_or_distance_done:
             route_reward = 10 if self.last_waypoint == self.route_len-1 else -5
 
-        #reward = dist_reward + yaw_reward + vel_reward + route_reward
-        reward = dist_reward + vel_reward + route_reward
+        reward = dist_reward + yaw_reward + vel_reward + route_reward
+        #reward = dist_reward + vel_reward + route_reward
         reward_info = {
                 'reward': reward, 
                 'dist_reward': dist_reward,
                 'vel_reward': vel_reward,
+                'yaw_reward': yaw_reward,
                 'route_reward': route_reward}
         return reward_info

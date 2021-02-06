@@ -147,25 +147,29 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
         reward = rinfo['reward']
         rewdst = rinfo['dist_reward']
         rewvel = rinfo['vel_reward']
+        rewyaw = rinfo['yaw_reward']
         rewcmp = rinfo['route_reward']
 
         distance = (self.cached_state[0]+1) / 2 * obs_norm[0]
         heading = self.cached_state[1] * obs_norm[1]
         z = self.cached_state[2] * obs_norm[2]
+        dyaw = self.cached_state[3] * obs_norm[3]
         curvature = self.cached_state[3] * 180
         
         left_text_strs = [
                 f'Distance: {distance:.3f}', # add curvature after?
                 f'Heading: {heading:.3f}',
                 f'Height: {z:.3f}',
-                f'Curve: {curvature:.3f}',]
+                f'YawDiff: {dyaw:.3f}',
+                f'Curve: {curvature:.3f}',
+                f'Steer: {self.cached_control.steer:.3f}',
+                f'Throttle: {self.cached_control.throttle:.3f}',]
 
         right_text_strs = [
-                f'Steer: {self.cached_control.steer:.3f}',
-                f'Throttle: {self.cached_control.throttle:.3f}',
                 f'Reward: {reward:.3f}',
                 f'RewDst: {rewdst:.3f}',
                 f'RewVel: {rewvel:.3f}',
+                f'RewYaw: {rewyaw:.3f}',
                 f'RewCmp: {rewcmp:.3f}',]
 
         for i, text in enumerate(left_text_strs):

@@ -27,5 +27,5 @@ agent:
   verbose: false
   # manual_obs args
   num_state_waypoints: 5
-  waypoint_state_dim: 3
+  waypoint_state_dim: 4
 
