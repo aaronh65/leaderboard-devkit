@@ -17,10 +17,8 @@ class CarlaEnv(BaseEnv):
         super().__init__(config, client, agent)
 
         # RL params
-        self.nstate_waypoints = config.sac.num_state_waypoints
-        self.waypoint_state_dim = config.sac.waypoint_state_dim
-        self.history_size = config.sac.history_size
-        self.obs_dim = (config.sac.bev_size, config.sac.bev_size, self.history_size,)
+        self.history_size = config.agent.history_size
+        self.obs_dim = (config.agent.bev_size, config.agent.bev_size, self.history_size,)
         self.observation_space = gym.spaces.Box(
                 low=0, high=255, shape=self.obs_dim,
                 dtype=np.uint8)
@@ -35,12 +33,7 @@ class CarlaEnv(BaseEnv):
         self.blocking_distance = 3.0
         self.target_idx = 0
         self.last_waypoint = 0
-        max_dist = (4**2 + (self.config.hop_resolution*(self.nstate_waypoints+1))**2)**0.5
-        self.obs_norm = np.array([max_dist, 180, 5]) # distance, heading, z
 
-        self.cached_experience = [None, None, None, None, None, {}] 
-
-    
     def reset(self, log=None):
         super().reset(log)
         

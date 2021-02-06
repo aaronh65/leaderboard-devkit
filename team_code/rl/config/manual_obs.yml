@@ -1,0 +1,31 @@
+# default config for sac w/hand-crafted observation space
+
+algo: manual_obs
+description: this is a template configuration
+project_root: /home/aaron/workspace/carla/leaderboard-devkit
+carla_root: /home/aaron/workspace/carla/CARLA_0.9.11
+save_root: /data/leaderboard/results/rl/waypoint_agent/debug/template
+env:
+  world_port: 2000
+  trafficmanager_port: 8000
+  trafficmanager_seed: 0
+  routes: routes_training.xml
+  scenarios: no_traffic_scenarios.json
+  repetitions: 1
+  empty: true
+  hop_resolution: 2
+agent:
+  mode: train
+  total_timesteps: 2000
+  burn_timesteps: 250
+  train_frequency: 1
+  gradient_steps: 1
+  target_update_interval: 1
+  save_frequency: 100
+  log_frequency: 100
+  save_images: true
+  verbose: false
+  # manual_obs args
+  num_state_waypoints: 5
+  waypoint_state_dim: 3
+

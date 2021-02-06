@@ -71,10 +71,10 @@ def train(config, agent, env):
     sac_log = episode_log['sac']
     rewards = []
 
-    for step in tqdm(range(begin_step, config.sac.total_timesteps)):
+    for step in tqdm(range(begin_step, config.agent.total_timesteps)):
 
         # get SAC prediction, step the env
-        burn_in = (step - begin_step) < config.sac.burn_timesteps # exploration
+        burn_in = (step - begin_step) < config.agent.burn_timesteps # exploration
         action = agent.predict(obs, burn_in=burn_in)
         new_obs, reward, done, info = env.step(action)
         sac_log['total_steps'] += 1
@@ -87,12 +87,12 @@ def train(config, agent, env):
 
                 
         # train at this timestep if applicable
-        if step % config.sac.train_frequency == 0 and not burn_in:
+        if step % config.agent.train_frequency == 0 and not burn_in:
             mb_info_vals = []
-            for grad_step in range(config.sac.gradient_steps):
+            for grad_step in range(config.agent.gradient_steps):
 
                 # policy and value network update
-                frac = 1.0 - step/config.sac.total_timesteps
+                frac = 1.0 - step/config.agent.total_timesteps
                 lr = agent.model.learning_rate*frac
                 train_vals = agent.model._train_step(step, None, lr)
                 policy_loss, _, _, value_loss, entropy, _, _ = train_vals
@@ -102,15 +102,15 @@ def train(config, agent, env):
                 sac_log['mean_entropy'] += entropy
 
                 # target network update
-                if step % config.sac.target_update_interval == 0:
+                if step % config.agent.target_update_interval == 0:
                     agent.model.sess.run(agent.model.target_update_op)
 
-                if config.sac.verbose and step % config.sac.log_frequency == 0:
+                if config.agent.verbose and step % config.agent.log_frequency == 0:
                     write_str = f'\nstep {step}\npolicy_loss = {policy_loss:.3f}\nvalue_loss = {value_loss:.3f}\nentropy = {entropy:.3f}'
                     tqdm.write(write_str)
 
         # save model if applicable
-        if step % config.sac.save_frequency == 0 and not burn_in:
+        if step % config.agent.save_frequency == 0 and not burn_in:
             weights_path = f'{config.save_root}/weights/{step:07d}'
             agent.model.save(weights_path)
 
@@ -150,7 +150,7 @@ def main(args):
         config = yaml.load(f, Loader=yaml.Loader)
     config = dict_to_sns(config)
     config.env = dict_to_sns(config.env)
-    config.sac = dict_to_sns(config.sac)
+    config.agent = dict_to_sns(config.agent)
 
     try:
         agent = WaypointAgent(config)

@@ -1,20 +1,19 @@
+import cv2
+import numpy as np
 import os, yaml, json, pickle
+from PIL import Image, ImageDraw, ImageFont
+from carla import VehicleControl
 
 from leaderboard.autoagents import autonomous_agent
 from leaderboard.envs.sensor_interface import SensorInterface
-
 from team_code.common.utils import mkdir_if_not_exists, parse_config
 from team_code.rl.common.null_env import NullEnv
 from team_code.rl.common.viz_utils import draw_text
-from team_code.rl.common.semantic_utils import CONVERTER, COLOR
+#from team_code.rl.common.semantic_utils import CONVERTER, COLOR
 from stable_baselines.sac.policies import MlpPolicy
 from stable_baselines import SAC
 
-from carla import VehicleControl
 
-import cv2
-import numpy as np
-from PIL import Image, ImageDraw, ImageFont
 
 RESTORE = int(os.environ.get("RESTORE", 0))
 
@@ -24,18 +23,20 @@ def get_entry_point():
 class WaypointAgent(autonomous_agent.AutonomousAgent):
     def setup(self, path_to_conf_file=None):
         config = parse_config(path_to_conf_file)
-        self.config = config.sac
+        self.config = config.agent
         self.save_root = config.save_root
         self.track = autonomous_agent.Track.SENSORS
-
-        # setup model and episode counter
+        
+        # setup model
+        self.obs_dim = (self.config.waypoint_state_dim + 4,)
+        self.act_dim = (2,)
         if RESTORE:
             self.restore()
         else:
+            obs_spec = ('box', -1, 1, self.obs_dim, np.float32)
+            act_spec = ('box', -1, 1, self.act_dim, np.float32)
+            self.model = SAC(MlpPolicy, NullEnv(obs_spec, act_spec))
             self.episode_num = -1 # the first reset changes this to 0
-            self.obs_dim = (self.config.waypoint_state_dim + 4,)
-            self.action_dim = (2,)
-            self.model = SAC(MlpPolicy, NullEnv(self.obs_dim, self.action_dim, odtype=np.float32, adtype=np.float32))
 
         self.save_images = self.config.save_images
         self.save_images_path  = f'{self.save_root}/images/episode_{self.episode_num:06d}'
@@ -90,11 +91,12 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
             self.sensor_interface = SensorInterface()
 
     def reset(self):
-        self.step = 0
+        self.episode_num += 1
+        self.cached_state = None
         self.cached_control = None
         self.cached_rinfo = 0
         self.cached_bev = None
-        self.episode_num += 1
+        self.step = 0
         self.save_images_path  = f'{self.save_root}/images/episode_{self.episode_num:06d}'
         if self.config.save_images:
             mkdir_if_not_exists(self.save_images_path)
@@ -104,7 +106,7 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
 
         # compute controls
         if burn_in and not RESTORE:
-            action = np.random.uniform(-1, 1, size=self.action_dim)
+            action = np.random.uniform(-1, 1, size=self.act_dim)
         else:
             action, _states = self.model.predict(state)
 

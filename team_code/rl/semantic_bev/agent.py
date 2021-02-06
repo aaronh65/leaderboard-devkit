@@ -27,14 +27,13 @@ def get_entry_point():
 class WaypointAgent(autonomous_agent.AutonomousAgent):
     def setup(self, path_to_conf_file=None):
         config = parse_config(path_to_conf_file)
-        self.config = config.sac
+        self.config = config.agent
         self.save_root = config.save_root
         self.track = autonomous_agent.Track.SENSORS
         
+        # setup model
         self.obs_dim = (self.config.bev_size,self.config.bev_size,self.config.history_size,)
         self.act_dim = (2,)
-
-        # setup model and episode counter
         if RESTORE:
             self.restore()
         else:
@@ -42,11 +41,8 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
             print('CREATING MODEL')
             obs_spec = ('box', 0, 255, self.obs_dim, np.uint8)
             act_spec = ('box', -1, 1, self.act_dim, np.float32)
-            self.model = SAC(
-                    CnnPolicy, 
-                    NullEnv(obs_spec, act_spec),
-                    buffer_size=1000, 
-                    batch_size=16)
+            self.model = SAC(CnnPolicy, NullEnv(obs_spec, act_spec), 
+                    buffer_size=1000, batch_size=16)
             print('CREATED MODEL')
 
         self.save_images = self.config.save_images

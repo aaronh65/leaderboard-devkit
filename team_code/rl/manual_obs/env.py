@@ -16,8 +16,8 @@ class CarlaEnv(BaseEnv):
         super().__init__(config, client, agent)
 
         # RL params
-        self.nstate_waypoints = config.sac.num_state_waypoints
-        self.waypoint_state_dim = config.sac.waypoint_state_dim
+        self.nstate_waypoints = config.agent.num_state_waypoints
+        self.waypoint_state_dim = config.agent.waypoint_state_dim
         self.obs_dim = (self.waypoint_state_dim + 4,)
         self.observation_space = gym.spaces.Box(
                 low=-1, high=1, shape=self.obs_dim, 
