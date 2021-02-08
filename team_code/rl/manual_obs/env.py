@@ -225,11 +225,11 @@ class CarlaEnv(BaseEnv):
         norm_completion = completion * 2 - 1
 
         # traffic lights
-        #maybe_traffic_light = CarlaDataProvider.get_next_traffic_light(self.hero_actor)
-        #if maybe_traffic_light is not None:
-        #    traffic_light, distance_to_light = maybe_traffic_light
-        #    draw_transforms(self.world, [traffic_light.get_transform()], z=2.0, life_time = 0.06, size=0.6)
-        #    #print(distance_to_light)
+        maybe_traffic_light = CarlaDataProvider.get_next_traffic_light(self.hero_actor)
+        if maybe_traffic_light is not None:
+            traffic_light, distance_to_light = maybe_traffic_light
+            draw_transforms(self.world, [traffic_light.get_transform()], z=2.0, life_time = 0.06, size=0.6)
+            #print(distance_to_light)
 
         obs = np.hstack([norm_wstate, [norm_curvature, norm_velocity, norm_steer, norm_completion]])
         return obs

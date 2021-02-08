@@ -9,6 +9,7 @@ from leaderboard.envs.sensor_interface import SensorInterface
 from team_code.common.utils import mkdir_if_not_exists, parse_config
 from team_code.rl.common.null_env import NullEnv
 from team_code.rl.common.viz_utils import draw_text
+from team_code.lbc.src.pid_controller import PIDController
 #from team_code.rl.common.semantic_utils import CONVERTER, COLOR
 from stable_baselines.sac.policies import MlpPolicy
 from stable_baselines import SAC
@@ -42,11 +43,8 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
         self.save_images_path  = f'{self.save_root}/images/episode_{self.episode_num:06d}'
         self.save_images_interval = 4
 
-        self.cached_state = None
-        self.cached_control = None
-        self.cached_rinfo = 0
-        self.cached_bev = None
-        self.step = 0
+        self._turn_controller = PIDController(K_P=1.25, K_I=0.75, K_D=0.3, n=40)
+        self._speed_controller = PIDController(K_P=5.0, K_I=0.5, K_D=1.0, n=40)
 
     def restore(self):
         with open(f'{self.save_root}/logs/log.json', 'r') as f:
@@ -84,6 +82,12 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
                     'sensor_tick': 0.01,
                     'id': 'gps'
                     },
+                #{
+                #    'type': 'sensor.speedometer',
+                #    'reading_frequency': 20,
+                #    'id': 'speed'
+                #    }
+
                 ]
 
     def destroy(self):
@@ -101,24 +105,48 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
         if self.config.save_images:
             mkdir_if_not_exists(self.save_images_path)
 
-    #def predict(self, state, model, burn_in=False):
+    def _get_control(self, action):
+
+        if self.config.pid:
+
+            #throttle, steer, brake = action
+            next_speed, angle = action
+
+            angle = angle * 180
+            steer = self._turn_controller.step(angle / 90)
+            steer = np.clip(steer, -1.0, 1.0)
+
+            current_speed = (state[5]+1) * 40 # km/h
+            current_speed = current_speed * 1000/3600 # m/s
+            next_speed = (next_speed+1) * 40
+            next_speed = next_speed * 1000/3600
+            brake = next_speed < 0.4 or (current_speed / next_speed) > 1.1
+
+            delta = np.clip(next_speed - current_speed, 0.0, 0.25)
+            throttle = self._speed_controller.step(delta)
+            #throttle = np.clip(throttle, 0.0, 0.75)
+            throttle = np.clip(throttle, 0.0, 1.0)
+            throttle = throttle if not brake else 0.0
+
+        else:
+
+            throttle, steer = action
+            throttle = float(throttle/2 + 0.5)
+            steer = float(steer)
+            #brake = float(brake/2 + 0.5)
+            brake = False
+
+        return VehicleControl(float(throttle), float(steer), float(brake))
+
     def predict(self, state, burn_in=False):
 
+        self.cached_state = state
         # compute controls
         if burn_in and not RESTORE:
             action = np.random.uniform(-1, 1, size=self.act_dim)
         else:
             action, _states = self.model.predict(state)
-
-        #throttle, steer, brake = action
-        throttle, steer = action
-        throttle = float(throttle/2 + 0.5)
-        steer = float(steer)
-        #brake = float(brake/2 + 0.5)
-        brake = False
-
-        self.cached_state = state
-        self.cached_control = VehicleControl(throttle, steer, brake)
+        self.cached_control = self._get_control(action)
         return action
 
     def run_step(self, input_data, timestamp):
@@ -154,7 +182,7 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
         heading = self.cached_state[1] * obs_norm[1]
         z = self.cached_state[2] * obs_norm[2]
         dyaw = self.cached_state[3] * obs_norm[3]
-        curvature = self.cached_state[3] * 180
+        curvature = self.cached_state[4] * 180
         
         left_text_strs = [
                 f'Distance: {distance:.3f}', # add curvature after?

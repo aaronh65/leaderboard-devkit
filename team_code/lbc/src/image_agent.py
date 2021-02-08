@@ -155,7 +155,7 @@ class ImageAgent(BaseAgent):
 
         # compute throttle
         speed = tick_data['speed']
-        desired_speed = np.linalg.norm(points_world[0] - points_world[1]) * 2.0
+        desired_speed = np.linalg.norm(points_world[0] - points_world[1]) * 2.0 # m/s
         brake = desired_speed < 0.4 or (speed / desired_speed) > 1.1
         delta = np.clip(desired_speed - speed, 0.0, 0.25)
         throttle = self._speed_controller.step(delta)

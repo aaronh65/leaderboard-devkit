@@ -28,4 +28,5 @@ agent:
   # manual_obs args
   num_state_waypoints: 5
   waypoint_state_dim: 4
+  pid: false
 
