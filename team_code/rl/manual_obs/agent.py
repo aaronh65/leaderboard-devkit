@@ -184,7 +184,7 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
         z = self.cached_state[2] * obs_norm[2]
         dyaw = self.cached_state[3] * obs_norm[3]
         curvature = self.cached_state[4] * 180
-        tl_dist = self.cached_state[8] * 25.0
+        tl_dist = (self.cached_state[8]+1) * 12.5
         
         left_text_strs = [
                 f'Distance: {distance:.3f}', # add curvature after?

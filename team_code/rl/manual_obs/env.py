@@ -245,7 +245,7 @@ class CarlaEnv(BaseEnv):
                     z=2.0, life_time = 0.06, size=0.6)
 
             if state != carla.TrafficLightState.Green:
-                tl_dist = distance_to_light / 25.0 - 1 # squash to -1, 1
+                tl_dist = distance_to_light / 12.5 - 1 # [0, 25] to [-1, 1]
                 tl_dist = np.clip(tl_dist, -1, 1)
 
         obs = np.hstack([norm_wstate, [norm_curvature, norm_velocity, norm_steer, norm_completion, tl_dist]])
