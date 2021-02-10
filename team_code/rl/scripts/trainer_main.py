@@ -9,6 +9,8 @@ from common.utils import *
 parser = argparse.ArgumentParser()
 
 parser.add_argument('--restore_from', type=str, default=None)
+parser.add_argument('--remote', action='store_true')
+parser.add_argument('--data_root', type=str, default='/data')
 
 # setup
 parser.add_argument('--desc', type=str, default='no description')
@@ -20,7 +22,6 @@ parser.add_argument('--repetitions', type=int, default=1) # should we directly d
 parser.add_argument('--empty', action='store_true') # other agents present?
 parser.add_argument('--save_images', action='store_true')
 parser.add_argument('--verbose', action='store_true')
-parser.add_argument('--data_root', type=str, default='/data')
 parser.add_argument('-d', '--debug', action='store_true')
 
 # algorithm specific setup should be done in the appropriate config file
@@ -28,13 +29,8 @@ parser.add_argument('--algo', type=str, default='manual_obs', choices=['manual_o
 
 args = parser.parse_args()
 
-#root = Path('/home/aaron/workspace/carla')
-#root = f'/home/aaron/workspace/carla'
-root = f'/home/aaronhua'
+root = f'/home/aaronhua' if args.remote else f'/home/aaron/workspace/carla'
 
-# set carla version variables
-
-# save path for images/logs/videos/plots
 restore = args.restore_from is not None
 if restore:
 
@@ -62,7 +58,7 @@ else:
     with open(config_path, 'r') as f:
         config = yaml.load(f, Loader=yaml.Loader)
 
-    # setup carla info
+    # carla setup
     carla_root = f'{root}/CARLA_0.9.{args.version}'
     if args.version == 10:
         carla_root = f'{carla_root}.1'
@@ -70,7 +66,7 @@ else:
 
     carla_egg = f'{carla_root}/PythonAPI/carla/dist/carla-0.9.{args.version}-py3.7-linux-x86_64.egg'
 
-    # leaderboard setup info
+    # leaderboard setup
     routes = f'routes_{args.split}'
     if args.routenum:
         routes = f'{routes}/route_{args.routenum:02d}'
@@ -78,7 +74,7 @@ else:
     scenarios = 'all_towns_traffic_scenarios_public.json' if args.scenarios \
             else 'no_traffic_scenarios.json'
 
-    # logging info
+    # logging
     date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
     suffix = f'debug/{date_str}' if args.debug else f'{date_str}' 
     #save_root = f'/data/leaderboard/results/rl/{args.algo}/{suffix}'
