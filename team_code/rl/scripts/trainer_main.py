@@ -125,5 +125,5 @@ else:
     os.environ["CARLA_API"] = carla_api
     os.environ["RESTORE"] = "0"
 
-cmd = f'bash run_leaderboard_trainer.sh {config_path}'
+cmd = f'bash run_trainer_main.sh {config_path}'
 os.system(cmd)
