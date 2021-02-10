@@ -14,6 +14,7 @@ export PYTHONPATH=$PYTHONPATH:$CARLA_API
 export PYTHONPATH=$PYTHONPATH:$PROJECT_ROOT
 export PYTHONPATH=$PYTHONPATH:$PROJECT_ROOT/leaderboard
 export PYTHONPATH=$PYTHONPATH:$PROJECT_ROOT/scenario_runner
+export HAS_DISPLAY=0
 
 python $PROJECT_ROOT/team_code/rl/$ALGO/trainer.py \
 	--config_path=$CONFIG_PATH

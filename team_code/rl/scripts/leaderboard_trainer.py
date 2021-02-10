@@ -20,6 +20,7 @@ parser.add_argument('--repetitions', type=int, default=1) # should we directly d
 parser.add_argument('--empty', action='store_true') # other agents present?
 parser.add_argument('--save_images', action='store_true')
 parser.add_argument('--verbose', action='store_true')
+parser.add_argument('--data_root', type=str, default='/data')
 parser.add_argument('-d', '--debug', action='store_true')
 
 # algorithm specific setup should be done in the appropriate config file
@@ -28,7 +29,8 @@ parser.add_argument('--algo', type=str, default='manual_obs', choices=['manual_o
 args = parser.parse_args()
 
 #root = Path('/home/aaron/workspace/carla')
-root = f'/home/aaron/workspace/carla'
+#root = f'/home/aaron/workspace/carla'
+root = f'/home/aaronhua'
 
 # set carla version variables
 
@@ -79,7 +81,8 @@ else:
     # logging info
     date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
     suffix = f'debug/{date_str}' if args.debug else f'{date_str}' 
-    save_root = f'/data/leaderboard/results/rl/{args.algo}/{suffix}'
+    #save_root = f'/data/leaderboard/results/rl/{args.algo}/{suffix}'
+    save_root = f'{args.data_root}/leaderboard/results/rl/{args.algo}/{suffix}'
 
     if args.save_images:
         mkdir_if_not_exists(f'{save_root}/images')
@@ -104,7 +107,7 @@ else:
     econf['empty'] = args.empty
     econf['hop_resolution'] = 2.0
 
-    total_timesteps = 2000 if args.debug else 500000
+    total_timesteps = 2000 if args.debug else 100000
     burn_timesteps = 250 if args.debug else 2000
     save_frequency = 100 if args.debug else 1000
 

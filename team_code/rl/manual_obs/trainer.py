@@ -144,6 +144,7 @@ def train(config, agent, env):
 
 def main(args):
     client = Client('localhost', 2000)
+    client.set_timeout(60)
 
     # get configs and spin up agent
     with open(args.config_path, 'r') as f:
