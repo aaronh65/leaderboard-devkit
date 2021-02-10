@@ -13,8 +13,8 @@ from PIL import Image, ImageDraw
 from team_code.rl.common.semantic_utils import CONVERTER, COLOR
 from team_code.lbc.carla_project.src.converter import Converter
 from team_code.lbc.carla_project.src.dataset import preprocess_semantic
-from team_code.lbc.map_agent import MapAgent
-from team_code.lbc.pid_controller import PIDController
+from team_code.lbc.src.map_agent import MapAgent
+from team_code.lbc.src.pid_controller import PIDController
 from leaderboard.envs.sensor_interface import SensorInterface
 
 HAS_DISPLAY = True
@@ -99,7 +99,8 @@ class AutoPilot(MapAgent):
             self.save_path = pathlib.Path(self.config.save_root)
             #self.save_path.mkdir(exist_ok=True)
 
-            (self.save_path / 'topdown').mkdir()
+            (self.save_path / 'topdown_int').mkdir()
+            (self.save_path / 'topdown_rgb').mkdir()
             #(self.save_path / 'rgb').mkdir()
             #(self.save_path / 'rgb_left').mkdir()
             #(self.save_path / 'rgb_right').mkdir()
@@ -202,6 +203,9 @@ class AutoPilot(MapAgent):
                     
         if HAS_DISPLAY:
             topdown = COLOR[CONVERTER[data['topdown']]]
+            if self.step % 10 == 0 and self.save_path:
+                frame = self.step // 10
+                Image.fromarray(topdown).save(self.save_path / 'topdown_rgb' / (f'{frame:06d}.png'))
             cv2.imshow('topdown', topdown)
             cv2.waitKey(1)
 
@@ -233,7 +237,8 @@ class AutoPilot(MapAgent):
         #Image.fromarray(tick_data['rgb']).save(self.save_path / 'rgb' / ('%04d.png' % frame))
         #Image.fromarray(tick_data['rgb_left']).save(self.save_path / 'rgb_left' / ('%04d.png' % frame))
         #Image.fromarray(tick_data['rgb_right']).save(self.save_path / 'rgb_right' / ('%04d.png' % frame))
-        Image.fromarray(tick_data['topdown']).save(self.save_path / 'topdown' / ('%04d.png' % frame))
+        Image.fromarray(tick_data['topdown']).save(self.save_path / 'topdown_int' / ('%06d.png' % frame))
+
 
     def _should_brake(self):
         actors = self._world.get_actors()

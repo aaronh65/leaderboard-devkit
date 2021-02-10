@@ -1,9 +1,10 @@
 import argparse, traceback
-import yaml, tqdm
+import sys, yaml, tqdm
 
 from carla import Client
 from data_agent import AutoPilot
 from data_env import CarlaEnv
+sys.path.append('..')
 from team_code.common.utils import dict_to_sns
 from team_code.rl.common.env_utils import *
 

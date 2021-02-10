@@ -1,9 +1,9 @@
 import os, sys, time
-sys.path.append('..')
+sys.path.append('../..')
 import yaml
 import argparse 
 from datetime import datetime
-from utils import *
+from common.utils import *
 
 
 # copy auto pilot code
