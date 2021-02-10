@@ -13,8 +13,8 @@ from pathlib import Path
 from carla_project.src.image_model import ImageModel
 from carla_project.src.converter import Converter
 
-from team_code.lbc.base_agent import BaseAgent
-from team_code.lbc.pid_controller import PIDController
+from team_code.lbc.src.base_agent import BaseAgent
+from team_code.lbc.src.pid_controller import PIDController
 
 
 DEBUG = int(os.environ.get('HAS_DISPLAY', 0))
