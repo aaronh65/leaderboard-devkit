@@ -1,6 +1,7 @@
 # default config for sac w/hand-crafted observation space
 
 algo: manual_obs
+remote: false
 description: this is a template configuration
 project_root: /home/aaron/workspace/carla/leaderboard-devkit
 carla_root: /home/aaron/workspace/carla/CARLA_0.9.11

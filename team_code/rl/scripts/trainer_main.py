@@ -11,6 +11,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--restore_from', type=str, default=None)
 parser.add_argument('--remote', action='store_true')
 parser.add_argument('--data_root', type=str, default='/data')
+parser.add_argument('-G', type=int, default=0)
 
 # setup
 parser.add_argument('--desc', type=str, default='no description')
@@ -50,6 +51,7 @@ if restore:
     os.environ["CARLA_EGG"] = carla_egg
     os.environ["CARLA_API"] = carla_api
     os.environ["RESTORE"] = "1"
+    os.environ["HAS_DISPLAY"] = "0" if config['remote'] else "1"
 
 else:
 
@@ -89,6 +91,7 @@ else:
 
     # setup config
     config['description'] = args.desc
+    config['remote'] = args.remote
     config['project_root'] = project_root
     config['carla_root'] = carla_root
     config['save_root'] = save_root
@@ -104,7 +107,7 @@ else:
     econf['empty'] = args.empty
     econf['hop_resolution'] = 2.0
 
-    total_timesteps = 2000 if args.debug else 100000
+    total_timesteps = 2000 if args.debug else 500000
     burn_timesteps = 250 if args.debug else 2000
     save_frequency = 100 if args.debug else 1000
 
@@ -125,6 +128,7 @@ else:
     os.environ["CARLA_EGG"] = carla_egg
     os.environ["CARLA_API"] = carla_api
     os.environ["RESTORE"] = "0"
+    os.environ["HAS_DISPLAY"] = "0" if args.remote else "1"
 
-cmd = f'bash run_trainer_main.sh {config_path}'
+cmd = f'CUDA_VISIBLE_DEVICES={args.G} bash run_trainer_main.sh {config_path}'
 os.system(cmd)
