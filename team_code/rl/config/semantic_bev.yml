@@ -28,6 +28,6 @@ agent:
   # semantic_bev args
   bev_size: 360
   history_size: 5
-  buffer_size: 1000
-  batch_size: 16
+  buffer_size: 10000
+  batch_size: 32
 
