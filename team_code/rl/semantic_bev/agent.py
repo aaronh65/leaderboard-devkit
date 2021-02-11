@@ -20,6 +20,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 RESTORE = int(os.environ.get("RESTORE", 0))
+HAS_DISPLAY = int(os.environ.get("HAS_DISPLAY", 0))
 
 def get_entry_point():
     return 'WaypointAgent'
@@ -174,9 +175,9 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
         for i, text in enumerate(text_strs):
             draw_text(combined, text, (5, 20*(i+1)))
 
-
-        cv2.imshow('combined', combined)
-        cv2.waitKey(1)
+        if HAS_DISPLAY:
+            cv2.imshow('combined', combined)
+            cv2.waitKey(1)
 
         if self.save_images:
             frame = self.step // self.save_images_interval
