@@ -17,6 +17,7 @@ from stable_baselines import SAC
 
 
 RESTORE = int(os.environ.get("RESTORE", 0))
+HAS_DISPLAY = int(os.environ.get("HAS_DISPLAY", 0))
 
 def get_entry_point():
     return 'WaypointAgent'
@@ -228,8 +229,9 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
         for i, text in enumerate(right_text_strs):
             draw_text(bev, text, (width-130, 20*(i+1)))
 
-        cv2.imshow('bev', bev)
-        cv2.waitKey(1)
+        if HAS_DISPLAY:
+            cv2.imshow('bev', bev)
+            cv2.waitKey(1)
 
         if self.save_images and self.step % self.save_images_interval == 0:
             frame = self.step // self.save_images_interval
