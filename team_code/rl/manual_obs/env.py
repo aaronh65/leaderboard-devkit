@@ -300,7 +300,6 @@ class CarlaEnv(BaseEnv):
         vel_diff = abs(hvel-tvel)
         vel_reward = 1 - min(vel_diff/tvel, 1)
 
-
         # route reward
         route_reward = self.last_waypoint / self.route_len
         if blocked_or_distance_done:

@@ -98,7 +98,7 @@ class BaseEnv(gym.Env):
         # setup scenario and scenario manager
         self.scenario = RouteScenario(
                 self.world, rconfig, 
-                criteria_enable=False, 
+                criteria_enable=True, 
                 env_config=self.config)
         self.manager.load_scenario(
                 self.scenario, rconfig.agent,
@@ -120,9 +120,9 @@ class BaseEnv(gym.Env):
                 self.manager._tick_scenario(timestamp)
             self.frame += 1
             done = not self.manager._running
-            return [], 0, done, {}
+            return [], -9999, done, {}
         else:
-            raise Exception
+            return [], -9999, True, {}
 
     def cleanup(self):
 

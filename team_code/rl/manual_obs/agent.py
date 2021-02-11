@@ -33,11 +33,13 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
         self.obs_dim = (self.config.waypoint_state_dim + 4,)
         #self.obs_dim = (self.config.waypoint_state_dim + 5,)
         self.act_dim = (2,)
+        obs_spec = ('box', -1, 1, self.obs_dim, np.float32)
+        act_spec = ('box', -1, 1, self.act_dim, np.float32)
+
         if RESTORE:
             self.restore()
+            self.model.set_env(NullEnv(obs_spec, act_spec))
         else:
-            obs_spec = ('box', -1, 1, self.obs_dim, np.float32)
-            act_spec = ('box', -1, 1, self.act_dim, np.float32)
             self.model = SAC(MlpPolicy, NullEnv(obs_spec, act_spec))
             self.episode_num = -1 # the first reset changes this to 0
         self.model.tensorboard_log = self.tensorboard_root
@@ -59,7 +61,6 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
         print(f'restoring model from {weight_names[-1]}')
         weight_path = f'{self.save_root}/weights/{weight_names[-1]}'
         self.model = SAC.load(weight_path)
-        self.model.set_env(NullEnv(obs_spec, act_spec))
 
         #with open(f'{self.save_root}/logs/replay_buffer.pkl', 'rb') as f:
         #    self.model.replay_buffer = pickle.load(f)

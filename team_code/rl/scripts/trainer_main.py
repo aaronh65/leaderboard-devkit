@@ -85,6 +85,7 @@ else:
     mkdir_if_not_exists(f'{save_root}/weights')
     mkdir_if_not_exists(f'{save_root}/logs')
     mkdir_if_not_exists(f'{save_root}/logs/rewards')
+    mkdir_if_not_exists(f'{save_root}/logs/tensorboard')
 
     # setup config
     config['description'] = args.desc
