@@ -27,9 +27,11 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
         self.config = config.agent
         self.save_root = config.save_root
         self.track = autonomous_agent.Track.SENSORS
+        self.tensorboard_root = f'{config.save_root}/logs/tensorboard'
         
         # setup model
-        self.obs_dim = (self.config.waypoint_state_dim + 5,)
+        self.obs_dim = (self.config.waypoint_state_dim + 4,)
+        #self.obs_dim = (self.config.waypoint_state_dim + 5,)
         self.act_dim = (2,)
         if RESTORE:
             self.restore()
@@ -38,7 +40,9 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
             act_spec = ('box', -1, 1, self.act_dim, np.float32)
             self.model = SAC(MlpPolicy, NullEnv(obs_spec, act_spec))
             self.episode_num = -1 # the first reset changes this to 0
+        self.model.tensorboard_log = self.tensorboard_root
 
+        #print(self.model._vec_normalize_env)
         self.save_images = self.config.save_images
         self.save_images_path  = f'{self.save_root}/images/episode_{self.episode_num:06d}'
         self.save_images_interval = 4
@@ -55,9 +59,10 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
         print(f'restoring model from {weight_names[-1]}')
         weight_path = f'{self.save_root}/weights/{weight_names[-1]}'
         self.model = SAC.load(weight_path)
+        self.model.set_env(NullEnv(obs_spec, act_spec))
 
-        with open(f'{self.save_root}/logs/replay_buffer.pkl', 'rb') as f:
-            self.model.replay_buffer = pickle.load(f)
+        #with open(f'{self.save_root}/logs/replay_buffer.pkl', 'rb') as f:
+        #    self.model.replay_buffer = pickle.load(f)
 
     def sensors(self):
         return [
@@ -124,28 +129,35 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
 
             delta = np.clip(next_speed - current_speed, 0.0, 0.25)
             throttle = self._speed_controller.step(delta)
-            #throttle = np.clip(throttle, 0.0, 0.75)
-            throttle = np.clip(throttle, 0.0, 1.0)
-            throttle = throttle if not brake else 0.0
 
         else:
 
             throttle, steer = action
-            throttle = float(throttle/2 + 0.5)
-            steer = float(steer)
+            #throttle = throttle/2 + 0.5
+            #throttle = np.clip(throttle, 0, 1)
+            #steer = np.clip(steer, -1, 1)
             #brake = float(brake/2 + 0.5)
             brake = False
 
+        throttle = np.clip(throttle, 0.0, 1.0)
+        throttle = throttle if not brake else 0.0
+        steer = np.clip(steer, -1.0, 1.0)
         return VehicleControl(float(throttle), float(steer), float(brake))
 
-    def predict(self, state, burn_in=False):
+    def predict(self, state, burn_in=False, deterministic=False):
 
         self.cached_state = state
         # compute controls
         if burn_in and not RESTORE:
             action = np.random.uniform(-1, 1, size=self.act_dim)
+            self.cached_mean = action
+            self.cached_std = np.zeros(self.act_dim)
         else:
-            action, _states = self.model.predict(state)
+            action, _states = self.model.predict(state, deterministic=deterministic)
+            self.cached_mean, self.cached_std = self.model.policy_tf.proba_step([state])
+            self.cached_mean = self.cached_mean.squeeze()
+            self.cached_std = np.zeros(self.act_dim) if deterministic else self.cached_std.squeeze()
+        action = np.clip(action, -1, 1)
         self.cached_control = self._get_control(action)
         return action
 
@@ -179,22 +191,27 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
         rewcmp = rinfo['route_reward']
         rewtra = rinfo['traffic_reward']
 
+        #print(np.amax(np.abs(self.cached_state)))
         distance = (self.cached_state[0]+1) / 2 * obs_norm[0]
         heading = self.cached_state[1] * obs_norm[1]
         z = self.cached_state[2] * obs_norm[2]
         dyaw = self.cached_state[3] * obs_norm[3]
         curvature = self.cached_state[4] * 180
-        tl_dist = (self.cached_state[8]+1) * 12.5
+        #tl_dist = (self.cached_state[8]+1) * 12.5
         
+        throt = self.cached_mean[0]/2 + 0.5
+        throt_str = f'{throt:.2f},{self.cached_std[0]/2:.2f}'
+        steer_str = f'{self.cached_mean[1]:.2f},{self.cached_std[1]:.2f}'
         left_text_strs = [
                 f'Distance: {distance:.3f}', # add curvature after?
                 f'Heading: {heading:.3f}',
                 f'Height: {z:.3f}',
                 f'YawDiff: {dyaw:.3f}',
                 f'Curve: {curvature:.3f}',
-                f'Steer: {self.cached_control.steer:.3f}',
-                f'Throttle: {self.cached_control.throttle:.3f}',
-                f'TL dist: {tl_dist:.3f}']
+                f'Throt: {throt_str}',
+                f'Steer: {steer_str}',
+                #f'TL dist: {tl_dist:.3f}',
+                ]
 
         right_text_strs = [
                 f'Reward: {reward:.3f}',
@@ -202,7 +219,8 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
                 f'RewVel: {rewvel:.3f}',
                 f'RewYaw: {rewyaw:.3f}',
                 f'RewCmp: {rewcmp:.3f}',
-                f'RewTra: {rewtra:.3f}']
+                #f'RewTra: {rewtra:.3f}'
+                ]
 
         for i, text in enumerate(left_text_strs):
             draw_text(bev, text, (5, 20*(i+1)))
@@ -216,5 +234,4 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
             frame = self.step // self.save_images_interval
             save_path = f'{self.save_images_path}/{frame:06d}.png'
             cv2.imwrite(save_path, bev)
-
 

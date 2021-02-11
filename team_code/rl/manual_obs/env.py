@@ -18,8 +18,8 @@ class CarlaEnv(BaseEnv):
         # RL params
         self.nstate_waypoints = config.agent.num_state_waypoints
         self.waypoint_state_dim = config.agent.waypoint_state_dim
-        #self.obs_dim = (self.waypoint_state_dim + 4,)
-        self.obs_dim = (self.waypoint_state_dim + 5,)
+        self.obs_dim = (self.waypoint_state_dim + 4,) 
+        #self.obs_dim = (self.waypoint_state_dim + 5,)
         self.observation_space = gym.spaces.Box(
                 low=-1, high=1, shape=self.obs_dim, 
                 dtype=np.float32)
@@ -31,7 +31,7 @@ class CarlaEnv(BaseEnv):
         # set up blocking checks
         self.last_hero_transforms = deque()
         self.max_positions_len = 60 
-        self.blocking_distance = 3.0
+        self.blocking_distance = 2.0
         self.target_idx = 0
         self.last_waypoint = 0
         max_dist = (4**2 + (self.config.hop_resolution*(self.nstate_waypoints+1))**2)**0.5
@@ -94,7 +94,8 @@ class CarlaEnv(BaseEnv):
 
         criteria = [blocked_done, timeout_done, distance_done]
         done = any(criteria)
-        info = {'blocked': blocked_done, 'timeout': timeout_done, 'too_far': distance_done}
+        #info = {'blocked': blocked_done, 'timeout': timeout_done, 'too_far': distance_done}
+        info = {'is_success': reward_info['success']}
         return obs, reward_info['reward'], done, info
 
     def _check_blocked(self, hero_transform):
@@ -248,7 +249,8 @@ class CarlaEnv(BaseEnv):
                 tl_dist = distance_to_light / 12.5 - 1 # [0, 25] to [-1, 1]
                 tl_dist = np.clip(tl_dist, -1, 1)
 
-        obs = np.hstack([norm_wstate, [norm_curvature, norm_velocity, norm_steer, norm_completion, tl_dist]])
+        #obs = np.hstack([norm_wstate, [norm_curvature, norm_velocity, norm_steer, norm_completion, tl_dist]])
+        obs = np.hstack([norm_wstate, [norm_curvature, norm_velocity, norm_steer, norm_completion]])
         return obs
 
     def _get_waypoint_state(self, hero_transform, target_waypoint):
@@ -302,22 +304,24 @@ class CarlaEnv(BaseEnv):
         # route reward
         route_reward = self.last_waypoint / self.route_len
         if blocked_or_distance_done:
-            route_reward = 10 if self.last_waypoint == self.route_len-1 else -5
+            #route_reward = 1000 if self.last_waypoint == self.route_len-1 else -100
+            route_reward = 100 if self.last_waypoint == self.route_len-1 else -10
 
         # traffic light reward
         traffic_reward = 0
         hero_waypoint = self.map.get_waypoint(self.hero_actor.get_location())
         if self.last_traffic_light is not None and hero_waypoint.is_intersection:
             if self.last_traffic_light.state == carla.TrafficLightState.Red:
-                traffic_reward = -100
+                traffic_reward = -5
 
-        reward = dist_reward + yaw_reward + vel_reward + route_reward + traffic_reward
-        #reward = dist_reward + vel_reward + route_reward
+        #reward = dist_reward + yaw_reward + vel_reward + route_reward + traffic_reward
+        reward = dist_reward + vel_reward + yaw_reward + route_reward
         reward_info = {
                 'reward': reward, 
                 'dist_reward': dist_reward,
                 'vel_reward': vel_reward,
                 'yaw_reward': yaw_reward,
                 'route_reward': route_reward,
-                'traffic_reward': traffic_reward}
+                'traffic_reward': traffic_reward,
+                'success': self.last_waypoint > self.route_len - 10}
         return reward_info
