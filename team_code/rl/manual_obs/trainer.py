@@ -8,8 +8,8 @@ from tqdm import tqdm
 from datetime import datetime
 from env import CarlaEnv
 from carla import Client
-
 from agent import WaypointAgent
+
 from team_code.common.utils import dict_to_sns
 from stable_baselines.common.schedules import get_schedule_fn
 from stable_baselines.common import tf_util, SetVerbosity, TensorboardWriter

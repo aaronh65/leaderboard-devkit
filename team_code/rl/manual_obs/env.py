@@ -322,5 +322,5 @@ class CarlaEnv(BaseEnv):
                 'yaw_reward': yaw_reward,
                 'route_reward': route_reward,
                 'traffic_reward': traffic_reward,
-                'success': self.last_waypoint > self.route_len - 10}
+                'success': self.last_waypoint > self.route_len-10}
         return reward_info

@@ -27,7 +27,6 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
         self.config = config.agent
         self.save_root = config.save_root
         self.track = autonomous_agent.Track.SENSORS
-        self.tensorboard_root = f'{config.save_root}/logs/tensorboard'
         
         # setup model
         self.obs_dim = (self.config.waypoint_state_dim + 4,)
@@ -42,9 +41,10 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
         else:
             self.model = SAC(MlpPolicy, NullEnv(obs_spec, act_spec))
             self.episode_num = -1 # the first reset changes this to 0
+
+        self.tensorboard_root = f'{config.save_root}/logs/tensorboard'
         self.model.tensorboard_log = self.tensorboard_root
 
-        #print(self.model._vec_normalize_env)
         self.save_images = self.config.save_images
         self.save_images_path  = f'{self.save_root}/images/episode_{self.episode_num:06d}'
         self.save_images_interval = 4

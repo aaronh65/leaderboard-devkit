@@ -30,7 +30,7 @@ class CarlaEnv(BaseEnv):
         # set up blocking checks
         self.last_hero_transforms = deque()
         self.max_positions_len = 60 
-        self.blocking_distance = 3.0
+        self.blocking_distance = 2.0
         self.target_idx = 0
         self.last_waypoint = 0
 
@@ -85,18 +85,18 @@ class CarlaEnv(BaseEnv):
 
         criteria = [blocked_done, timeout_done, distance_done]
         done = any(criteria)
-        info = {'blocked': blocked_done, 'timeout': timeout_done, 'too_far': distance_done}
+        #info = {'blocked': blocked_done, 'timeout': timeout_done, 'too_far': distance_done}
+        info = {'is_success': reward_info['success']}
 
         # set up experience from last step
         maps = self.hero_agent.cached_maps
-
         obs = np.stack(islice(maps, 1, self.history_size + 1), axis=2)
-        action = self.hero_agent.cached_action
-        reward = reward_info['reward']
+        action = self.hero_agent.cached_prev_action
+        reward = self.hero_agent.cached_rinfo['reward']
         new_obs = np.stack(islice(maps, 0, self.history_size), axis=2)
         done = done or self.hero_agent.cached_done
 
-        self.exp = [obs, action, reward, new_obs, done, {}]
+        self.exp = [obs, action, reward, new_obs, done, info]
 
         # update hero cache for next step
         self.hero_agent.cached_rinfo = reward_info
@@ -222,11 +222,14 @@ class CarlaEnv(BaseEnv):
         if blocked_or_distance_done:
             route_reward = 10 if self.last_waypoint == self.route_len-1 else -5
 
-        #reward = dist_reward + yaw_reward + vel_reward + route_reward
-        reward = dist_reward + vel_reward + route_reward
+        reward = dist_reward + yaw_reward + vel_reward + route_reward
+        #reward = dist_reward + vel_reward + route_reward
         reward_info = {
                 'reward': reward, 
                 'dist_reward': dist_reward,
                 'vel_reward': vel_reward,
-                'route_reward': route_reward}
+                'yaw_reward': yaw_reward,
+                'route_reward': route_reward,
+                'success': self.last_waypoint > self.route_len-10,
+                }
         return reward_info

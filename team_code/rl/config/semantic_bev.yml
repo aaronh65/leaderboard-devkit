@@ -21,11 +21,13 @@ agent:
   train_frequency: 1
   gradient_steps: 1
   target_update_interval: 1
-  save_frequency: 100
+  save_frequency: 500
   log_frequency: 100
   save_images: true
   verbose: false
   # semantic_bev args
   bev_size: 360
   history_size: 5
+  buffer_size: 1000
+  batch_size: 16
 

@@ -34,22 +34,31 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
         # setup model
         self.obs_dim = (self.config.bev_size,self.config.bev_size,self.config.history_size,)
         self.act_dim = (2,)
+        obs_spec = ('box', 0, 255, self.obs_dim, np.uint8)
+        act_spec = ('box', -1, 1, self.act_dim, np.float32)
+
         if RESTORE:
             self.restore()
+            self.model.set_env(NullEnv(obs_spec, act_spec))
         else:
             self.episode_num = -1
             print('CREATING MODEL')
-            obs_spec = ('box', 0, 255, self.obs_dim, np.uint8)
-            act_spec = ('box', -1, 1, self.act_dim, np.float32)
-            self.model = SAC(CnnPolicy, NullEnv(obs_spec, act_spec), 
-                    buffer_size=1000, batch_size=16)
+            self.model = SAC(
+                    CnnPolicy, 
+                    NullEnv(obs_spec, act_spec), 
+                    buffer_size=self.config.buffer_size, 
+                    batch_size=self.config.batch_size)
             print('CREATED MODEL')
+
+        self.tensorboard_root = f'{config.save_root}/logs/tensorboard'
+        self.model.tensorboard_log = self.tensorboard_root
 
         self.save_images = self.config.save_images
         self.save_images_path  = f'{self.save_root}/images/episode_{self.episode_num:06d}'
         self.save_images_interval = 4
 
         self.burn_in = False
+        self.deterministic = False
 
     def restore(self):
         with open(f'{self.save_root}/logs/log.json', 'r') as f:
@@ -83,6 +92,9 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
     def set_burn_in(self, burn_in):
         self.burn_in = burn_in
 
+    def set_deterministic(self, deterministic):
+        self.deterministic = deterministic
+
     def reset(self):
 
         self.episode_num += 1
@@ -115,18 +127,18 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
             action = np.random.uniform(-1, 1, size=self.act_dim)
         else:
             obs = np.stack(islice(self.cached_maps, 0, self.config.history_size), axis=2)
-            action, _states = self.model.predict(obs)
+            action, _states = self.model.predict(obs, deterministic=self.deterministic)
         
         # add PID controller step?
         throttle, steer = action
-        throttle = float(throttle/2 + 0.5)
-        steer = float(steer)
+        throttle = np.clip(throttle/2 + 0.5, 0.0, 1.0)
+        steer = np.clip(steer, -1.0, 1.0)
         brake = False
-        control = VehicleControl(throttle, steer, brake)
+        control = VehicleControl(float(throttle), float(steer), float(brake))
 
         # record things
-        self.cached_action = action
         self.cached_prev_action = self.cached_action.copy()
+        self.cached_action = action
 
         self.step += 1 
         return control
@@ -147,8 +159,8 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
         reward = rinfo['reward']
         rewdst = rinfo['dist_reward']
         rewvel = rinfo['vel_reward']
+        rewyaw = rinfo['yaw_reward']
         rewcmp = rinfo['route_reward']
-
 
         text_strs = [
                 f'Steer: {steer:.3f}',
@@ -156,6 +168,7 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
                 f'Reward: {reward:.3f}',
                 f'RewDst: {rewdst:.3f}',
                 f'RewVel: {rewvel:.3f}',
+                f'RewYaw: {rewyaw:.3f}',
                 f'RewCmp: {rewcmp:.3f}',]
 
         for i, text in enumerate(text_strs):

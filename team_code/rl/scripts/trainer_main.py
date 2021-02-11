@@ -104,9 +104,9 @@ else:
     econf['empty'] = args.empty
     econf['hop_resolution'] = 2.0
 
-    total_timesteps = 2000 if args.debug else 100000
+    total_timesteps = 2000 if args.debug else 500000
     burn_timesteps = 250 if args.debug else 2000
-    save_frequency = 100 if args.debug else 1000
+    save_frequency = 500 if args.debug else 5000
 
     aconf = config['agent']
     aconf['mode'] = 'train'
