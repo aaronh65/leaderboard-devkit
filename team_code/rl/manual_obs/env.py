@@ -285,6 +285,7 @@ class CarlaEnv(BaseEnv):
         R_world2tgt = np.array(target_waypoint.transform.get_inverse_matrix())[:3,:3]
         tgt2hero = np.matmul(R_world2tgt, tgt2hero).flatten()
         long_dist, lat_dist = np.abs(tgt2hero[:2])
+        lat_dist = np.clip(lat_dist, 0, 4)
         dist_reward = 0 - min(lat_dist/lat_max, 1)
 
         # rotation reward
@@ -323,4 +324,8 @@ class CarlaEnv(BaseEnv):
                 'route_reward': route_reward,
                 'traffic_reward': traffic_reward,
                 'success': self.last_waypoint > self.route_len-10}
+        if np.isnan(reward):
+            reward_info['reward'] = 0
+            print('caught NaN, setting reward to 0')
+            print(reward_info)
         return reward_info

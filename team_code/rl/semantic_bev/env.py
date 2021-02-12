@@ -232,4 +232,9 @@ class CarlaEnv(BaseEnv):
                 'route_reward': route_reward,
                 'success': self.last_waypoint > self.route_len-10,
                 }
+
+        if np.isnan(reward):
+            reward_info['reward'] = 0
+            print('caught NaN, setting reward to 0')
+            print(reward_info)
         return reward_info
