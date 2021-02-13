@@ -229,7 +229,7 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
         for i, text in enumerate(right_text_strs):
             draw_text(bev, text, (width-130, 20*(i+1)))
 
-        if HAS_DISPLAY:
+        if HAS_DISPLAY or True:
             cv2.imshow('bev', bev)
             cv2.waitKey(1)
 

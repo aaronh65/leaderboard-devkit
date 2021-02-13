@@ -73,12 +73,14 @@ class CarlaEnv(BaseEnv):
 
         # check blocked and timeout
         info = {}
+        self.aux_info = {}
         hero_transform = CarlaDataProvider.get_transform(self.hero_actor)
         blocked_done = self._check_blocked(hero_transform)
         timeout_done = self.frame >= 6000 # remove?
 
         # get target and next observation
-        target_idx, distance_done = self._get_target(hero_transform) # idxs
+        target_idx = self._get_target(hero_transform) # idxs
+        distance_done = self.aux_info['distance_done']
         target_waypoint = self.route_waypoints[target_idx]
         obs = self._get_observation(hero_transform, target_idx)
         
@@ -92,7 +94,7 @@ class CarlaEnv(BaseEnv):
                 target_waypoint.transform.location, color=(255,0,0), size=0.5)
         
 
-        criteria = [blocked_done, timeout_done, distance_done]
+        criteria = [blocked_done, timeout_done, self.aux_info['distance_done']]
         done = any(criteria)
         #info = {'blocked': blocked_done, 'timeout': timeout_done, 'too_far': distance_done}
         info = {'is_success': reward_info['success']}
@@ -116,6 +118,8 @@ class CarlaEnv(BaseEnv):
         return False
 
     def _get_target(self, hero_transform):
+
+        target_info = {}
 
         winsize = 100
         end_idx = min(self.last_waypoint + winsize, self.route_len)
@@ -146,10 +150,12 @@ class CarlaEnv(BaseEnv):
         valid_indices = np.arange(len(route_transforms))[valid]
 
         if len(valid_indices) == 0:
+            self.aux_info['distance_done'] = False
             return self.last_waypoint, True
 
         # retrieve target
         target_idx = self.last_waypoint + valid_indices[0]
+        self.aux_info['new_target'] = target_idx != self.last_waypoint
         target = self.route_waypoints[target_idx]
         self.last_waypoint = target_idx
 
@@ -160,6 +166,7 @@ class CarlaEnv(BaseEnv):
 
         long_dist, lat_dist = np.abs(tgt2hero[:2])
         done = lat_dist > 4 # 3/2 lane widths away from the center
+        self.aux_info['distance_done'] = done
 
         # visualize
         start_draw = max(0, target_idx-25)
@@ -169,7 +176,7 @@ class CarlaEnv(BaseEnv):
                 color=(0,0,255), life_time=0.06)
         
         self.env_log['last_waypoint'] = int(self.last_waypoint)
-        return target_idx, done
+        return target_idx
     
     
     def _get_observation(self, hero_transform, target_idx):
@@ -302,7 +309,8 @@ class CarlaEnv(BaseEnv):
         vel_reward = 1 - min(vel_diff/tvel, 1)
 
         # route reward
-        route_reward = self.last_waypoint / self.route_len
+        #route_reward = self.last_waypoint / self.route_len
+        route_reward = self.aux_info['new_target'] * 5 # 5 if new target else 0
         if blocked_or_distance_done:
             #route_reward = 1000 if self.last_waypoint == self.route_len-1 else -100
             route_reward = 100 if self.last_waypoint == self.route_len-1 else -10
