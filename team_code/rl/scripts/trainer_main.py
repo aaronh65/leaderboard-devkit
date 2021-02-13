@@ -121,6 +121,7 @@ else:
     with open(config_path, 'w') as f:
         yaml.dump(config, f, default_flow_style=False, sort_keys=False)
 
+    os.environ["CUDA_VISIBLE_DEVICES"] = str(args.G)
     os.environ["CONDA_ENV"] = 'lbrl'
     os.environ["ALGO"] = args.algo
     os.environ["PROJECT_ROOT"] = project_root
@@ -128,7 +129,8 @@ else:
     os.environ["CARLA_EGG"] = carla_egg
     os.environ["CARLA_API"] = carla_api
     os.environ["RESTORE"] = "0"
-    os.environ["HAS_DISPLAY"] = "0" if args.remote is False else "1"
+    os.environ["HAS_DISPLAY"] = "0" if args.remote else "1"
+    #print(os.environ["HAS_DISPLAY"])
 
-cmd = f'CUDA_VISIBLE_DEVICES={args.G} bash run_trainer_main.sh {config_path}'
+cmd = f'bash run_trainer_main.sh {config_path}'
 os.system(cmd)

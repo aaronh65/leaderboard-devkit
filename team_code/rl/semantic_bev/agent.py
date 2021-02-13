@@ -56,7 +56,7 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
 
         self.save_images = self.config.save_images
         self.save_images_path  = f'{self.save_root}/images/episode_{self.episode_num:06d}'
-        self.save_images_interval = 4
+        self.save_images_interval = 2
 
         self.burn_in = False
         self.deterministic = False
@@ -175,10 +175,10 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
         for i, text in enumerate(text_strs):
             draw_text(combined, text, (5, 20*(i+1)))
 
+        # plot and save
         if HAS_DISPLAY:
             cv2.imshow('combined', combined)
             cv2.waitKey(1)
-
         if self.save_images:
             frame = self.step // self.save_images_interval
             save_path = f'{self.save_images_path}/{frame:06d}.png'

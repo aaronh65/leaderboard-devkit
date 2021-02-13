@@ -174,7 +174,7 @@ def train(config, agent, env):
                 sac_log['mean_policy_loss'] /= episode_steps
                 sac_log['mean_value_loss'] /= episode_steps
                 sac_log['mean_entropy'] /= episode_steps
-                sac_log['total_reward'] = episode_reward[-1]
+                sac_log['total_reward'] = episode_rewards[-1]
                 log['checkpoints'].append(episode_log)
 
                 #with open(f'{config.save_root}/logs/log.json', 'w') as f:

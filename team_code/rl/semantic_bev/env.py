@@ -157,7 +157,7 @@ class CarlaEnv(BaseEnv):
             self.aux_info['new_target'] = True
             self.aux_info['distance_done'] = False
 
-            return self.last_waypoint, True
+            return self.last_waypoint
 
         # retrieve target
         target_idx = self.last_waypoint + valid_indices[0]
@@ -171,7 +171,7 @@ class CarlaEnv(BaseEnv):
         tgt2hero = np.matmul(R_world2tgt, tgt2hero).flatten()
 
         long_dist, lat_dist = np.abs(tgt2hero[:2])
-        done = lat_dist > 4 # 3/2 lane widths away from the center
+        done = lat_dist > 4 or long_dist > 8 # 3/2 lane widths away from the center
         self.aux_info['distance_done'] = done
 
         # visualize

@@ -48,7 +48,7 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
 
         self.save_images = self.config.save_images
         self.save_images_path  = f'{self.save_root}/images/episode_{self.episode_num:06d}'
-        self.save_images_interval = 4
+        self.save_images_interval = 2
 
         self._turn_controller = PIDController(K_P=1.25, K_I=0.75, K_D=0.3, n=40)
         self._speed_controller = PIDController(K_P=5.0, K_I=0.5, K_D=1.0, n=40)
@@ -141,7 +141,7 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
             #brake = float(brake/2 + 0.5)
             brake = False
 
-        throttle = np.clip(throttle, 0.0, 1.0)
+        throttle = np.clip(throttle/2 + 0.5, 0.0, 1.0)
         throttle = throttle if not brake else 0.0
         steer = np.clip(steer, -1.0, 1.0)
         return VehicleControl(float(throttle), float(steer), float(brake))
@@ -229,10 +229,10 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
         for i, text in enumerate(right_text_strs):
             draw_text(bev, text, (width-130, 20*(i+1)))
 
+        # plot and save
         if HAS_DISPLAY:
             cv2.imshow('bev', bev)
             cv2.waitKey(1)
-
         if self.save_images and self.step % self.save_images_interval == 0:
             frame = self.step // self.save_images_interval
             save_path = f'{self.save_images_path}/{frame:06d}.png'
