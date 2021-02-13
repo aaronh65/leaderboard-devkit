@@ -128,7 +128,7 @@ else:
     os.environ["CARLA_EGG"] = carla_egg
     os.environ["CARLA_API"] = carla_api
     os.environ["RESTORE"] = "0"
-    os.environ["HAS_DISPLAY"] = "0" if args.remote else "1"
+    os.environ["HAS_DISPLAY"] = "0" if args.remote is False else "1"
 
 cmd = f'CUDA_VISIBLE_DEVICES={args.G} bash run_trainer_main.sh {config_path}'
 os.system(cmd)
