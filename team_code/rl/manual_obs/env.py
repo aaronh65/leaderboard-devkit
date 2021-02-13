@@ -151,7 +151,8 @@ class CarlaEnv(BaseEnv):
 
         if len(valid_indices) == 0:
             self.aux_info['distance_done'] = False
-            return self.last_waypoint, True
+            self.aux_info['new_target'] = True
+            return self.last_waypoint
 
         # retrieve target
         target_idx = self.last_waypoint + valid_indices[0]
