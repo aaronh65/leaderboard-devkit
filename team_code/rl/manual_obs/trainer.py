@@ -191,7 +191,7 @@ def train(config, agent, env):
                 if len(episode_rewards[-101:-1]) == 0:
                     mean_reward = -np.inf
                 else:
-                    mean_reward = round(float(np.mean(episode_rewards[-101:1])), 1)
+                    mean_reward = round(float(np.mean(episode_rewards[-101:-1])), 1)
 
                 num_episodes = len(episode_rewards) - 1
 

@@ -115,7 +115,7 @@ else:
     aconf['mode'] = 'train'
     aconf['total_timesteps'] = total_timesteps
     aconf['burn_timesteps'] = burn_timesteps
-    aconf['save_frequency']
+    aconf['save_frequency'] = save_frequency
 
     config_path = f'{save_root}/config.yml'
     with open(config_path, 'w') as f:

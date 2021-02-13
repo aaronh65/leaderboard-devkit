@@ -196,7 +196,7 @@ def train(config, agent, env):
                     nans = np.isnan(episode_rewards[-101:1])
                     if np.any(nans):
                         print(f'found {np.sum(nans)} NaNs')
-                    mean_reward = round(float(np.mean(episode_rewards[-101:1])), 1)
+                    mean_reward = round(float(np.mean(episode_rewards[-101:-1])), 1)
 
                 num_episodes = len(episode_rewards) - 1
 
