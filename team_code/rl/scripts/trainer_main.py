@@ -39,10 +39,12 @@ if restore:
     with open(config_path, 'r') as f:
         config = yaml.load(f, Loader=yaml.Loader)
 
-    version = config['carla_root'].split('/')[-1]
-    carla_root = f'{root}/{version}'
+    #version = config['carla_root'].split('/')[-1]
+    #carla_root = f'{root}/{version}'
+    carla_root = config['carla_root']
     carla_api = f'{carla_root}/PythonAPI/carla'
-    carla_egg = f'{carla_root}/PythonAPI/carla/dist/carla-0.9.{args.version}-py3.7-linux-x86_64.egg'
+    #carla_egg = f'{carla_root}/PythonAPI/carla/dist/carla-0.9.{args.version}-py3.7-linux-x86_64.egg'
+    carla_egg = f'{carla_root}/PythonAPI/carla/dist/carla-0.9.11-py3.7-linux-x86_64.egg'
 
     os.environ["CONDA_ENV"] = 'lbrl'
     os.environ["ALGO"] = config['algo']
