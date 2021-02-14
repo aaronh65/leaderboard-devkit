@@ -188,7 +188,7 @@ class CarlaEnv(BaseEnv):
 
         obs = np.zeros(self.obs_dim)
 
-        # state per waypoint (x,y,z in agent frame + yaw diff) and agent velocity
+        # state per waypoint (x,y,z in agent frame + yaw diff)
         wstates = np.zeros((self.nstate_waypoints, self.waypoint_state_dim))
         for i in range(self.nstate_waypoints):
 

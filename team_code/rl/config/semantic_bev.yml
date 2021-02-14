@@ -16,12 +16,12 @@ env:
   hop_resolution: 2
 agent:
   mode: train
-  total_timesteps: 2000
-  burn_timesteps: 250
+  total_timesteps: 500000
+  burn_timesteps: 2000
   train_frequency: 1
   gradient_steps: 1
   target_update_interval: 1
-  save_frequency: 500
+  save_frequency: 5000
   log_frequency: 100
   save_images: true
   verbose: false
@@ -30,4 +30,5 @@ agent:
   history_size: 5
   buffer_size: 10000
   batch_size: 32
+  pid: false
 

@@ -17,17 +17,17 @@ env:
   hop_resolution: 2
 agent:
   mode: train
-  total_timesteps: 2000
-  burn_timesteps: 250
+  total_timesteps: 500000
+  burn_timesteps: 2000
   train_frequency: 1
   gradient_steps: 1
   target_update_interval: 1
-  save_frequency: 100
+  save_frequency: 5000
   log_frequency: 100
   save_images: true
   verbose: false
   # manual_obs args
   num_state_waypoints: 5
   waypoint_state_dim: 4
-  pid: false
+  pid: true
 

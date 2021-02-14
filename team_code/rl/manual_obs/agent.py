@@ -16,8 +16,8 @@ from stable_baselines import SAC
 
 
 
-RESTORE = int(os.environ.get("RESTORE", 0))
-HAS_DISPLAY = int(os.environ.get("HAS_DISPLAY", 0))
+RESTORE = bool(int(os.environ.get("RESTORE", 0)))
+HAS_DISPLAY = bool(int(os.environ.get("HAS_DISPLAY", 0)))
 
 def get_entry_point():
     return 'WaypointAgent'
@@ -123,7 +123,7 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
             steer = self._turn_controller.step(angle / 90)
             steer = np.clip(steer, -1.0, 1.0)
 
-            current_speed = (state[5]+1) * 40 # km/h
+            current_speed = (self.cached_state[5]+1) * 40 # km/h
             current_speed = current_speed * 1000/3600 # m/s
             next_speed = (next_speed+1) * 40
             next_speed = next_speed * 1000/3600
@@ -139,11 +139,11 @@ class WaypointAgent(autonomous_agent.AutonomousAgent):
             #throttle = np.clip(throttle, 0, 1)
             #steer = np.clip(steer, -1, 1)
             #brake = float(brake/2 + 0.5)
+            steer = np.clip(steer, -1.0, 1.0)
             brake = False
+            throttle = np.clip(throttle/2 + 0.5, 0.0, 1.0)
 
-        throttle = np.clip(throttle/2 + 0.5, 0.0, 1.0)
         throttle = throttle if not brake else 0.0
-        steer = np.clip(steer, -1.0, 1.0)
         return VehicleControl(float(throttle), float(steer), float(brake))
 
     def predict(self, state, burn_in=False, deterministic=False):

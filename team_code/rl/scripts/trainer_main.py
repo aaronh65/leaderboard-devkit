@@ -53,7 +53,7 @@ if restore:
     os.environ["CARLA_EGG"] = carla_egg
     os.environ["CARLA_API"] = carla_api
     os.environ["RESTORE"] = "1"
-    os.environ["HAS_DISPLAY"] = "0" if config['remote'] else "1"
+    os.environ["HAS_DISPLAY"] = str(int(not config['remote']))
 
 else:
 
@@ -109,11 +109,17 @@ else:
     econf['empty'] = args.empty
     econf['hop_resolution'] = 2.0
 
-    total_timesteps = 2000 if args.debug else 500000
+    
+    aconf = config['agent']
+    if args.debug:
+        aconf['total_timesteps'] = 2000
+        aconf['burn_timesteps'] = 250
+        aconf['save_frequency'] = 500
+
+    total_timesteps = 2000 if args.debug else aconf['total_timesteps']
     burn_timesteps = 250 if args.debug else 2000
     save_frequency = 500 if args.debug else 5000
 
-    aconf = config['agent']
     aconf['mode'] = 'train'
     aconf['total_timesteps'] = total_timesteps
     aconf['burn_timesteps'] = burn_timesteps
@@ -131,8 +137,7 @@ else:
     os.environ["CARLA_EGG"] = carla_egg
     os.environ["CARLA_API"] = carla_api
     os.environ["RESTORE"] = "0"
-    os.environ["HAS_DISPLAY"] = "0" if args.remote else "1"
-    #print(os.environ["HAS_DISPLAY"])
+    os.environ["HAS_DISPLAY"] = str(int(not args.remote))
 
 cmd = f'bash run_trainer_main.sh {config_path}'
 os.system(cmd)
