@@ -30,15 +30,16 @@ def main(args):
             height, width, channels = im.shape
 
         if width % 2 == 1 or height % 2 == 1:
-            cmd = f'ffmpeg -y -r 2 -s {width}x{height} -f image2 -i {input_dir}/%06d.png -pix_fmt yuv420p -vf \"pad=ceil(iw/2)*2:ceil(ih/2)*2\" {save_path}'
+            cmd = f'ffmpeg -y -r {args.fps} -s {width}x{height} -f image2 -i {input_dir}/%06d.png -pix_fmt yuv420p -vf \"pad=ceil(iw/2)*2:ceil(ih/2)*2\" {save_path}'
         else:
-            cmd = f'ffmpeg -y -r 2 -s {width}x{height} -f image2 -i {input_dir}/%06d.png -pix_fmt yuv420p {save_path}'
+            cmd = f'ffmpeg -y -r {args.fps} -s {width}x{height} -f image2 -i {input_dir}/%06d.png -pix_fmt yuv420p {save_path}'
         os.system(cmd)
 
 def parse_args():
     parser = argparse.ArgumentParser()
     # /home/aaron/workspace/carla/2020_CARLA_challenge/leaderboard/results/rl/waypoint_agent/video_test
     parser.add_argument('--target_dir', type=str, required=True)
+    parser.add_argument('--fps', type=int, default=10)
     args = parser.parse_args()
     return args
 

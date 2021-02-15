@@ -144,9 +144,9 @@ class PrivilegedAgent(MapAgent):
         #points, (target_cam, _) = self.net.forward(topdown, target)
         #points = self.net.forward(topdown, target) # world frame
         points, hmap = self.net.forward(topdown, target, debug=True) # world frame
-        hmap = hmap[0].clone().cpu().squeeze().numpy()
-        cv2.imshow('hmap', hmap)
-        cv2.waitKey(1)
+        #hmap = hmap[0].clone().cpu().squeeze().numpy()
+        #cv2.imshow('hmap', hmap)
+        #cv2.waitKey(1)
         points_map = points.clone().cpu().squeeze()
         # what's this conversion for?
         # was this originally normalized for training stability or something?
