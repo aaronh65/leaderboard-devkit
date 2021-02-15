@@ -12,6 +12,7 @@ export PYTHONPATH=$PYTHONPATH:$CARLA_API
 export PYTHONPATH=$PYTHONPATH:$PROJECT_ROOT
 export PYTHONPATH=$PYTHONPATH:$PROJECT_ROOT/leaderboard
 export PYTHONPATH=$PYTHONPATH:$PROJECT_ROOT/scenario_runner
+export PYTHONPATH=$PYTHONPATH:$PROJECT_ROOT/team_code/
 
 export DEBUG_CHALLENGE=0 # DO NOT MODIFY
 
@@ -24,7 +25,7 @@ SCENARIOS=$PROJECT_ROOT/leaderboard/data/all_towns_traffic_scenarios_public.json
 CHECKPOINT_ENDPOINT="$SAVE_ROOT/logs/${ROUTE_NAME}.txt"
 
 python ${PROJECT_ROOT}/leaderboard/leaderboard/leaderboard_evaluator.py \
---track=SENSORS \
+--track=${TRACK} \
 --scenarios=${SCENARIOS} \
 --agent=${TEAM_AGENT} \
 --agent-config=${TEAM_CONFIG} \

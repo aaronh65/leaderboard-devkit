@@ -3,19 +3,21 @@
 # you need to run CARLA before running this script
 
 import os, sys, time
+sys.path.append('../..')
 import yaml
 import argparse
 from datetime import datetime
-from utils import mkdir_if_not_exists
+from common.utils import mkdir_if_not_exists
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--version', type=int, choices=[10,11], default=11)
 parser.add_argument('--split', type=str, default='devtest', choices=['devtest','testing','training','debug'])
 parser.add_argument('--route', type=int, default=3)
-parser.add_argument('--agent', type=str, default='lbc/image_agent', choices=['lbc/image_agent', 'lbc/auto_pilot', 'lbc/privileged_agent', 'rl/waypoint_agent', 'common/forward_agent'])
+parser.add_argument('--agent', type=str, default='lbc/image_agent', 
+        choices=['lbc/image_agent', 'lbc/auto_pilot', 'lbc/privileged_agent', 'rl/waypoint_agent', 'common/forward_agent', 'lbc/xodrmap_agent'])
 parser.add_argument('--repetitions', type=int, default=1)
 parser.add_argument('--save_images', action='store_true')
-parser.add_argument('--debug', action='store_true')
+parser.add_argument('-d', '--debug', action='store_true')
 args = parser.parse_args()
 
 # set carla version variables
@@ -53,19 +55,31 @@ config['save_images'] = args.save_images
 config['split'] = args.split
 privileged = False
 conda_env = 'lb'
+
+agent_path = ''
+track = 'SENSORS'
 if args.agent == 'common/forward_agent':
-    pass
+    agent_path = args.agent
 elif args.agent == 'lbc/auto_pilot':
+    agent_path = 'lbc/src/auto_pilot'
     conda_env = 'lblbc'
     privileged = True
     config['save_data'] = False
 elif args.agent == 'lbc/image_agent':
+    agent_path = 'lbc/src/image_agent'
     conda_env = 'lblbc'
-    config['weights_path'] = 'team_code/config/image_model.ckpt'
+    config['weights_path'] = 'team_code/lbc/config/image_model.ckpt'
 elif args.agent == 'lbc/privileged_agent':
+    agent_path = 'lbc/src/privileged_agent'
     conda_env = 'lblbc'
     privileged = True
-    config['weights_path'] = 'team_code/config/map_model.ckpt'
+    config['weights_path'] = 'team_code/lbc/config/map_model.ckpt'
+elif args.agent == 'lbc/xodrmap_agent':
+    agent_path = 'lbc/src/xodrmap_agent'
+    conda_env = 'lblbc'
+    privileged = False
+    track = 'MAP'
+    config['weights_path'] = 'team_code/lbc/config/image_model.ckpt'
 
 config_path = f'{save_root}/config.yml'
 with open(config_path, 'w') as f:
@@ -80,13 +94,15 @@ os.environ["CARLA_API"] = carla_api
 os.environ["HAS_DISPLAY"] = "1"
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["TRACK"] = track
 os.environ["WORLD_PORT"] = "2000"
 os.environ["TM_PORT"] = "8000"
-os.environ["AGENT"] = args.agent
+os.environ["AGENT"] = agent_path
 os.environ["SPLIT"] = args.split
 os.environ["ROUTE_NAME"] = route_name
 os.environ["REPETITIONS"] = str(args.repetitions)
 os.environ["PRIVILEGED"] = "1" if privileged else "0"
+#os.environ["ALGO_ROOT"] = agent_path.split('/')[0]
  
 cmd = f'bash run_agent.sh'
 print(f'running {cmd} on {args.split}/{route_name} for {args.repetitions} repetitions')

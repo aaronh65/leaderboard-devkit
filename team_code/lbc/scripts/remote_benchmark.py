@@ -8,21 +8,19 @@ import argparse
 import traceback
 import psutil
 from datetime import datetime
-from utils import mkdir_if_not_exists
+from common.utils import mkdir_if_not_exists
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--version', type=int, choices=[10,11], default=11)
 parser.add_argument('--split', type=str, default='devtest', choices=['devtest','testing','training','debug'])
 parser.add_argument('--agent', type=str, default='lbc/image_agent', choices=['lbc/image_agent', 'lbc/auto_pilot', 'lbc/privileged_agent', 'common/forward_agent'])
-parser.add_argument('--gpus', type=int, default=1)
 parser.add_argument('--repetitions', type=int, default=1)
 parser.add_argument('--save_images', action='store_true')
-parser.add_argument('--debug', action='store_true')
-parser.add_argument('--local', action='store_true')
+parser.add_argument('-d', '--debug', action='store_true')
 
 # storage
-parser.add_argument('--ssd', type=int, choices=[0,1])
-parser.add_argument('--scratch', action='store_true')
+parser.add_argument('--gpus', type=int, default=1)
+parser.add_argument('--data_root', type=str, default='/data')
 args = parser.parse_args()
 
 # specific for multiprocessing and running multiple servers
@@ -41,16 +39,6 @@ def get_open_port():
     s.close()
     return port
 
-# check storage is valid
-assert not (args.ssd is not None and args.scratch), 'choose only one disk to save to'
-assert args.ssd is not None or args.scratch, 'choose a disk to save to'
-if args.ssd is not None:
-    assert os.path.exists(f'/ssd{args.ssd}'), 'ssd does not exist'
-    prefix = f'/ssd{args.ssd}'
-if args.scratch:
-    assert os.path.exists('/scratch'), 'scratch does not exist'
-    prefix = '/scratch'
-
 # set carla version variables
 carla_root = f'/home/aaronhua/CARLA_0.9.{args.version}'
 if args.version == 10:
@@ -64,7 +52,7 @@ try:
     project_root = "/home/aaronhua/leaderboard-devkit"
     date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
     suffix = f'debug/{date_str}' if args.debug else f'{date_str}'
-    save_root = f'{prefix}/aaronhua/leaderboard/results/{args.agent}/{suffix}'
+    save_root = f'{args.data_root}/aaronhua/leaderboard/results/{args.agent}/{suffix}'
     mkdir_if_not_exists(f'{save_root}/logs')
         
     # launch CARLA servers

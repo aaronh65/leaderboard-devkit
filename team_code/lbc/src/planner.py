@@ -42,8 +42,10 @@ class RoutePlanner(object):
         self.min_distance = min_distance # default 7.5
         self.max_distance = max_distance # default 25.0
 
-        self.mean = np.array([49.0, 8.0])
-        self.scale = np.array([111324.60662786, 73032.1570362])
+        #self.mean = np.array([49.0, 8.0])
+        #self.scale = np.array([111324.60662786, 73032.1570362])
+        self.mean = np.array([0.0, 0.0])
+        self.scale = np.array([111324.60662786, 111324.60662786])
 
         self.debug = Plotter(debug_size)
 
@@ -71,7 +73,7 @@ class RoutePlanner(object):
         farthest_in_range = -np.inf
         cumulative_distance = 0.0
 
-        # search for next waypoint within max range of 25.0 (units?)
+        # search for next waypoint within max range of 25.0m
         for i in range(1, len(self.route)):
 
             # break if we've searched far enough along route
