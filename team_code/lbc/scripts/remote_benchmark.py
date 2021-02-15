@@ -2,6 +2,7 @@
 # this script is usually used on a remote cluster
 
 import os, sys, time
+sys.path.append('../..')
 import yaml
 import subprocess
 import argparse
@@ -19,7 +20,7 @@ parser.add_argument('--save_images', action='store_true')
 parser.add_argument('-d', '--debug', action='store_true')
 
 # storage
-parser.add_argument('--gpus', type=int, default=1)
+parser.add_argument('-G', '--gpus', type=int, default=1)
 parser.add_argument('--data_root', type=str, default='/data')
 args = parser.parse_args()
 
