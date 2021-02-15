@@ -53,7 +53,7 @@ try:
     project_root = "/home/aaronhua/leaderboard-devkit"
     date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
     suffix = f'debug/{date_str}' if args.debug else f'{date_str}'
-    save_root = f'{args.data_root}/aaronhua/leaderboard/results/{args.agent}/{suffix}'
+    save_root = f'{args.data_root}/leaderboard/results/{args.agent}/{suffix}'
     mkdir_if_not_exists(f'{save_root}/logs')
         
     # launch CARLA servers
@@ -87,6 +87,8 @@ try:
     config['split'] = args.split
     privileged = False
     conda_env = 'lb'
+    agent_path = args.agent.split('/')
+    agent_path = os.path.join(agent_path[0], 'src', agent_path[1])
     if args.agent == 'common/forward_agent':
         pass
     elif args.agent == 'lbc/auto_pilot':
@@ -160,7 +162,7 @@ try:
         env["CUDA_VISIBLE_DEVICES"] = str(gpu)
         env["WORLD_PORT"] = str(wp)
         env["TM_PORT"] = str(tp)
-        env["AGENT"] = args.agent
+        env["AGENT"] = agent_path
         env["SPLIT"] = args.split
         env["ROUTE_NAME"] = route_name
         env["REPETITIONS"] = str(args.repetitions)
