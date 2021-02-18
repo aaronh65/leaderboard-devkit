@@ -26,11 +26,6 @@ def get_entry_point():
 
 class PrivilegedAgent(MapAgent):
     def setup(self, path_to_conf_file):
-        # make conf file a json file?
-        # store hparams for map model
-        # can extend to store all of the save paths so we don't rely on os environ stuff
-        # can copy this to the corresponding save path
-        
         super().setup(path_to_conf_file)
         self.converter = Converter()
         project_root = self.config.project_root
@@ -46,7 +41,6 @@ class PrivilegedAgent(MapAgent):
         self._speed_controller = PIDController(K_P=5.0, K_I=0.5, K_D=1.0, n=40)
         self.save_images_path = Path(f'{self.config.save_root}/images/{ROUTE_NAME}')
         self.save_image_dim=(1371,256)
-        #self.save_path.mkdir()
 
 
     def tick(self, input_data):
