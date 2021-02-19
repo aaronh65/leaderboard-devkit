@@ -12,18 +12,18 @@ from pathlib import Path
 
 from lbc.carla_project.src.image_model import ImageModel
 from lbc.carla_project.src.converter import Converter
+from lbc.common.base_agent import BaseAgent
+from lbc.common.pid_controller import PIDController
 
-from lbc.src.base_agent import BaseAgent
-from lbc.src.pid_controller import PIDController
-
+from srunner.scenariomanager.carla_data_provider import CarlaDataProvider
 
 DEBUG = int(os.environ.get('HAS_DISPLAY', 0))
 ROUTE_NAME = os.environ.get('ROUTE_NAME', 0)
 
 def get_entry_point():
-    return 'XODRMapAgent'
+    return 'ImageAgent'
 
-class XODRMapAgent(BaseAgent):
+class ImageAgent(BaseAgent):
     def setup(self, path_to_conf_file):
         super().setup(path_to_conf_file)
 
@@ -33,13 +33,6 @@ class XODRMapAgent(BaseAgent):
         self.net = ImageModel.load_from_checkpoint(f'{project_root}/{weights_path}')
         self.net.cuda()
         self.net.eval()
-
-    def sensors(self):
-        result = super().sensors()
-        result.append({'type': 'sensor.opendrive_map', 'reading_frequency': 1, 'id': 'xodr'})
-        #print('adding opendrive map?')
-        #print(result)
-        return result
 
     def _init(self):
         super()._init()
@@ -54,11 +47,6 @@ class XODRMapAgent(BaseAgent):
 
     def tick(self, input_data):
         result = super().tick(input_data)
-        #print(input_data.keys())
-        if 'xodr' in input_data.keys():
-            result['xodr'] = input_data['xodr'][1]['opendrive']
-            #print(result['xodr'])
-        #print(type(result['osmap']))
         result['image'] = np.concatenate(tuple(result[x] for x in ['rgb', 'rgb_left', 'rgb_right']), -1)
 
         theta = result['compass']
@@ -135,6 +123,13 @@ class XODRMapAgent(BaseAgent):
     def run_step(self, input_data, timestamp):
         if not self.initialized:
             self._init()
+
+        #rclist = CarlaDataProvider.get_route_completion_list()
+        #iflist = CarlaDataProvider.get_infraction_list()
+
+        #print(f'step {self.step}')
+        #print(f'iflist {iflist}')
+        #print(f'rclist {rclist}')
 
         tick_data = self.tick(input_data)
 

@@ -1,8 +1,8 @@
 from srunner.scenariomanager.carla_data_provider import CarlaDataProvider
 
-from team_code.lbc.src.base_agent import BaseAgent
-from team_code.lbc.src.planner import RoutePlanner
-from team_code.lbc.carla_project.src.carla_env import draw_traffic_lights, get_nearby_lights
+from lbc.common.base_agent import BaseAgent
+from lbc.common.planner import RoutePlanner
+from lbc.carla_project.src.carla_env import draw_traffic_lights, get_nearby_lights
 
 
 def get_entry_point():

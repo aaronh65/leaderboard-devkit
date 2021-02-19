@@ -10,10 +10,10 @@ import torch
 
 from PIL import Image, ImageDraw
 
-from carla_project.src.common import CONVERTER, COLOR
-from carla_project.src.converter import Converter
-from team_code.lbc.map_agent import MapAgent
-from team_code.lbc.pid_controller import PIDController
+from lbc.carla_project.src.common import CONVERTER, COLOR
+from lbc.carla_project.src.converter import Converter
+from lbc.common.map_agent import MapAgent
+from lbc.common.pid_controller import PIDController
 
 
 #HAS_DISPLAY = True

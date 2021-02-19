@@ -11,6 +11,8 @@ import psutil
 from datetime import datetime
 from common.utils import mkdir_if_not_exists
 
+env_map = {'lbc': 'lblbc', 'dspred': 'dspred'}
+
 parser = argparse.ArgumentParser()
 parser.add_argument('--version', type=int, choices=[10,11], default=11)
 parser.add_argument('--split', type=str, default='devtest', choices=['devtest','testing','training','debug'])

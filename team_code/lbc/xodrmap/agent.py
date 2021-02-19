@@ -1,6 +1,7 @@
-import os
+import os 
 import numpy as np
 import cv2
+#import json
 import pickle as pkl
 import torch
 import torchvision
@@ -9,42 +10,55 @@ import carla
 from PIL import Image, ImageDraw
 from pathlib import Path
 
-from lbc.carla_project.src.map_model import MapModel
-from lbc.carla_project.src.dataset import preprocess_semantic
+from lbc.carla_project.src.image_model import ImageModel
 from lbc.carla_project.src.converter import Converter
-from lbc.carla_project.src.common import CONVERTER, COLOR
 
-from lbc.src.map_agent import MapAgent
-from lbc.src.pid_controller import PIDController
+from lbc.common.base_agent import BaseAgent
+from lbc.common.pid_controller import PIDController
 
 
 DEBUG = int(os.environ.get('HAS_DISPLAY', 0))
 ROUTE_NAME = os.environ.get('ROUTE_NAME', 0)
 
 def get_entry_point():
-    return 'PrivilegedAgent'
+    return 'XODRMapAgent'
 
-class PrivilegedAgent(MapAgent):
+class XODRMapAgent(BaseAgent):
     def setup(self, path_to_conf_file):
         super().setup(path_to_conf_file)
+
         self.converter = Converter()
         project_root = self.config.project_root
         weights_path = self.config.weights_path
-        self.net = MapModel.load_from_checkpoint(f'{project_root}/{weights_path}')
+        self.net = ImageModel.load_from_checkpoint(f'{project_root}/{weights_path}')
         self.net.cuda()
         self.net.eval()
+
+    def sensors(self):
+        result = super().sensors()
+        result.append({'type': 'sensor.opendrive_map', 'reading_frequency': 1, 'id': 'xodr'})
+        #print('adding opendrive map?')
+        #print(result)
+        return result
 
     def _init(self):
         super()._init()
 
         self._turn_controller = PIDController(K_P=1.25, K_I=0.75, K_D=0.3, n=40)
         self._speed_controller = PIDController(K_P=5.0, K_I=0.5, K_D=1.0, n=40)
+
         self.save_images_path = Path(f'{self.config.save_root}/images/{ROUTE_NAME}')
         self.save_image_dim=(1371,256)
+        #self.save_path.mkdir()
 
 
     def tick(self, input_data):
         result = super().tick(input_data)
+        #print(input_data.keys())
+        if 'xodr' in input_data.keys():
+            result['xodr'] = input_data['xodr'][1]['opendrive']
+            #print(result['xodr'])
+        #print(type(result['osmap']))
         result['image'] = np.concatenate(tuple(result[x] for x in ['rgb', 'rgb_left', 'rgb_right']), -1)
 
         theta = result['compass']
@@ -58,7 +72,6 @@ class PrivilegedAgent(MapAgent):
             ])
         result['R'] = R
         gps = self._get_position(result) # method returns position in meters
-
         
         # transform route waypoints to overhead map view
         route = self._command_planner.run_step(gps) # oriented in world frame
@@ -67,15 +80,14 @@ class PrivilegedAgent(MapAgent):
         nodes = R.T.dot(nodes.T) # (2,2) x (2,N) = (2,N)
         nodes = nodes.T * 5.5 # (N,2) # to map frame (5.5 pixels per meter)
         nodes += [128,256]
-        #nodes = np.clip(nodes, 0, 256)
+        nodes = np.clip(nodes, 0, 256)
         commands = [command for _, command in route]
-        target = np.clip(nodes[1], 0, 256)
 
         # populate results
         result['num_waypoints'] = len(route)
         result['route_map'] = nodes
         result['commands'] = commands
-        result['target'] = target
+        result['target'] = nodes[1]
 
         return result
 
@@ -92,7 +104,6 @@ class PrivilegedAgent(MapAgent):
         target = torch.from_numpy(tick_data['target'])
         target = target[None].cuda()
 
-        #points, (target_cam, _) = self.net.forward(img, target)
         points, (target_cam, _) = self.net.forward(img, target)
         control = self.net.controller(points).cpu().squeeze()
 
@@ -126,98 +137,78 @@ class PrivilegedAgent(MapAgent):
             self._init()
 
         tick_data = self.tick(input_data)
-        topdown = Image.fromarray(tick_data['topdown'])
-        topdown = topdown.crop((128, 0, 128+256, 256))
-        topdown = np.array(topdown)
-        topdown = preprocess_semantic(topdown)
-        topdown = topdown[None].cuda()
 
+        # prepare image model inputs
+        img = torchvision.transforms.functional.to_tensor(tick_data['image'])
+        img = img[None].cuda()
         target = torch.from_numpy(tick_data['target'])
         target = target[None].cuda()
 
-        #points, (target_cam, _) = self.net.forward(topdown, target)
-        #points = self.net.forward(topdown, target) # world frame
-        points, hmap = self.net.forward(topdown, target, debug=True) # world frame
-        #hmap = hmap[0].clone().cpu().squeeze().numpy()
-        #cv2.imshow('hmap', hmap)
-        #cv2.waitKey(1)
-        points_map = points.clone().cpu().squeeze()
-        # what's this conversion for?
-        # was this originally normalized for training stability or something?
-        points_map = points_map + 1
-        points_map = points_map / 2 * 256
-        points_map = np.clip(points_map, 0, 256)
-        points_cam = self.converter.map_to_cam(points_map).numpy()
-        points_world = self.converter.map_to_world(points_map).numpy()
-        points_map = points_map.numpy()
-
-        tick_data['points_map'] = points_map
-        tick_data['points_cam'] = points_cam
+        # forward through NN and process output
+        points, (target_cam, _) = self.net.forward(img, target)
+        #heatmap = _.cpu().numpy()
+        #heatmap = cv2.flip(heatmap[0][0], 0)
+        #cv2.imshow('heatmap', heatmap)
+        points_cam = points.clone().cpu()
+        points_cam[..., 0] = (points_cam[..., 0] + 1) / 2 * img.shape[-1]
+        points_cam[..., 1] = (points_cam[..., 1] + 1) / 2 * img.shape[-2]
+        points_cam = points_cam.squeeze()
+        points_world = self.converter.cam_to_world(points_cam).numpy() 
         tick_data['points_world'] = points_world
 
-        #img = tick_data['image']
-
+        # decide on control waypoint
         aim = (points_world[1] + points_world[0]) / 2.0
+        tick_data['aim_world'] = aim
+
+        # compute steer
         angle = np.degrees(np.pi / 2 - np.arctan2(aim[1], aim[0])) / 90
         steer = self._turn_controller.step(angle)
         steer = np.clip(steer, -1.0, 1.0)
-        desired_speed = np.linalg.norm(points_world[0] - points_world[1]) * 2.0
-        tick_data['aim_world'] = aim
 
+        # compute throttle
         speed = tick_data['speed']
+        desired_speed = np.linalg.norm(points_world[0] - points_world[1]) * 2.0 # m/s
         brake = desired_speed < 0.4 or (speed / desired_speed) > 1.1
-
         delta = np.clip(desired_speed - speed, 0.0, 0.25)
         throttle = self._speed_controller.step(delta)
         throttle = np.clip(throttle, 0.0, 0.75)
         throttle = throttle if not brake else 0.0
 
+        # create control object
         control = carla.VehicleControl()
         control.steer = steer
         control.throttle = throttle
         control.brake = float(brake)
-        #print(timestamp) # GAMETIME
-
         if DEBUG or self.config.save_images:
 
-            # transform image model cam points to overhead BEV image (spectator frame?)
+            # make display image
+            tick_data['points_cam'] = points.cpu().squeeze()
+            tick_data['points_map'] = self.converter.cam_to_map(points_cam).numpy()
             self.debug_display(
-                    tick_data, steer, throttle, brake, desired_speed)
-            
+                    tick_data, target_cam.squeeze(), 
+                    steer, throttle, brake, desired_speed)
 
         return control
 
-    def debug_display(self, tick_data, steer, throttle, brake, desired_speed, r=2):
+    def debug_display(self, tick_data, target_cam, steer, throttle, brake, desired_speed):
 
-        topdown = tick_data['topdown']
-        _topdown = Image.fromarray(COLOR[CONVERTER[topdown]])
-        _topdown_draw = ImageDraw.Draw(_topdown)
+        # make BEV image
 
-        # model points
-        points_map = tick_data['points_map']
-        points_td = points_map + [128, 0]
-        for i, (x,y) in enumerate(points_td):
-            _topdown_draw.ellipse((x-2*r, y-2*r, x+2*r, y+2*r), (0,191,255))
-        route_map = tick_data['route_map']
-        route_td = route_map + [128, 0]
-
-        # control point
+        # transform aim from world to map
         aim_world = np.array(tick_data['aim_world'])
         aim_map = self.converter.world_to_map(torch.Tensor(aim_world)).numpy()
-        aim_map = aim_map + [128,0]
-        x, y = aim_map
-        _topdown_draw.ellipse((x-2, y-2, x+2, y+2), (255, 105, 147))
 
-        # route waypoints
-        for i, (x, y) in enumerate(route_td[:3]):
-            if i == 0:
-                color = (0, 255, 0)
-            elif i == 1:
-                color = (255, 0, 0)
-            elif i == 2:
-                color = (139, 0, 139)
-            _topdown_draw.ellipse((x-2*r, y-2*r, x+2*r, y+2*r), color)
-
+        # append to image model points and plot
+        points_plot = np.vstack([tick_data['points_map'], aim_map])
+        points_plot = points_plot - [128,256] # center at origin
+        points_plot = tick_data['R'].dot(points_plot.T).T
+        points_plot = points_plot * -1 # why is this required?
+        points_plot = points_plot + 256/2 # recenter origin in middle of plot
+        _waypoint_img = self._command_planner.debug.img
+        for x, y in points_plot:
+            ImageDraw.Draw(_waypoint_img).ellipse((x-2, y-2, x+2, y+2), (0, 191, 255))
+        x, y = points_plot[-1]
+        ImageDraw.Draw(_waypoint_img).ellipse((x-2, y-2, x+2, y+2), (255, 105, 147))
 
         # make RGB images
 
@@ -225,23 +216,23 @@ class PrivilegedAgent(MapAgent):
         _rgb = Image.fromarray(tick_data['rgb'])
         _draw_rgb = ImageDraw.Draw(_rgb)
         for x, y in tick_data['points_cam']: # image model waypoints
-            #x = (x + 1)/2 * 256
-            #y = (y + 1)/2 * 144
+            x = (x + 1)/2 * 256
+            y = (y + 1)/2 * 144
             _draw_rgb.ellipse((x-2, y-2, x+2, y+2), (0, 191, 255))
 
         # transform aim from world to cam
+        aim_world = np.array(tick_data['aim_world'])
         aim_cam = self.converter.world_to_cam(torch.Tensor(aim_world)).numpy()
         x, y = aim_cam
         _draw_rgb.ellipse((x-2, y-2, x+2, y+2), (255, 105, 147))
 
         # draw route waypoints in RGB image
         route_map = np.array(tick_data['route_map'])
-        route_map = np.clip(route_map, 0, 256)
-        route_map = route_map[:3].squeeze() # just the next couple
+        route_map = route_map[:3].squeeze()
         route_cam = self.converter.map_to_cam(torch.Tensor(route_map)).numpy()
         for i, (x, y) in enumerate(route_cam):
             if i == 0: # waypoint we just passed
-                if not (0 < y < 143 and 0 < x < 255):
+                if y >= 139 or x <= 2 or x >= 254: # bottom of frame (behind us)
                     continue
                 color = (0, 255, 0) # green 
             elif i == 1: # target
@@ -266,16 +257,17 @@ class PrivilegedAgent(MapAgent):
         _draw.text((5, 110), f'Current: {cur_command}', text_color)
         _draw.text((5, 130), f'Next: {next_command}', text_color)
 
-        _rgb_img = _combined.resize((int(256/ _combined.size[1] * _combined.size[0]), 256))
-        _topdown = _topdown.resize((256, 256))
-        _save_img = Image.fromarray(np.hstack([_rgb_img, _topdown]))
+        # compose image to display/save
+        _rgb_img = cv2.resize(np.array(_combined), self.save_image_dim, interpolation=cv2.INTER_AREA)
+        _save_img = Image.fromarray(np.hstack([_rgb_img, _waypoint_img]))
         _save_img = cv2.cvtColor(np.array(_save_img), cv2.COLOR_BGR2RGB)
+
         if self.step % 10 == 0 and self.config.save_images:
             frame_number = self.step // 10
             rep_number = int(os.environ.get('REP',0))
             save_path = self.save_images_path / f'repetition_{rep_number:02d}' / f'{frame_number:06d}.png'
             cv2.imwrite(str(save_path), _save_img)
+
         if DEBUG:
             cv2.imshow('debug', _save_img)
             cv2.waitKey(1)
- 

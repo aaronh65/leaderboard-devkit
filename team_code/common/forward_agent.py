@@ -13,7 +13,7 @@ class ForwardAgent(autonomous_agent.AutonomousAgent):
     
     def run_step(self, input_data, timestamp):
         control = VehicleControl()
-        control.throttle = 0.7
+        control.throttle = 1.0
         control.steer = 0
         control.brake = False
         return control

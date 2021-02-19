@@ -4,8 +4,8 @@ import cv2
 import carla
 
 from leaderboard.autoagents import autonomous_agent
-from team_code.lbc.src.planner import RoutePlanner
-from team_code.common.utils import *
+from lbc.common.planner import RoutePlanner
+from common.utils import *
 
 
 class BaseAgent(autonomous_agent.AutonomousAgent):
@@ -19,6 +19,7 @@ class BaseAgent(autonomous_agent.AutonomousAgent):
             self.config = Bunch(config)
         else:
             self.config = path_to_conf_file
+
         self.step = -1
         self.wall_start = time.time()
         self.initialized = False
