@@ -1,10 +1,0 @@
-/data/leaderboard/data/lbc/CARLA_challenge_autopilot/route_09_04_07_23_07_09
-/data/leaderboard/data/lbc/CARLA_challenge_autopilot/route_19_04_08_16_31_51
-/data/leaderboard/data/lbc/CARLA_challenge_autopilot/route_29_04_09_11_47_17
-/data/leaderboard/data/lbc/CARLA_challenge_autopilot/route_39_04_06_09_50_43
-/data/leaderboard/data/lbc/CARLA_challenge_autopilot/route_49_04_06_11_43_48
-/data/leaderboard/data/lbc/CARLA_challenge_autopilot/route_59_04_06_13_26_15
-/data/leaderboard/data/lbc/CARLA_challenge_autopilot/route_69_04_09_00_28_07
-6593 frames.
-[ 537  484 2226  752  527 1156  911]
-Validation sanity check:   0%|                                                                                                                                                               | 0/5 [00:00<?, ?it/s]Validation sanity check: 50it [00:07,  7.14it/s]                                                                                                                                                                   
