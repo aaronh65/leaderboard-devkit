@@ -1,3 +1,4 @@
+import cv2
 import torch
 import torch.nn.functional as F
 
@@ -62,7 +63,6 @@ class SegmentationModel(torch.nn.Module):
 
         if self.hack:
             x = torch.nn.functional.interpolate(x, scale_factor=2.0, mode='bilinear')
-
         y = self.extract(x, self.temperature)
 
         if heatmap:

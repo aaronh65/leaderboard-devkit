@@ -1,0 +1,35 @@
+# default config for sac w/semantic bev image as input
+
+algo: dspred_collect
+description: this is a template configuration
+project_root: /home/aaron/workspace/carla/leaderboard-devkit
+carla_root: /home/aaron/workspace/carla/CARLA_0.9.11
+save_root: /data/leaderboard/results/rl/dspred_collect/debug/template
+env:
+  world_port: 2000
+  trafficmanager_port: 8000
+  trafficmanager_seed: 0
+  routes: routes_training.xml
+  scenarios: no_traffic_scenarios.json
+  repetitions: 1
+  empty: false
+  hop_resolution: 2
+agent:
+  mode: train
+  total_timesteps: 500000
+  burn_timesteps: 2000
+  train_frequency: 1
+  gradient_steps: 1
+  target_update_interval: 1
+  save_frequency: 5000
+  log_frequency: 100
+  save_images: false
+  weights_path: team_code/rl/config/weights/map_model.ckpt
+  verbose: false
+  # semantic_bev args
+  bev_size: 360
+  history_size: 5
+  buffer_size: 10000
+  batch_size: 32
+  pid: false
+

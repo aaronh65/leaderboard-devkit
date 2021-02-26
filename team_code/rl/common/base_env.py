@@ -1,4 +1,4 @@
-import time, signal
+import os, time, signal
 import gym
 import numpy as np
 
@@ -48,11 +48,11 @@ class BaseEnv(gym.Env):
         raise KeyboardInterrupt
 
     def reset(self, log=None):
-
-        rconfig = self.indexer.get(np.random.randint(self.num_routes))
+        idx = np.random.randint(self.num_routes)
+        #idx = 22
+        rconfig = self.indexer.get(idx)
         rconfig.agent = self.hero_agent
         self._load_world_and_scenario(rconfig)
-        self.hero_agent.reset()
 
 
         self.frame = 0
@@ -68,6 +68,11 @@ class BaseEnv(gym.Env):
             self.env_log['name'] = rconfig.name
             log['env'] = self.env_log
 
+        route_num = int(rconfig.name.split('_')[-1])
+        route_name = f'route_{route_num:02d}'
+        os.environ['ROUTE_NAME'] = route_name
+
+        self.hero_agent.reset()
         return []
 
     def _load_world_and_scenario(self, rconfig):
@@ -110,7 +115,7 @@ class BaseEnv(gym.Env):
         else:
             self.world.wait_for_tick()
 
-    def step(self, action):
+    def step(self, action=None):
         if self.manager._running:
             timestamp = None
             snapshot = self.world.get_snapshot()
@@ -120,6 +125,8 @@ class BaseEnv(gym.Env):
                 self.manager._tick_scenario(timestamp)
             self.frame += 1
             done = not self.manager._running
+            if done:
+                print('manager not running!')
             return [], -9999, done, {}
         else:
             return [], -9999, True, {}

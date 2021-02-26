@@ -24,9 +24,10 @@ parser.add_argument('--empty', action='store_true') # other agents present?
 parser.add_argument('--save_images', action='store_true')
 parser.add_argument('--verbose', action='store_true')
 parser.add_argument('-d', '--debug', action='store_true')
+parser.add_argument('-f', '--forward', action='store_true')
 
 # algorithm specific setup should be done in the appropriate config file
-parser.add_argument('--algo', type=str, default='manual_obs', choices=['manual_obs', 'semantic_bev', 'semantic_enc'])
+parser.add_argument('--algo', type=str, default='manual_obs', choices=['manual_obs', 'semantic_bev', 'semantic_enc', 'dspred'])
 
 args = parser.parse_args()
 
@@ -88,8 +89,8 @@ else:
         mkdir_if_not_exists(f'{save_root}/images')
     mkdir_if_not_exists(f'{save_root}/weights')
     mkdir_if_not_exists(f'{save_root}/logs')
-    mkdir_if_not_exists(f'{save_root}/logs/rewards')
-    mkdir_if_not_exists(f'{save_root}/logs/tensorboard')
+    #mkdir_if_not_exists(f'{save_root}/logs/rewards')
+    #mkdir_if_not_exists(f'{save_root}/logs/tensorboard')
 
     # setup config
     config['description'] = args.desc
@@ -124,13 +125,14 @@ else:
     aconf['total_timesteps'] = total_timesteps
     aconf['burn_timesteps'] = burn_timesteps
     aconf['save_frequency'] = save_frequency
+    aconf['forward'] = args.forward
 
     config_path = f'{save_root}/config.yml'
     with open(config_path, 'w') as f:
         yaml.dump(config, f, default_flow_style=False, sort_keys=False)
 
     os.environ["CUDA_VISIBLE_DEVICES"] = str(args.G)
-    os.environ["CONDA_ENV"] = 'lbrl'
+    os.environ["CONDA_ENV"] = 'dspred' if args.algo == 'dspred' else 'lbrl'
     os.environ["ALGO"] = args.algo
     os.environ["PROJECT_ROOT"] = project_root
     os.environ["SAVE_ROOT"] = save_root

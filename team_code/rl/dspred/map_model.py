@@ -12,10 +12,10 @@ from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
 from PIL import Image, ImageDraw
 
-from .models import SegmentationModel, RawController
-from .utils.heatmap import ToHeatmap
-from .dataset import get_dataset
-from . import common
+from lbc.carla_project.src.models import SegmentationModel, RawController
+from lbc.carla_project.src.utils.heatmap import ToHeatmap
+from lbc.carla_project.src.dataset import get_dataset
+from lbc.carla_project.src.common import COLOR
 
 
 @torch.no_grad()
@@ -35,7 +35,7 @@ def visualize(batch, out, between, out_cmd, loss_point, loss_cmd, target_heatmap
         _target_heatmap = np.uint8(target_heatmap[i].detach().squeeze().cpu().numpy() * 255)
         _target_heatmap = np.stack(3 * [_target_heatmap], 2)
         _target_heatmap = Image.fromarray(_target_heatmap)
-        _topdown = Image.fromarray(common.COLOR[topdown.argmax(0).detach().cpu().numpy()])
+        _topdown = Image.fromarray(COLOR[topdown.argmax(0).detach().cpu().numpy()])
         _draw = ImageDraw.Draw(_topdown)
 
         _draw.ellipse((target[0]-2, target[1]-2, target[0]+2, target[1]+2), (255, 255, 255))
@@ -98,7 +98,7 @@ class MapModel(pl.LightningModule):
 
     def training_step(self, batch, batch_nb):
         img, topdown, points, target, actions, meta = batch
-        out, (target_heatmap,) = self.forward(topdown, target, debug=True)
+        out, (_, target_heatmap) = self.forward(topdown, target, debug=True)
 
         alpha = torch.rand(out.shape).type_as(out)
         between = alpha * out + (1-alpha) * points
@@ -126,7 +126,7 @@ class MapModel(pl.LightningModule):
 
     def validation_step(self, batch, batch_nb):
         img, topdown, points, target, actions, meta = batch
-        out, (target_heatmap,) = self.forward(topdown, target, debug=True)
+        out, (_, target_heatmap) = self.forward(topdown, target, debug=True)
 
         alpha = 0.0
         between = alpha * out + (1-alpha) * points

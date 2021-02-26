@@ -1,9 +1,8 @@
 import os, sys, time, signal
-import yaml, json #, pickle
+import yaml, json
 import argparse
 import traceback
 import numpy as np
-np.seterr(all='raise')
 
 from tqdm import tqdm
 from datetime import datetime
