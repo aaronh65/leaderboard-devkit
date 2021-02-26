@@ -1,4 +1,5 @@
 import sys
+sys.path.append('../../..') # leaderboard-devkit/team_code
 
 import uuid
 import argparse

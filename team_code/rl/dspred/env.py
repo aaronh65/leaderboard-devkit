@@ -1,8 +1,6 @@
-import signal
-import time, os
+import os, json
 import gym
 import numpy as np
-import itertools
 from collections import deque
 from itertools import islice
 
@@ -14,6 +12,7 @@ from leaderboard.utils.statistics_util import penalty_dict
 from srunner.scenariomanager.carla_data_provider import CarlaDataProvider
 from srunner.scenariomanager.traffic_events import TrafficEventType
 
+from PIL import Image
 
 class CarlaEnv(BaseEnv):
 
@@ -32,8 +31,20 @@ class CarlaEnv(BaseEnv):
         self.buf = ReplayBuffer(config.agent.buffer_size, config.agent.batch_size)
 
     def reset(self, log=None):
+        # pass rconfig to hero agent reset method so it doesn't need 
+        # environ variables to set save debug/image paths?
+
         super().reset(log)
-        
+        if self.config.save_data:
+            save_root = self.all_config.save_root             
+            ROUTE_NAME = os.environ.get('ROUTE_NAME', 0)
+            repetition = 0
+            for name in os.listdir(save_root):
+                repetition += 1 if ROUTE_NAME in name else 0
+            self.save_data_root = f'{save_root}/{ROUTE_NAME}_repetition_{repetition:02d}'
+            os.makedirs(f'{self.save_data_root}/topdown')
+            os.makedirs(f'{self.save_data_root}/measurements')
+
         return []
 
     def step(self):
@@ -51,10 +62,26 @@ class CarlaEnv(BaseEnv):
             infraction = iflist[-1]
             if infraction.get_type() != TrafficEventType.STOP_INFRACTION: # ignore for now
                 base_penalty = 50
-                penalty = base_penalty * (1 - penalty_dict[infraction])
+                penalty = base_penalty * (1 - penalty_dict[infraction.get_type()])
                 reward = reward - penalty
 
         state = self.hero_agent.obs
-        action = self.hero_agent.aim
-        self.buf.add_experience(state, action, reward, done, info)
-        return (reward, done) 
+        aim = self.hero_agent.aim
+        self.buf.add_experience(state, aim, reward, done, info)
+        if self.config.save_data and self.frame:
+            topdown, target = state
+            data = {'x_tgt': float(target[0]),
+                    'y_tgt': float(target[1]),
+                    'x_aim': float(aim[0]),
+                    'y_aim': float(aim[1]),
+                    'reward': reward,
+                    'done': done,
+                    }
+
+            Image.fromarray(topdown).save(f'{self.save_data_root}/topdown/{self.frame}.png')
+            with open(f'{self.save_data_root}/measurements/{self.frame}.json', 'w') as f:
+                json.dump(data, f, indent=4, sort_keys=False)
+
+            done = done or self.frame > 3000
+
+        return reward, done

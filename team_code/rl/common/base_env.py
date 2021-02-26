@@ -13,7 +13,9 @@ class BaseEnv(gym.Env):
     def __init__(self, config, client, agent):
         super(BaseEnv, self).__init__()
 
+        self.all_config = config
         self.config = config.env
+        self.rconfig = None
         self.client = client
         self.hero_agent = agent # the user-defined agent class
         self.hero_actor = None  # the actual CARLA actor
@@ -72,6 +74,7 @@ class BaseEnv(gym.Env):
         route_name = f'route_{route_num:02d}'
         os.environ['ROUTE_NAME'] = route_name
 
+        self.rconfig = rconfig
         self.hero_agent.reset()
         return []
 
@@ -125,10 +128,9 @@ class BaseEnv(gym.Env):
                 self.manager._tick_scenario(timestamp)
             self.frame += 1
             done = not self.manager._running
-            if done:
-                print('manager not running!')
             return [], -9999, done, {}
         else:
+            print('manager not running')
             return [], -9999, True, {}
 
     def cleanup(self):

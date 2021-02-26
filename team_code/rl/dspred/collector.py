@@ -1,11 +1,9 @@
-import os, sys, time, signal
+import time
 import yaml, json
 import argparse
 import traceback
-import numpy as np
 
 from tqdm import tqdm
-from datetime import datetime
 from env import CarlaEnv
 from carla import Client
 from agent import DSPredAgent
@@ -31,33 +29,17 @@ def collect(config, agent, env):
     # start environment and run
     episode_log = setup_episode_log(episode_idx)
     agent_log = episode_log['agent']
-    rewards = []
-
-    # LOGGING STUFF
     episode_rewards = [0.0]
-    episode_successes = []
     obs = env.reset(log=episode_log)
-
-    replay_buffer = list()
 
     for step in tqdm(range(begin_step, config.agent.total_timesteps)):
 
         # get SAC prediction, step the env
-        burn_in = (step - begin_step) < config.agent.burn_timesteps # exploration
-        action = 0
-        #agent.set_burn_in(burn_in)
-        #agent.set_deterministic(False)
-
-        new_obs, reward, done, info = env.step(None)
+        reward, done = env.step()
         agent_log['total_steps'] += 1
 
         #model.num_timesteps += 1
                
-        #_obs, _action, _reward, _new_obs, _done, _info = env.exp
-        #replay_buffer.append((obs, action, reward, new_obs, done, info))
-        obs = new_obs
-
-
         # save model if applicable
         episode_rewards[-1] += reward
         if done:
@@ -75,15 +57,10 @@ def collect(config, agent, env):
 
             # cleanup and reset
             env.cleanup()
-            break # REMOVE
             episode_idx += 1
             episode_log = setup_episode_log(episode_idx)
             obs = env.reset(log=episode_log)
             agent_log = episode_log['agent']
-
-    #print('done training')
-    pass
-
 
 def main(args):
     client = Client('localhost', 2000)

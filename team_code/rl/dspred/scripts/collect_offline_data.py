@@ -31,7 +31,7 @@ args = parser.parse_args()
 root = f'/home/aaronhua' if args.remote else f'/home/aaron/workspace/carla'
 
 project_root = f'{root}/leaderboard-devkit'
-config_path = f'{project_root}/team_code/rl/config/dspred_collect.yml'
+config_path = f'{project_root}/team_code/rl/config/dspred.yml'
 with open(config_path, 'r') as f:
     config = yaml.load(f, Loader=yaml.Loader)
 
@@ -54,13 +54,7 @@ scenarios = 'all_towns_traffic_scenarios_public.json' if args.scenarios \
 date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
 suffix = f'debug/{date_str}' if args.debug else f'{date_str}' 
 save_root = f'{args.data_root}/leaderboard/data/rl/dspred/{suffix}'
-
-if args.save_images:
-    mkdir_if_not_exists(f'{save_root}/images')
-mkdir_if_not_exists(f'{save_root}/weights')
 mkdir_if_not_exists(f'{save_root}/logs')
-mkdir_if_not_exists(f'{save_root}/logs/rewards')
-mkdir_if_not_exists(f'{save_root}/logs/tensorboard')
 
 # setup config
 config['description'] = args.desc
@@ -79,6 +73,7 @@ econf['scenarios'] = scenarios
 econf['repetitions'] = args.repetitions
 econf['empty'] = args.empty
 econf['hop_resolution'] = 2.0
+econf['save_data'] = True
 
 
 aconf = config['agent']
@@ -103,7 +98,6 @@ with open(config_path, 'w') as f:
 
 os.environ["CUDA_VISIBLE_DEVICES"] = str(args.G)
 os.environ["CONDA_ENV"] = 'dspred'
-#os.environ["CONFIG_PATH"] = config_path
 os.environ["PROJECT_ROOT"] = project_root
 os.environ["SAVE_ROOT"] = save_root
 os.environ["CARLA_EGG"] = carla_egg

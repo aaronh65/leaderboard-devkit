@@ -5,6 +5,7 @@ description: this is a template configuration
 project_root: /home/aaron/workspace/carla/leaderboard-devkit
 carla_root: /home/aaron/workspace/carla/CARLA_0.9.11
 save_root: /data/leaderboard/results/rl/dspred_collect/debug/template
+
 env:
   world_port: 2000
   trafficmanager_port: 8000
@@ -14,6 +15,7 @@ env:
   repetitions: 1
   empty: false
   hop_resolution: 2
+  save_data: false
 agent:
   mode: train
   total_timesteps: 500000
@@ -32,4 +34,5 @@ agent:
   buffer_size: 10000
   batch_size: 32
   pid: false
+  forward: false
 

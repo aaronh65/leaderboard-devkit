@@ -43,13 +43,13 @@ class DSPredAgent(MapAgent):
 
     def reset(self):
         ROUTE_NAME = os.environ.get('ROUTE_NAME', 0)
-        self.save_images_path = Path(f'{self.config.save_root}/images/{ROUTE_NAME}') 
-        if not os.path.exists(str(self.save_images_path)):
-            os.makedirs(str(self.save_images_path))
+        self.save_debug_path = Path(f'{self.config.save_root}/images/{ROUTE_NAME}') 
+        if not os.path.exists(str(self.save_debug_path)):
+            os.makedirs(str(self.save_debug_path))
 
-        rep_number = len(os.listdir(self.save_images_path))
+        rep_number = len(os.listdir(self.save_debug_path))
         self.rep_name = f'repetition_{rep_number:02d}'
-        paths = [self.save_images_path / self.rep_name / 'debug', self.save_images_path / self.rep_name / 'heatmaps']
+        paths = [self.save_debug_path / self.rep_name / 'debug', self.save_debug_path / self.rep_name / 'heatmaps']
         for path in paths:
             if not os.path.exists(str(path)):
                 os.makedirs(str(path))
@@ -201,7 +201,7 @@ class DSPredAgent(MapAgent):
         control.brake = float(brake)
         #print(timestamp) # GAMETIME
 
-        self.aim = aim
+        self.aim = self.converter.world_to_map(torch.Tensor(aim)).numpy()
         self.obs = (tick_data['topdown'], tick_data['target'])
 
         if DEBUG or self.config.agent.save_images:
@@ -210,7 +210,6 @@ class DSPredAgent(MapAgent):
             self.debug_display(
                     tick_data, steer, throttle, brake, desired_speed)
             
-
         return control
 
     def debug_display(self, tick_data, steer, throttle, brake, desired_speed, r=2):
@@ -326,12 +325,12 @@ class DSPredAgent(MapAgent):
 
         if self.step % 10 == 0 and self.config.agent.save_images:
             frame_number = self.step // 10
-            save_path = self.save_images_path / self.rep_name / 'debug' / f'{frame_number:06d}.png'
+            save_path = self.save_debug_path / self.rep_name / 'debug' / f'{frame_number:06d}.png'
             cv2.imwrite(str(save_path), _save_img)
-            save_path = self.save_images_path / self.rep_name / 'heatmaps' / f'{frame_number:06d}.png'
+            save_path = self.save_debug_path / self.rep_name / 'heatmaps' / f'{frame_number:06d}.png'
             cv2.imwrite(str(save_path), hmap_comb)
-            save_path = self.save_images_path / self.rep_name / 'heatmaps' / f'{frame_number:06d}_tgt.png'
-            cv2.imwrite(str(save_path), cv2.cvtColor(hmap_tgt, cv2.COLOR_BGR2RGB))
+            #save_path = self.save_debug_path / self.rep_name / 'heatmaps' / f'{frame_number:06d}_tgt.png'
+            #cv2.imwrite(str(save_path), cv2.cvtColor(hmap_tgt, cv2.COLOR_BGR2RGB))
 
         if DEBUG:
             cv2.imshow('heatmaps', hmap_comb)

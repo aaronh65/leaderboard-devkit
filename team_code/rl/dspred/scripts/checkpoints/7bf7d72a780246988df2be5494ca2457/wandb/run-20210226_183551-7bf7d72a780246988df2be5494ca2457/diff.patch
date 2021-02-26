@@ -1,0 +1,425 @@
+diff --git a/team_code/rl/common/base_env.py b/team_code/rl/common/base_env.py
+index ac16368..0af1fb6 100644
+--- a/team_code/rl/common/base_env.py
++++ b/team_code/rl/common/base_env.py
+@@ -13,7 +13,9 @@ class BaseEnv(gym.Env):
+     def __init__(self, config, client, agent):
+         super(BaseEnv, self).__init__()
+ 
++        self.all_config = config
+         self.config = config.env
++        self.rconfig = None
+         self.client = client
+         self.hero_agent = agent # the user-defined agent class
+         self.hero_actor = None  # the actual CARLA actor
+@@ -72,6 +74,7 @@ class BaseEnv(gym.Env):
+         route_name = f'route_{route_num:02d}'
+         os.environ['ROUTE_NAME'] = route_name
+ 
++        self.rconfig = rconfig
+         self.hero_agent.reset()
+         return []
+ 
+@@ -125,10 +128,9 @@ class BaseEnv(gym.Env):
+                 self.manager._tick_scenario(timestamp)
+             self.frame += 1
+             done = not self.manager._running
+-            if done:
+-                print('manager not running!')
+             return [], -9999, done, {}
+         else:
++            print('manager not running')
+             return [], -9999, True, {}
+ 
+     def cleanup(self):
+diff --git a/team_code/rl/config/dspred.yml b/team_code/rl/config/dspred.yml
+index 5bfa5db..5632de0 100644
+--- a/team_code/rl/config/dspred.yml
++++ b/team_code/rl/config/dspred.yml
+@@ -5,6 +5,7 @@ description: this is a template configuration
+ project_root: /home/aaron/workspace/carla/leaderboard-devkit
+ carla_root: /home/aaron/workspace/carla/CARLA_0.9.11
+ save_root: /data/leaderboard/results/rl/dspred_collect/debug/template
++
+ env:
+   world_port: 2000
+   trafficmanager_port: 8000
+@@ -14,6 +15,7 @@ env:
+   repetitions: 1
+   empty: false
+   hop_resolution: 2
++  save_data: false
+ agent:
+   mode: train
+   total_timesteps: 500000
+@@ -32,4 +34,5 @@ agent:
+   buffer_size: 10000
+   batch_size: 32
+   pid: false
++  forward: false
+ 
+diff --git a/team_code/rl/config/dspred_collect.yml b/team_code/rl/config/dspred_collect.yml
+index 08f386c..96029b3 100644
+--- a/team_code/rl/config/dspred_collect.yml
++++ b/team_code/rl/config/dspred_collect.yml
+@@ -23,7 +23,8 @@ agent:
+   target_update_interval: 1
+   save_frequency: 5000
+   log_frequency: 100
+-  save_images: true
++  save_images: false
++  save_data: true
+   weights_path: team_code/rl/config/weights/map_model.ckpt
+   verbose: false
+   # semantic_bev args
+@@ -32,4 +33,5 @@ agent:
+   buffer_size: 10000
+   batch_size: 32
+   pid: false
++  forward: false
+ 
+diff --git a/team_code/rl/dspred/agent.py b/team_code/rl/dspred/agent.py
+index beb966d..d631f43 100644
+--- a/team_code/rl/dspred/agent.py
++++ b/team_code/rl/dspred/agent.py
+@@ -43,13 +43,13 @@ class DSPredAgent(MapAgent):
+ 
+     def reset(self):
+         ROUTE_NAME = os.environ.get('ROUTE_NAME', 0)
+-        self.save_images_path = Path(f'{self.config.save_root}/images/{ROUTE_NAME}') 
+-        if not os.path.exists(str(self.save_images_path)):
+-            os.makedirs(str(self.save_images_path))
++        self.save_debug_path = Path(f'{self.config.save_root}/images/{ROUTE_NAME}') 
++        if not os.path.exists(str(self.save_debug_path)):
++            os.makedirs(str(self.save_debug_path))
+ 
+-        rep_number = len(os.listdir(self.save_images_path))
++        rep_number = len(os.listdir(self.save_debug_path))
+         self.rep_name = f'repetition_{rep_number:02d}'
+-        paths = [self.save_images_path / self.rep_name / 'debug', self.save_images_path / self.rep_name / 'heatmaps']
++        paths = [self.save_debug_path / self.rep_name / 'debug', self.save_debug_path / self.rep_name / 'heatmaps']
+         for path in paths:
+             if not os.path.exists(str(path)):
+                 os.makedirs(str(path))
+@@ -201,7 +201,7 @@ class DSPredAgent(MapAgent):
+         control.brake = float(brake)
+         #print(timestamp) # GAMETIME
+ 
+-        self.aim = aim
++        self.aim = self.converter.world_to_map(torch.Tensor(aim)).numpy()
+         self.obs = (tick_data['topdown'], tick_data['target'])
+ 
+         if DEBUG or self.config.agent.save_images:
+@@ -210,7 +210,6 @@ class DSPredAgent(MapAgent):
+             self.debug_display(
+                     tick_data, steer, throttle, brake, desired_speed)
+             
+-
+         return control
+ 
+     def debug_display(self, tick_data, steer, throttle, brake, desired_speed, r=2):
+@@ -326,12 +325,12 @@ class DSPredAgent(MapAgent):
+ 
+         if self.step % 10 == 0 and self.config.agent.save_images:
+             frame_number = self.step // 10
+-            save_path = self.save_images_path / self.rep_name / 'debug' / f'{frame_number:06d}.png'
++            save_path = self.save_debug_path / self.rep_name / 'debug' / f'{frame_number:06d}.png'
+             cv2.imwrite(str(save_path), _save_img)
+-            save_path = self.save_images_path / self.rep_name / 'heatmaps' / f'{frame_number:06d}.png'
++            save_path = self.save_debug_path / self.rep_name / 'heatmaps' / f'{frame_number:06d}.png'
+             cv2.imwrite(str(save_path), hmap_comb)
+-            save_path = self.save_images_path / self.rep_name / 'heatmaps' / f'{frame_number:06d}_tgt.png'
+-            cv2.imwrite(str(save_path), cv2.cvtColor(hmap_tgt, cv2.COLOR_BGR2RGB))
++            #save_path = self.save_debug_path / self.rep_name / 'heatmaps' / f'{frame_number:06d}_tgt.png'
++            #cv2.imwrite(str(save_path), cv2.cvtColor(hmap_tgt, cv2.COLOR_BGR2RGB))
+ 
+         if DEBUG:
+             cv2.imshow('heatmaps', hmap_comb)
+diff --git a/team_code/rl/dspred/collect_offline_data.py b/team_code/rl/dspred/collect_offline_data.py
+deleted file mode 100644
+index c71b358..0000000
+--- a/team_code/rl/dspred/collect_offline_data.py
++++ /dev/null
+@@ -1,116 +0,0 @@
+-import os, sys, time
+-import yaml
+-import argparse 
+-from datetime import datetime
+-from pathlib import Path
+-
+-sys.path.append('../..')
+-from common.utils import *
+-
+-parser = argparse.ArgumentParser()
+-
+-parser.add_argument('--restore_from', type=str, default=None)
+-parser.add_argument('--remote', action='store_true')
+-parser.add_argument('--data_root', type=str, default='/data')
+-parser.add_argument('-G', type=int, default=0)
+-
+-# setup
+-parser.add_argument('--desc', type=str, default='no description')
+-parser.add_argument('--version', type=int, choices=[10,11], default=11) # 0.9.10.1 or 0.9.11
+-parser.add_argument('--split', type=str, default='devtest', choices=['debug', 'devtest', 'testing', 'training'])
+-parser.add_argument('--routenum', type=int) # optional
+-parser.add_argument('--scenarios', action='store_true') # leaderboard-triggered scnearios
+-parser.add_argument('--repetitions', type=int, default=1) # should we directly default to this in indexer?
+-parser.add_argument('--empty', action='store_true') # other agents present?
+-parser.add_argument('--save_images', action='store_true')
+-parser.add_argument('--verbose', action='store_true')
+-parser.add_argument('-d', '--debug', action='store_true')
+-
+-args = parser.parse_args()
+-
+-root = f'/home/aaronhua' if args.remote else f'/home/aaron/workspace/carla'
+-
+-project_root = f'{root}/leaderboard-devkit'
+-config_path = f'{project_root}/team_code/rl/config/dspred_collect.yml'
+-with open(config_path, 'r') as f:
+-    config = yaml.load(f, Loader=yaml.Loader)
+-
+-# carla setup
+-carla_root = f'{root}/CARLA_0.9.{args.version}'
+-if args.version == 10:
+-    carla_root = f'{carla_root}.1'
+-carla_api = f'{carla_root}/PythonAPI/carla'
+-carla_egg = f'{carla_root}/PythonAPI/carla/dist/carla-0.9.{args.version}-py3.7-linux-x86_64.egg'
+-
+-# leaderboard setup
+-routes = f'routes_{args.split}'
+-if args.routenum:
+-    routes = f'{routes}/route_{args.routenum:02d}'
+-routes = f'{routes}.xml'
+-scenarios = 'all_towns_traffic_scenarios_public.json' if args.scenarios \
+-        else 'no_traffic_scenarios.json'
+-
+-# logging
+-date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+-suffix = f'debug/{date_str}' if args.debug else f'{date_str}' 
+-save_root = f'{args.data_root}/leaderboard/data/rl/dspred/{suffix}'
+-
+-if args.save_images:
+-    mkdir_if_not_exists(f'{save_root}/images')
+-mkdir_if_not_exists(f'{save_root}/weights')
+-mkdir_if_not_exists(f'{save_root}/logs')
+-mkdir_if_not_exists(f'{save_root}/logs/rewards')
+-mkdir_if_not_exists(f'{save_root}/logs/tensorboard')
+-
+-# setup config
+-config['description'] = args.desc
+-config['remote'] = args.remote
+-config['project_root'] = project_root
+-config['carla_root'] = carla_root
+-config['save_root'] = save_root
+-
+-# setup env config
+-econf = config['env']
+-econf['world_port'] = 2000
+-econf['trafficmanager_port'] = 8000
+-econf['trafficmanager_seed'] = 0
+-econf['routes'] = routes
+-econf['scenarios'] = scenarios
+-econf['repetitions'] = args.repetitions
+-econf['empty'] = args.empty
+-econf['hop_resolution'] = 2.0
+-
+-
+-aconf = config['agent']
+-if args.debug:
+-    aconf['total_timesteps'] = 2000
+-    aconf['burn_timesteps'] = 250
+-    aconf['save_frequency'] = 500
+-
+-total_timesteps = 2000 if args.debug else aconf['total_timesteps']
+-burn_timesteps = 250 if args.debug else 2000
+-save_frequency = 500 if args.debug else 5000
+-
+-aconf['mode'] = 'train'
+-aconf['total_timesteps'] = total_timesteps
+-aconf['burn_timesteps'] = burn_timesteps
+-aconf['save_frequency'] = save_frequency
+-aconf['save_images'] = args.save_images
+-
+-config_path = f'{save_root}/config.yml'
+-with open(config_path, 'w') as f:
+-    yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+-
+-os.environ["CUDA_VISIBLE_DEVICES"] = str(args.G)
+-os.environ["CONDA_ENV"] = 'dspred'
+-#os.environ["CONFIG_PATH"] = config_path
+-os.environ["PROJECT_ROOT"] = project_root
+-os.environ["SAVE_ROOT"] = save_root
+-os.environ["CARLA_EGG"] = carla_egg
+-os.environ["CARLA_API"] = carla_api
+-os.environ["RESTORE"] = "0"
+-os.environ["HAS_DISPLAY"] = str(int(not args.remote))
+-
+-script = f'{project_root}/team_code/rl/dspred/collector.py'
+-cmd = f'bash {project_root}/team_code/scripts/run_script.sh {script} {config_path}'
+-os.system(cmd)
+diff --git a/team_code/rl/dspred/collector.py b/team_code/rl/dspred/collector.py
+index 45ccbee..2f84faf 100644
+--- a/team_code/rl/dspred/collector.py
++++ b/team_code/rl/dspred/collector.py
+@@ -1,11 +1,9 @@
+-import os, sys, time, signal
++import time
+ import yaml, json
+ import argparse
+ import traceback
+-import numpy as np
+ 
+ from tqdm import tqdm
+-from datetime import datetime
+ from env import CarlaEnv
+ from carla import Client
+ from agent import DSPredAgent
+@@ -31,33 +29,17 @@ def collect(config, agent, env):
+     # start environment and run
+     episode_log = setup_episode_log(episode_idx)
+     agent_log = episode_log['agent']
+-    rewards = []
+-
+-    # LOGGING STUFF
+     episode_rewards = [0.0]
+-    episode_successes = []
+     obs = env.reset(log=episode_log)
+ 
+-    replay_buffer = list()
+-
+     for step in tqdm(range(begin_step, config.agent.total_timesteps)):
+ 
+         # get SAC prediction, step the env
+-        burn_in = (step - begin_step) < config.agent.burn_timesteps # exploration
+-        action = 0
+-        #agent.set_burn_in(burn_in)
+-        #agent.set_deterministic(False)
+-
+-        new_obs, reward, done, info = env.step(None)
++        reward, done = env.step()
+         agent_log['total_steps'] += 1
+ 
+         #model.num_timesteps += 1
+                
+-        #_obs, _action, _reward, _new_obs, _done, _info = env.exp
+-        #replay_buffer.append((obs, action, reward, new_obs, done, info))
+-        obs = new_obs
+-
+-
+         # save model if applicable
+         episode_rewards[-1] += reward
+         if done:
+@@ -75,16 +57,11 @@ def collect(config, agent, env):
+ 
+             # cleanup and reset
+             env.cleanup()
+-            break # REMOVE
+             episode_idx += 1
+             episode_log = setup_episode_log(episode_idx)
+             obs = env.reset(log=episode_log)
+             agent_log = episode_log['agent']
+ 
+-    #print('done training')
+-    pass
+-
+-
+ def main(args):
+     client = Client('localhost', 2000)
+     client.set_timeout(600)
+diff --git a/team_code/rl/dspred/env.py b/team_code/rl/dspred/env.py
+index 3f68b9d..e05eda6 100644
+--- a/team_code/rl/dspred/env.py
++++ b/team_code/rl/dspred/env.py
+@@ -1,8 +1,6 @@
+-import signal
+-import time, os
++import os, json
+ import gym
+ import numpy as np
+-import itertools
+ from collections import deque
+ from itertools import islice
+ 
+@@ -14,6 +12,7 @@ from leaderboard.utils.statistics_util import penalty_dict
+ from srunner.scenariomanager.carla_data_provider import CarlaDataProvider
+ from srunner.scenariomanager.traffic_events import TrafficEventType
+ 
++from PIL import Image
+ 
+ class CarlaEnv(BaseEnv):
+ 
+@@ -32,8 +31,20 @@ class CarlaEnv(BaseEnv):
+         self.buf = ReplayBuffer(config.agent.buffer_size, config.agent.batch_size)
+ 
+     def reset(self, log=None):
++        # pass rconfig to hero agent reset method so it doesn't need 
++        # environ variables to set save debug/image paths?
++
+         super().reset(log)
+-        
++        if self.config.save_data:
++            save_root = self.all_config.save_root             
++            ROUTE_NAME = os.environ.get('ROUTE_NAME', 0)
++            repetition = 0
++            for name in os.listdir(save_root):
++                repetition += 1 if ROUTE_NAME in name else 0
++            self.save_data_root = f'{save_root}/{ROUTE_NAME}_repetition_{repetition:02d}'
++            os.makedirs(f'{self.save_data_root}/topdown')
++            os.makedirs(f'{self.save_data_root}/measurements')
++
+         return []
+ 
+     def step(self):
+@@ -51,10 +62,26 @@ class CarlaEnv(BaseEnv):
+             infraction = iflist[-1]
+             if infraction.get_type() != TrafficEventType.STOP_INFRACTION: # ignore for now
+                 base_penalty = 50
+-                penalty = base_penalty * (1 - penalty_dict[infraction])
++                penalty = base_penalty * (1 - penalty_dict[infraction.get_type()])
+                 reward = reward - penalty
+ 
+         state = self.hero_agent.obs
+-        action = self.hero_agent.aim
+-        self.buf.add_experience(state, action, reward, done, info)
+-        return (reward, done) 
++        aim = self.hero_agent.aim
++        self.buf.add_experience(state, aim, reward, done, info)
++        if self.config.save_data and self.frame:
++            topdown, target = state
++            data = {'x_tgt': float(target[0]),
++                    'y_tgt': float(target[1]),
++                    'x_aim': float(aim[0]),
++                    'y_aim': float(aim[1]),
++                    'reward': reward,
++                    'done': done,
++                    }
++
++            Image.fromarray(topdown).save(f'{self.save_data_root}/topdown/{self.frame}.png')
++            with open(f'{self.save_data_root}/measurements/{self.frame}.json', 'w') as f:
++                json.dump(data, f, indent=4, sort_keys=False)
++
++            done = done or self.frame > 3000
++
++        return reward, done
+diff --git a/team_code/rl/dspred/map_model.py b/team_code/rl/dspred/map_model.py
+index 67b392f..a1e8d72 100644
+--- a/team_code/rl/dspred/map_model.py
++++ b/team_code/rl/dspred/map_model.py
+@@ -1,3 +1,6 @@
++import sys
++sys.path.append('../../..') # leaderboard-devkit/team_code
++
+ import uuid
+ import argparse
+ import pathlib
+@@ -211,6 +214,7 @@ def main(hparams):
+ 
+ 
+ if __name__ == '__main__':
++    
+     parser = argparse.ArgumentParser()
+     parser.add_argument('--max_epochs', type=int, default=50)
+     parser.add_argument('--save_dir', type=pathlib.Path, default='checkpoints')
+diff --git a/team_code/rl/dspred/train_offline.py b/team_code/rl/dspred/train_offline.py
+deleted file mode 100644
+index e69de29..0000000
