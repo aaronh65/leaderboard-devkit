@@ -30,9 +30,9 @@ def collect(config, agent, env):
     episode_log = setup_episode_log(episode_idx)
     agent_log = episode_log['agent']
     episode_rewards = [0.0]
-    obs = env.reset(log=episode_log)
+    status = env.reset(log=episode_log)
 
-    for step in tqdm(range(begin_step, config.agent.total_timesteps)):
+    while status != 'done':
 
         # get SAC prediction, step the env
         reward, done = env.step()
@@ -48,8 +48,8 @@ def collect(config, agent, env):
             agent_log['total_reward'] = episode_rewards[-1]
             log['checkpoints'].append(episode_log)
 
-            with open(f'{config.save_root}/logs/log.json', 'w') as f:
-                json.dump(log, f, indent=4, sort_keys=False)
+            #with open(f'{config.save_root}/logs/log.json', 'w') as f:
+            #    json.dump(log, f, indent=4, sort_keys=False)
 
 
             episode_rewards.append(0.0)
@@ -59,7 +59,7 @@ def collect(config, agent, env):
             env.cleanup()
             episode_idx += 1
             episode_log = setup_episode_log(episode_idx)
-            obs = env.reset(log=episode_log)
+            status = env.reset(log=episode_log)
             agent_log = episode_log['agent']
 
 def main(args):
@@ -78,11 +78,12 @@ def main(args):
         env = CarlaEnv(config, client, agent)
         collect(config, agent, env)
     except KeyboardInterrupt:
+        env.cleanup()
         print('caught KeyboardInterrupt')
     except Exception as e:
+        env.cleanup()
         traceback.print_exception(type(e), e, e.__traceback__)
     finally:
-        env.cleanup()
         del env
 
 def parse_args():

@@ -10,9 +10,9 @@ from torchvision import transforms
 from PIL import Image
 from numpy import nan
 
-from .converter import Converter, PIXELS_PER_WORLD
-from .dataset_wrapper import Wrap
-from . import common
+from lbc.carla_project.src.converter import Converter, PIXELS_PER_WORLD
+from lbc.carla_project.src.dataset_wrapper import Wrap
+from lbc.carla_project.src.common import *
 
 
 # Reproducibility.
@@ -22,7 +22,7 @@ from . import common
 # Data has frame skip of 5.
 GAP = 1
 STEPS = 4
-N_CLASSES = len(common.COLOR)
+N_CLASSES = len(COLOR)
 
 
 def get_weights(data, key='speed', bins=4):
@@ -44,7 +44,7 @@ def get_weights(data, key='speed', bins=4):
     return class_weights[classes]
 
 
-def get_dataset(dataset_dir, is_train=True, batch_size=128, num_workers=4, sample_by='none', **kwargs):
+def get_dataset(dataset_dir, is_train=False, batch_size=4, num_workers=4, sample_by='none', **kwargs):
     data = list()
     transform = transforms.Compose([
         get_augmenter() if is_train else lambda x: x,
@@ -119,7 +119,7 @@ def make_heatmap(size, pt, sigma=8):
 
 
 def preprocess_semantic(semantic_np):
-    topdown = common.CONVERTER[semantic_np]
+    topdown = CONVERTER[semantic_np]
     topdown = torch.LongTensor(topdown)
     topdown = torch.nn.functional.one_hot(topdown, N_CLASSES).permute(2, 0, 1).float()
 
@@ -142,17 +142,17 @@ class CarlaDataset(Dataset):
         for image_path in sorted((dataset_dir / 'rgb').glob('*.png')):
             frame = str(image_path.stem)
 
-            assert (dataset_dir / 'rgb_left' / ('%s.png' % frame)).exists()
-            assert (dataset_dir / 'rgb_right' / ('%s.png' % frame)).exists()
+            #assert (dataset_dir / 'rgb_left' / ('%s.png' % frame)).exists()
+            #assert (dataset_dir / 'rgb_right' / ('%s.png' % frame)).exists()
             assert (dataset_dir / 'topdown' / ('%s.png' % frame)).exists()
-            assert int(frame) < len(self.measurements)
+            #assert int(frame) < len(self.measurements)
 
             self.frames.append(frame)
 
         assert len(self.frames) > 0, '%s has 0 frames.' % dataset_dir
 
     def __len__(self):
-        return len(self.frames) - GAP * STEPS
+        return len(self.frames)
 
     def __getitem__(self, i):
         path = self.dataset_dir
@@ -253,7 +253,7 @@ if __name__ == '__main__':
         _rgb[heatmap_cam > 0.1] = 255
         _rgb = Image.fromarray(_rgb)
 
-        _topdown = common.COLOR[topdown.argmax(0).cpu().numpy()]
+        _topdown = COLOR[topdown.argmax(0).cpu().numpy()]
         _topdown[heatmap > 0.1] = 255
         _topdown = Image.fromarray(_topdown)
         _draw_map = ImageDraw.Draw(_topdown)

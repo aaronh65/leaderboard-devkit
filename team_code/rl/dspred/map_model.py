@@ -16,8 +16,9 @@ from PIL import Image, ImageDraw
 
 from lbc.carla_project.src.models import SegmentationModel, RawController
 from lbc.carla_project.src.utils.heatmap import ToHeatmap
-from lbc.carla_project.src.dataset import get_dataset
 from lbc.carla_project.src.common import COLOR
+
+from rl.dspred.dataset import get_dataset
 
 
 @torch.no_grad()
@@ -186,7 +187,7 @@ class MapModel(pl.LightningModule):
         return [optim], [scheduler]
 
     def train_dataloader(self):
-        return get_dataset(self.hparams.dataset_dir, True, self.hparams.batch_size, sample_by=self.hparams.sample_by)
+        return get_dataset(self.hparams.dataset_dir, False, self.hparams.batch_size, sample_by=self.hparams.sample_by)
 
     def val_dataloader(self):
         return get_dataset(self.hparams.dataset_dir, False, self.hparams.batch_size, sample_by=self.hparams.sample_by)
@@ -194,7 +195,8 @@ class MapModel(pl.LightningModule):
 
 def main(hparams):
     model = MapModel(hparams)
-    logger = WandbLogger(id=hparams.id, save_dir=str(hparams.save_dir), project='stage_1')
+    #logger = WandbLogger(id=hparams.id, save_dir=str(hparams.save_dir), project='stage_1')
+    #logger = None
     checkpoint_callback = ModelCheckpoint(hparams.save_dir, save_top_k=1)
 
     try:
@@ -205,11 +207,13 @@ def main(hparams):
     trainer = pl.Trainer(
             gpus=-1, max_epochs=hparams.max_epochs,
             resume_from_checkpoint=resume_from_checkpoint,
-            logger=logger, checkpoint_callback=checkpoint_callback)
+            logger=False,
+            checkpoint_callback=checkpoint_callback)
+            #logger=logger,
 
     trainer.fit(model)
 
-    wandb.save(str(hparams.save_dir / '*.ckpt'))
+    #wandb.save(str(hparams.save_dir / '*.ckpt'))
 
 
 if __name__ == '__main__':
@@ -232,6 +236,9 @@ if __name__ == '__main__':
     # Optimizer args.
     parser.add_argument('--lr', type=float, default=1e-4)
     parser.add_argument('--weight_decay', type=float, default=0.0)
+
+    # RL args
+    #parser.add_argument('--offline', action='store_true', default=False)
 
     parsed = parser.parse_args()
     parsed.save_dir = parsed.save_dir / parsed.id

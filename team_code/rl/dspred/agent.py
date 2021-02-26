@@ -42,17 +42,19 @@ class DSPredAgent(MapAgent):
         self._speed_controller = PIDController(K_P=5.0, K_I=0.5, K_D=1.0, n=40)
 
     def reset(self):
-        ROUTE_NAME = os.environ.get('ROUTE_NAME', 0)
-        self.save_debug_path = Path(f'{self.config.save_root}/images/{ROUTE_NAME}') 
-        if not os.path.exists(str(self.save_debug_path)):
-            os.makedirs(str(self.save_debug_path))
+        if not self.config.env.save_data:
+            ROUTE_NAME = os.environ.get('ROUTE_NAME', 0)
+            self.save_debug_path = Path(f'{self.config.save_root}/images/{ROUTE_NAME}') 
+            if not os.path.exists(str(self.save_debug_path)):
+                os.makedirs(str(self.save_debug_path))
 
-        rep_number = len(os.listdir(self.save_debug_path))
-        self.rep_name = f'repetition_{rep_number:02d}'
-        paths = [self.save_debug_path / self.rep_name / 'debug', self.save_debug_path / self.rep_name / 'heatmaps']
-        for path in paths:
-            if not os.path.exists(str(path)):
-                os.makedirs(str(path))
+                rep_number = len(os.listdir(self.save_debug_path))
+                self.rep_name = f'repetition_{rep_number:02d}'
+                paths = [self.save_debug_path / self.rep_name / 'debug', self.save_debug_path / self.rep_name / 'heatmaps']
+                for path in paths:
+                    if not os.path.exists(str(path)):
+                        os.makedirs(str(path))
+        self.initialized = False
 
     # remove rgb cameras from base agent
     def sensors(self):
@@ -140,14 +142,10 @@ class DSPredAgent(MapAgent):
     @torch.no_grad()
     def run_step(self, input_data, timestamp):
         if not self.initialized:
+            print('reinitializing agent...')
             self._init()
 
-        if self.config.agent.forward:
-            control = carla.VehicleControl()
-            control.steer = 0
-            control.throttle = 0.75
-            control.brake = False
-
+        
         tick_data = self.tick(input_data)
         topdown = Image.fromarray(tick_data['topdown'])
         topdown = topdown.crop((128, 0, 128+256, 256))
@@ -200,6 +198,12 @@ class DSPredAgent(MapAgent):
         control.throttle = throttle
         control.brake = float(brake)
         #print(timestamp) # GAMETIME
+
+        if self.config.agent.forward:
+            control = carla.VehicleControl()
+            control.steer = 0
+            control.throttle = 0.75
+            control.brake = False
 
         self.aim = self.converter.world_to_map(torch.Tensor(aim)).numpy()
         self.obs = (tick_data['topdown'], tick_data['target'])

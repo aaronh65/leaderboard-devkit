@@ -168,7 +168,7 @@ try:
         env["SPLIT"] = args.split
         env["ROUTE_NAME"] = route_name
         env["REPETITIONS"] = str(args.repetitions)
-        env["PRIVILEGED"] = "1" if privileged else "0"
+        env["PRIVILEGED"] = str(int(privileged))
 
         # run command
         cmd = f'bash run_agent.sh &> {save_root}/logs/AGENT_{route_name}.txt'

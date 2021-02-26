@@ -36,7 +36,8 @@ class BaseEnv(gym.Env):
         data_dir = f'{config.project_root}/leaderboard/data'
         self.indexer = RouteIndexer(
                 f'{data_dir}/{self.config.routes}',
-                f'{data_dir}/{self.config.scenarios}', 1)
+                f'{data_dir}/{self.config.scenarios}', 
+                self.config.repetitions)
         self.num_routes = len(self.indexer._configs_list)
         self.manager = ScenarioManager(60, False) # 60s timeout?
         self.scenario = None
@@ -49,10 +50,10 @@ class BaseEnv(gym.Env):
             self.manager.signal_handler(signum, frame)
         raise KeyboardInterrupt
 
-    def reset(self, log=None):
-        idx = np.random.randint(self.num_routes)
-        #idx = 22
-        rconfig = self.indexer.get(idx)
+    def reset(self, log=None, rconfig=None):
+        if rconfig is None:
+            idx = np.random.randint(self.num_routes)
+            rconfig = self.indexer.get(idx)
         rconfig.agent = self.hero_agent
         self._load_world_and_scenario(rconfig)
 

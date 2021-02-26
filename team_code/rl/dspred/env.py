@@ -29,12 +29,20 @@ class CarlaEnv(BaseEnv):
 
         self.num_infractions = 0
         self.buf = ReplayBuffer(config.agent.buffer_size, config.agent.batch_size)
+        self.warmup_frames = 60
 
     def reset(self, log=None):
         # pass rconfig to hero agent reset method so it doesn't need 
         # environ variables to set save debug/image paths?
 
-        super().reset(log)
+        rconfig = None
+        if self.config.save_data:
+            if self.indexer.peek():
+                rconfig = self.indexer.next()
+            else:
+                return 'done'
+
+        super().reset(log, rconfig)
         if self.config.save_data:
             save_root = self.all_config.save_root             
             ROUTE_NAME = os.environ.get('ROUTE_NAME', 0)
@@ -45,12 +53,12 @@ class CarlaEnv(BaseEnv):
             os.makedirs(f'{self.save_data_root}/topdown')
             os.makedirs(f'{self.save_data_root}/measurements')
 
-        return []
+        return 'running'
 
     def step(self):
         # ticks the scenario and makes visual with new semantic bev image and cached info
         obs, reward, done, info = super().step() 
-        if self.frame <= 60:
+        if self.frame < self.warmup_frames:
             return (0, done)
 
         # cache things to make driving score compute faster?
@@ -68,20 +76,24 @@ class CarlaEnv(BaseEnv):
         state = self.hero_agent.obs
         aim = self.hero_agent.aim
         self.buf.add_experience(state, aim, reward, done, info)
-        if self.config.save_data and self.frame:
+
+        if self.config.save_data:
+
+            save_frame = self.frame - self.warmup_frames
+            #done = done or save_frame > 60
+            #done = done or save_frame > 3600
+            done = done or save_frame > 600
             topdown, target = state
             data = {'x_tgt': float(target[0]),
                     'y_tgt': float(target[1]),
                     'x_aim': float(aim[0]),
                     'y_aim': float(aim[1]),
                     'reward': reward,
-                    'done': done,
+                    'done': int(done),
                     }
-
-            Image.fromarray(topdown).save(f'{self.save_data_root}/topdown/{self.frame}.png')
-            with open(f'{self.save_data_root}/measurements/{self.frame}.json', 'w') as f:
+            Image.fromarray(topdown).save(f'{self.save_data_root}/topdown/{save_frame:06d}.png')
+            with open(f'{self.save_data_root}/measurements/{save_frame:06d}.json', 'w') as f:
                 json.dump(data, f, indent=4, sort_keys=False)
 
-            done = done or self.frame > 3000
 
         return reward, done

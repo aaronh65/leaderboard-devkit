@@ -4,7 +4,7 @@ import argparse
 from datetime import datetime
 from pathlib import Path
 
-sys.path.append('../..')
+sys.path.append('../../..') # team_code/rl
 from common.utils import *
 
 parser = argparse.ArgumentParser()
@@ -54,7 +54,7 @@ scenarios = 'all_towns_traffic_scenarios_public.json' if args.scenarios \
 date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
 suffix = f'debug/{date_str}' if args.debug else f'{date_str}' 
 save_root = f'{args.data_root}/leaderboard/data/rl/dspred/{suffix}'
-mkdir_if_not_exists(f'{save_root}/logs')
+os.makedirs(save_root)
 
 # setup config
 config['description'] = args.desc

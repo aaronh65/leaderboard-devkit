@@ -18,4 +18,5 @@ export PYTHONPATH=$PYTHONPATH:$PROJECT_ROOT/team_code
 #export HAS_DISPLAY=0
 
 python $PROJECT_ROOT/team_code/rl/dspred/map_model.py \
-	--dataset_dir=$DATASET_DIR
+	--dataset_dir=$DATASET_DIR \
+	#--offline
