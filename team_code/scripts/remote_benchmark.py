@@ -2,7 +2,7 @@
 # this script is usually used on a remote cluster
 
 import os, sys, time
-sys.path.append('../..')
+sys.path.append('..')
 import yaml
 import subprocess
 import argparse
@@ -16,7 +16,7 @@ env_map = {'lbc': 'lblbc', 'dspred': 'dspred'}
 parser = argparse.ArgumentParser()
 parser.add_argument('--version', type=int, choices=[10,11], default=11)
 parser.add_argument('--split', type=str, default='devtest', choices=['devtest','testing','training','debug'])
-parser.add_argument('--agent', type=str, default='lbc/image_agent', choices=['lbc/image_agent', 'lbc/auto_pilot', 'lbc/privileged_agent', 'common/forward_agent'])
+parser.add_argument('--agent', type=str, default='lbc/image', choices=['lbc/image', 'lbc/autopilot', 'lbc/privileged', 'common/forward'])
 parser.add_argument('--repetitions', type=int, default=1)
 parser.add_argument('--save_images', action='store_true')
 parser.add_argument('-d', '--debug', action='store_true')
@@ -82,28 +82,27 @@ try:
     time.sleep(timeout)
 
     # agent-specific configurations
-    config = {}
+    appr, algo = args.agent.split('/')
+    config_path = f'{project_root}/team_code/{appr}/config/{algo}.yml'
+    with open(config_path, 'r') as f:
+        config = yaml.load(f, Loader=yaml.Loader)
     config['project_root'] = project_root
     config['save_root'] = save_root
     config['save_images'] = args.save_images
     config['split'] = args.split
+
     privileged = False
     conda_env = 'lb'
-    agent_path = args.agent.split('/')
-    agent_path = os.path.join(agent_path[0], 'src', agent_path[1])
-    if args.agent == 'common/forward_agent':
+    if args.agent == 'common/forward':
         pass
-    elif args.agent == 'lbc/auto_pilot':
+    elif args.agent == 'lbc/autopilot':
         conda_env = 'lblbc'
         privileged = True
-        config['save_data'] = False
-    elif args.agent == 'lbc/image_agent':
+    elif args.agent == 'lbc/image':
         conda_env = 'lblbc'
-        config['weights_path'] = 'team_code/config/image_model.ckpt'
-    elif args.agent == 'lbc/privileged_agent':
+    elif args.agent == 'lbc/privileged':
         conda_env = 'lblbc'
         privileged = True
-        config['weights_path'] = 'team_code/config/map_model.ckpt' 
     config_path = f'{save_root}/config.yml'
     with open(config_path, 'w') as f:
         yaml.dump(config, f, default_flow_style=False)
@@ -164,14 +163,14 @@ try:
         env["CUDA_VISIBLE_DEVICES"] = str(gpu)
         env["WORLD_PORT"] = str(wp)
         env["TM_PORT"] = str(tp)
-        env["AGENT"] = agent_path
+        env["AGENT"] = args.agent
         env["SPLIT"] = args.split
         env["ROUTE_NAME"] = route_name
         env["REPETITIONS"] = str(args.repetitions)
         env["PRIVILEGED"] = str(int(privileged))
 
         # run command
-        cmd = f'bash run_agent.sh &> {save_root}/logs/AGENT_{route_name}.txt'
+        cmd = f'bash run_leaderboard.sh &> {save_root}/logs/AGENT_{route_name}.txt'
         print(f'running {cmd} on {args.split}/{route_name} for {args.repetitions} repetitions')
         lbc_procs.append(subprocess.Popen(cmd, env=env, shell=True))
 

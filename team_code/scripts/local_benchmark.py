@@ -91,7 +91,6 @@ os.environ["SPLIT"] = args.split
 os.environ["ROUTE_NAME"] = route_name
 os.environ["REPETITIONS"] = str(args.repetitions)
 os.environ["PRIVILEGED"] = str(int(privileged))
-#os.environ["ALGO_ROOT"] = agent_path.split('/')[0]
  
 cmd = f'bash run_leaderboard.sh'
 print(f'running {cmd} on {args.split}/{route_name} for {args.repetitions} repetitions')
