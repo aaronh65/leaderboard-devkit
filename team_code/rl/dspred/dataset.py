@@ -127,25 +127,29 @@ def preprocess_semantic(semantic_np):
 
 
 class CarlaDataset(Dataset):
-    def __init__(self, dataset_dir, transform=transforms.ToTensor()):
+    def __init__(self, dataset_dir, transform=transforms.ToTensor(), n=0):
         dataset_dir = Path(dataset_dir)
         measurements = list(sorted((dataset_dir / 'measurements').glob('*.json')))
 
         self.transform = transform
         self.dataset_dir = dataset_dir
         self.frames = list()
-        self.measurements = pd.DataFrame([eval(x.read_text()) for x in measurements])
+        self.measurements = pd.DataFrame([eval(x.read_text()) for x in measurements[:120]])
         self.converter = Converter()
 
-        print(dataset_dir)
+        # n-step returns
+        self.n = n
 
-        for image_path in sorted((dataset_dir / 'rgb').glob('*.png')):
+        print(dataset_dir)
+        print(self.measurements)
+
+        for image_path in sorted((dataset_dir / 'topdown').glob('*.png'))[:120]:
             frame = str(image_path.stem)
 
             #assert (dataset_dir / 'rgb_left' / ('%s.png' % frame)).exists()
             #assert (dataset_dir / 'rgb_right' / ('%s.png' % frame)).exists()
             assert (dataset_dir / 'topdown' / ('%s.png' % frame)).exists()
-            #assert int(frame) < len(self.measurements)
+            assert int(frame) < len(self.measurements)
 
             self.frames.append(frame)
 
@@ -156,119 +160,113 @@ class CarlaDataset(Dataset):
 
     def __getitem__(self, i):
         path = self.dataset_dir
+
         frame = self.frames[i]
-        meta = '%s %s' % (path.stem, frame)
-
-        rgb = Image.open(path / 'rgb' / ('%s.png' % frame))
-        rgb = transforms.functional.to_tensor(rgb)
-
-        rgb_left = Image.open(path / 'rgb_left' / ('%s.png' % frame))
-        rgb_left = transforms.functional.to_tensor(rgb_left)
-
-        rgb_right = Image.open(path / 'rgb_right' / ('%s.png' % frame))
-        rgb_right = transforms.functional.to_tensor(rgb_right)
-
         topdown = Image.open(path / 'topdown' / ('%s.png' % frame))
         topdown = topdown.crop((128, 0, 128 + 256, 256))
-        topdown = np.array(topdown)
-        topdown = preprocess_semantic(topdown)
+        topdown = preprocess_semantic(np.array(topdown))
+        tick_data = self.measurements.iloc[i]
+        target = torch.FloatTensor(np.float32((tick_data['x_tgt'], tick_data['y_tgt'])))
+        action = torch.FloatTensor(np.float32((tick_data['x_aim'], tick_data['y_aim'])))
 
-        u = np.float32(self.measurements.iloc[i][['x', 'y']])
-        theta = self.measurements.iloc[i]['theta']
-        if np.isnan(theta):
-            theta = 0.0
-        theta = theta + np.pi / 2
-        R = np.array([
-            [np.cos(theta), -np.sin(theta)],
-            [np.sin(theta),  np.cos(theta)],
-            ])
+        ni = i + self.n + 1
+        ni = min(ni, len(self.frames))
+        reward = self.measurements.loc[i:ni, 'reward'].sum()
+        reward = torch.FloatTensor([reward])
+        ntick_data = self.measurements.iloc[ni-1]
+        done = torch.FloatTensor([ntick_data['done']])
 
-        points = list()
+        nframe = self.frames[min(ni, len(self.frames)-1)] # 'next_state' at done edge case
+        ntopdown = Image.open(path / 'topdown' / ('%s.png' % nframe))
+        ntopdown = ntopdown.crop((128, 0, 128 + 256, 256))
+        ntopdown = preprocess_semantic(np.array(ntopdown))
+        ntarget = torch.FloatTensor(np.float32((ntick_data['x_tgt'], ntick_data['y_tgt'])))
 
-        for skip in range(1, STEPS+1):
-            j = i + GAP * skip
-            v = np.array(self.measurements.iloc[j][['x', 'y']])
-
-            target = R.T.dot(v - u)
-            target *= PIXELS_PER_WORLD
-            target += [128, 256]
-
-            points.append(target)
-
-        points = torch.FloatTensor(points)
-        points = torch.clamp(points, 0, 256)
-        points = (points / 256) * 2 - 1
-
-        target = np.float32(self.measurements.iloc[i][['x_command', 'y_command']])
-        target = R.T.dot(target - u)
-        target *= PIXELS_PER_WORLD
-        target += [128, 256]
-        target = np.clip(target, 0, 256)
-        target = torch.FloatTensor(target)
-
-        # heatmap = make_heatmap((256, 256), target)
-        # heatmap = torch.FloatTensor(heatmap).unsqueeze(0)
-
-        # command_img = self.converter.map_to_cam(torch.FloatTensor(target))
-        # heatmap_img = make_heatmap((144, 256), command_img)
-        # heatmap_img = torch.FloatTensor(heatmap_img).unsqueeze(0)
-
-        actions = np.float32(self.measurements.iloc[i][['steer', 'target_speed']])
-        actions[np.isnan(actions)] = 0.0
-        actions = torch.FloatTensor(actions)
-
-        return torch.cat((rgb, rgb_left, rgb_right)), topdown, points, target, actions, meta
-
-
+        
+        #print(f'{frame} {nframe}')
+        return (topdown, target), action, reward, (ntopdown, ntarget), done
+        
 if __name__ == '__main__':
     import sys
     import cv2
+    import argparse
     from PIL import ImageDraw
-    from .utils.heatmap import ToHeatmap
+    from lbc.carla_project.src.utils.heatmap import ToHeatmap
 
-    # for path in sorted(Path('/home/bradyzhou/data/carla/carla_challenge_curated').glob('*')):
-        # data = CarlaDataset(path)
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--path', type=str, required=True)
+    parser.add_argument('--n', type=int, default=0)
+    args = parser.parse_args()
 
-        # for i in range(len(data)):
-            # data[i]
+    data = CarlaDataset(args.path, n=args.n)
 
-    data = CarlaDataset(sys.argv[1])
     converter = Converter()
     to_heatmap = ToHeatmap()
 
     for i in range(len(data)):
-        rgb, topdown, points, target, actions, meta = data[i]
-        points_unnormalized = (points + 1) / 2 * 256
-        points_cam = converter(points_unnormalized)
+        state, action, reward, next_state, done = data[i]
 
-        target_cam = converter(target)
-
-        heatmap = to_heatmap(target[None], topdown[None]).squeeze()
-        heatmap_cam = to_heatmap(target_cam[None], rgb[None]).squeeze()
-
-        _heatmap = heatmap.cpu().squeeze().numpy() / 10.0 + 0.9
-        _heatmap_cam = heatmap_cam.cpu().squeeze().numpy() / 10.0 + 0.9
-
-        _rgb = (rgb.cpu() * 255).byte().numpy().transpose(1, 2, 0)[:, :, :3]
-        _rgb[heatmap_cam > 0.1] = 255
-        _rgb = Image.fromarray(_rgb)
-
+        # this state
+        topdown, target = state
         _topdown = COLOR[topdown.argmax(0).cpu().numpy()]
+        heatmap = to_heatmap(target[None], topdown[None]).squeeze()
+        _heatmap = heatmap.cpu().squeeze().numpy() / 10.0 + 0.9
         _topdown[heatmap > 0.1] = 255
         _topdown = Image.fromarray(_topdown)
-        _draw_map = ImageDraw.Draw(_topdown)
-        _draw_rgb = ImageDraw.Draw(_rgb)
+        _draw = ImageDraw.Draw(_topdown)
+        x, y = action.cpu().squeeze().numpy().astype(np.uint8)
+        _draw.ellipse((x-2, y-2, x+2, y+2), (0,255,0))
+        _draw.text((5, 10), f'reward = {reward.item():.5f}', (255,255,255))
+        _topdown = cv2.cvtColor(np.array(_topdown), cv2.COLOR_BGR2RGB)
 
-        for x, y in points_unnormalized:
-            _draw_map.ellipse((x-2, y-2, x+2, y+2), (255, 0, 0))
+        # next state
+        ntopdown, ntarget = next_state
+        _ntopdown = COLOR[ntopdown.argmax(0).cpu().numpy()]
+        nheatmap = to_heatmap(ntarget[None], ntopdown[None]).squeeze()
+        _nheatmap = nheatmap.cpu().squeeze().numpy() / 10.0 + 0.9
+        _ntopdown[nheatmap > 0.1] = 255
+        _ntopdown = cv2.cvtColor(_ntopdown, cv2.COLOR_BGR2RGB)
 
-        for x, y in converter.cam_to_map(points_cam):
-            _draw_map.ellipse((x-1, y-1, x+1, y+1), (0, 255, 0))
+        _combined = np.hstack((_topdown, _ntopdown))
+        cv2.imshow('topdown', _combined)
+        cv2.waitKey(50)
 
-        for x, y in points_cam:
-            _draw_rgb.ellipse((x-2, y-2, x+2, y+2), (255, 0, 0))
+    #for i in range(len(data)):
+    #    state, action, reward, next_state, done = batch
 
-        _topdown.thumbnail(_rgb.size)
+    #for i in range(len(data)):
+    #    rgb, topdown, points, target, actions, meta = data[i]
+    #    points_unnormalized = (points + 1) / 2 * 256
+    #    points_cam = converter(points_unnormalized)
 
-        cv2.imshow('debug', cv2.cvtColor(np.hstack((_rgb, _topdown)), cv2.COLOR_BGR2RGB))
-        cv2.waitKey(0)
+    #    target_cam = converter(target)
+
+    #    heatmap = to_heatmap(target[None], topdown[None]).squeeze()
+    #    heatmap_cam = to_heatmap(target_cam[None], rgb[None]).squeeze()
+
+    #    _heatmap = heatmap.cpu().squeeze().numpy() / 10.0 + 0.9
+    #    _heatmap_cam = heatmap_cam.cpu().squeeze().numpy() / 10.0 + 0.9
+
+    #    _rgb = (rgb.cpu() * 255).byte().numpy().transpose(1, 2, 0)[:, :, :3]
+    #    _rgb[heatmap_cam > 0.1] = 255
+    #    _rgb = Image.fromarray(_rgb)
+
+    #    _topdown = COLOR[topdown.argmax(0).cpu().numpy()]
+    #    _topdown[heatmap > 0.1] = 255
+    #    _topdown = Image.fromarray(_topdown)
+    #    _draw_map = ImageDraw.Draw(_topdown)
+    #    _draw_rgb = ImageDraw.Draw(_rgb)
+
+    #    for x, y in points_unnormalized:
+    #        _draw_map.ellipse((x-2, y-2, x+2, y+2), (255, 0, 0))
+
+    #    for x, y in converter.cam_to_map(points_cam):
+    #        _draw_map.ellipse((x-1, y-1, x+1, y+1), (0, 255, 0))
+
+    #    for x, y in points_cam:
+    #        _draw_rgb.ellipse((x-2, y-2, x+2, y+2), (255, 0, 0))
+
+    #    _topdown.thumbnail(_rgb.size)
+
+    #    cv2.imshow('debug', cv2.cvtColor(np.hstack((_rgb, _topdown)), cv2.COLOR_BGR2RGB))
+    #    cv2.waitKey(0)
