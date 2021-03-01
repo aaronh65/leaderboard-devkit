@@ -35,6 +35,8 @@ class CarlaEnv(BaseEnv):
         # pass rconfig to hero agent reset method so it doesn't need 
         # environ variables to set save debug/image paths?
 
+        # extract indexer? make a config parameter that chooses between
+        # random rconfig selection or getting in order?
         rconfig = None
         if self.config.save_data:
             if self.indexer.peek():
@@ -67,8 +69,10 @@ class CarlaEnv(BaseEnv):
         iflist = CarlaDataProvider.get_infraction_list()
         if self.num_infractions < len(iflist): # new infraction
             self.num_infractions = len(iflist)
-            infraction = iflist[-1]
-            if infraction.get_type() != TrafficEventType.STOP_INFRACTION: # ignore for now
+            itype = iflist[-1].get_type()
+
+            # ignore stops for now
+            if itype != TrafficEventType.STOP_INFRACTION and itype in penalty_dict.keys(): 
                 base_penalty = 50
                 penalty = base_penalty * (1 - penalty_dict[infraction.get_type()])
                 reward = reward - penalty
@@ -78,12 +82,10 @@ class CarlaEnv(BaseEnv):
         self.buf.add_experience(state, aim, reward, done, info)
 
         if self.config.save_data:
-
             save_frame = self.frame - self.warmup_frames
-            #done = done or save_frame > 60
-            #done = done or save_frame > 3600
-            done = done or save_frame > 600
             topdown, target = state
+            Image.fromarray(topdown).save(f'{self.save_data_root}/topdown/{save_frame:06d}.png')
+
             data = {'x_tgt': float(target[0]),
                     'y_tgt': float(target[1]),
                     'x_aim': float(aim[0]),
@@ -91,9 +93,7 @@ class CarlaEnv(BaseEnv):
                     'reward': reward,
                     'done': int(done),
                     }
-            Image.fromarray(topdown).save(f'{self.save_data_root}/topdown/{save_frame:06d}.png')
             with open(f'{self.save_data_root}/measurements/{save_frame:06d}.json', 'w') as f:
                 json.dump(data, f, indent=4, sort_keys=False)
-
 
         return reward, done

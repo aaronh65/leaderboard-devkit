@@ -1,9 +1,11 @@
-import cv2
 from PIL import Image
-import pandas as pd
 from pathlib import Path
+import cv2
 import numpy as np
+import pandas as pd
 import argparse
+import matplotlib.pyplot as plt
+
 
 CONVERTER = np.uint8([
     0,    # unlabeled
@@ -52,12 +54,20 @@ parser.add_argument('--dataset_dir', type=str, required=True)
 args = parser.parse_args()
 
 path = Path(args.dataset_dir)
-episodes = list(sorted(Path(path).glob('*')))
-measurements = list(sorted((episodes[-1] / 'measurements').glob('*.json')))
-measurements = pd.DataFrame([eval(x.read_text()) for x in measurements])       
+episodes = list(sorted(Path(path).glob('*')))[:-1]
+measurements = list(sorted((episodes[-4] / 'measurements').glob('*.json')))
+measurements = pd.DataFrame([eval(x.read_text()) for x in measurements])
+# reward
+rewards = measurements['reward'].to_numpy()
+rewards = rewards[:50]
+plt.plot(np.arange(rewards.shape[0]), rewards)
+plt.show()
+
+# images
 topdowns = list(sorted((episodes[-1] / 'topdown').glob('*.png')))
-for topdown in topdowns:
-    img = Image.open(topdown)
-    img = COLOR[CONVERTER[np.array(img)]]
-    cv2.imshow('topdown', img)
+if False:
+    for topdown in topdowns:
+        img = Image.open(topdown)
+        img = COLOR[CONVERTER[np.array(img)]]
+        cv2.imshow('topdown', img)
     cv2.waitKey(50)

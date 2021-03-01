@@ -160,6 +160,7 @@ class DSPredAgent(MapAgent):
         target = torch.from_numpy(tick_data['target'])
         target = target[None].cuda()
 
+        print(target)
         points, hmaps = self.net.forward(topdown, target, debug=True) # world frame
         tick_data['hmaps'] = hmaps
         points_map = points.clone().cpu().squeeze()
