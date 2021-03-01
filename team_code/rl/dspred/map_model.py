@@ -1,4 +1,4 @@
-import sys
+import sys, traceback
 
 import uuid
 import argparse
@@ -22,88 +22,76 @@ from lbc.carla_project.src.common import COLOR
 
 from rl.dspred.dataset import get_dataset
 
+# takes (N,3,H,W) topdown and (N,4,H,W) vmaps
+# averages t=0.5s,1.0s vmaps and overlays it on topdown
 @torch.no_grad()
-def visualize(topdown, hmap, vmap, action, ntopdown, nhmap, nvmap, naction, reward, points, npoints):
+def fuse_vmaps(topdown, vmap, hparams, alpha=0.75):
+
+    vmap_mean = torch.mean(vmap[:,0:2,:,:], dim=1, keepdim=True) # N,1,H,W
+    vmap_flat = vmap_mean.view(vmap_mean.shape[:-2] + (-1,)) # N,1,H*W
+    vmap_prob = F.softmax(vmap_flat/hparams.temperature, dim=-1) # to prob
+    vmap_norm = vmap_prob / torch.max(vmap_prob, dim=-1, keepdim=True)[0] # to [0,1]
+    vmap_show = (vmap_norm * 256).view_as(vmap_mean).cpu().numpy().astype(np.uint8) # N,1,H,W
+    vmap_show = np.repeat(vmap_show, repeats=3, axis=1).transpose((0,2,3,1)) # N,H,W,3
+    fused = np.array(COLOR[topdown.argmax(1).cpu()]).astype(np.uint8) # N,H,W,3
+    for i in range(fused.shape[0]):
+        cv2.addWeighted(vmap_show[i], 0.75, fused[i], 1, 0, fused[i])
+    fused = fused.astype(np.uint8)
+    return fused
+
+@torch.no_grad()
+def visualize(batch, points, vmap, hmap, npoints, nvmap, nhmap, naction, meta):
     images = list()
-    
-    # first process value maps and extract next state aim
-    vmap_flat = vmap.view(vmap.shape[:-2] + (-1,))
-    vmap_prob = F.softmax(vmap_flat/10, dim=-1)
-    weights = vmap_prob.view_as(vmap)
-    x = (weights.sum(-2)*torch.linspace(-1, 1, vmap.shape[-1]).type_as(vmap)).sum(-1)
-    y = (weights.sum(-1)*torch.linspace(-1, 1, vmap.shape[-2]).type_as(vmap)).sum(-1)
-    x = np.clip((x.cpu().numpy() + 1) / 2 * 256, 0, 256)
-    y = np.clip((y.cpu().numpy() + 1) / 2 * 256, 0, 256)
-    vmap_show = vmap_prob / torch.max(vmap_prob, dim=-1, keepdim=True)[0]
-    vmap_show = vmap_show.view_as(vmap)
-    vmap_mean = torch.mean(vmap_show[:,0:2,:,:], dim=1) 
 
-    # next state
-    nvmap_flat = nvmap.view(nvmap.shape[:-2] + (-1,))
-    nvmap_prob = F.softmax(nvmap_flat/10, dim=-1)
-    nweights = nvmap_prob.view_as(nvmap)
-    nx = (nweights.sum(-2)*torch.linspace(-1, 1, nvmap.shape[-1]).type_as(nvmap)).sum(-1)
-    ny = (nweights.sum(-1)*torch.linspace(-1, 1, nvmap.shape[-2]).type_as(nvmap)).sum(-1)
-    nx = np.clip((nx.cpu().numpy() + 1) / 2 * 256, 0, 256)
-    ny = np.clip((ny.cpu().numpy() + 1) / 2 * 256, 0, 256)
-    nvmap_show = nvmap_prob / torch.max(nvmap_prob, dim=-1, keepdim=True)[0]
-    nvmap_show = nvmap_show.view_as(nvmap)
-    nvmap_mean = torch.mean(nvmap_show[:,0:2,:,:], dim=1) 
+    state, action, reward, next_state, done = batch
+    topdown, target = state
+    ntopdown, target = next_state
+    hparams, batch_loss, n = meta['hparams'], meta['batch_loss'], meta['n']
+    Q, nQ = meta['Q'], meta['nQ']
 
-    #points = np.clip((points.cpu().numpy() + 1) / 2 * 256, 0, 256)
-    #npoints = np.clip((npoints.cpu().numpy() + 1) / 2 * 256, 0, 256)
+    fused = fuse_vmaps(topdown, vmap, hparams, 1.0)
+    nfused = fuse_vmaps(ntopdown, nvmap, hparams, 1.0)
+    points = (points + 1) / 2 * 256 # [-1, 1] -> [0, 256]
+    npoints = (npoints + 1) / 2 * 256 # [-1, 1] -> [0, 256]
 
-    for i in range(topdown.shape[0]): # batch size N
+    textcolor = (255,255,255)
+    for i in range(action.shape[0]):
 
-        _topdown, _hmap, _vmap, _action = topdown[i], hmap[i], vmap_show[i], action[i]
-        _topdown = COLOR[_topdown.argmax(0).cpu().numpy()]
-        _topdown[_hmap.cpu().numpy().squeeze() > 0.1] = 255
-        xaim, yaim = action[i,0], action[i,1]
-        vmap_stack = []
-        for t in range(len(_vmap)):
-            vmap_out = _topdown.copy()
-            vmap_view = _vmap[t].cpu().numpy() * 256
-            vmap_view = np.dstack((vmap_view, vmap_view, vmap_view))
-            vmap_view = vmap_view.astype(np.uint8)
-            cv2.addWeighted(vmap_view, 0.75, vmap_out, 1, 0, vmap_out)
-            vmap_im = Image.fromarray(vmap_out)
-            vmap_imdraw = ImageDraw.Draw(vmap_im)
-            _x, _y = x[i,t], y[i,t]
-            vmap_imdraw.ellipse((xaim-2,yaim-2,xaim+2,yaim+2), (0,191,255))
-            vmap_imdraw.ellipse((_x-2,_y-2,_x+2,_y+2), (255,0,0))
-            vmap_im = cv2.cvtColor(np.array(vmap_im), cv2.COLOR_BGR2RGB)
-            vmap_stack.append(vmap_im)
-        vmap_comb = np.hstack(vmap_stack)
-        cv2.imshow('vmaps', vmap_comb)
-
-
+        # current state
+        _topdown = fused[i]
+        _topdown[hmap[i][0].cpu() > 0.1] = 255
         _topdown = Image.fromarray(_topdown)
-        _topdown_draw = ImageDraw.Draw(_topdown)
-        #_x, _y = np.mean(x[i,0:2]), np.mean(y[i,0:2])
-        #for _x, _y in zip(x[i], y[i]):
-        #    _topdown_draw.ellipse((_x-2, _y-2, _x+2, _y+2), (0,255,0))
-        _topdown_draw.text((5, 10), f'reward = {reward[i].item():.5f}', (255,255,255))
+        _draw = ImageDraw.Draw(_topdown)
+        for x, y in points[i].cpu().numpy():
+            _draw.ellipse((x-2, y-2, x+2, y+2), (255,0,0))
+        x, y = action[i].cpu().numpy().astype(np.uint8)
+        _draw.ellipse((x-2, y-2, x+2, y+2), (0,255,0))
+        _draw.text((5, 10), f'action = ({x},{y})', textcolor)
+        _draw.text((5, 20), f'Q = {Q[i].item():2f}', textcolor)
+        _draw.text((5, 30), f'reward = {reward[i].item():.3f}', textcolor)
+        _draw.text((5, 40), f'TD({n}) err = {batch_loss[i].item():.2f}', textcolor)
         _topdown = cv2.cvtColor(np.array(_topdown), cv2.COLOR_BGR2RGB)
 
         # next state
-        _ntopdown, _nhmap, _naction = ntopdown[i], nhmap[i], naction[i]
-        _ntopdown = COLOR[_ntopdown.argmax(0).cpu().numpy()]
-        _ntopdown[_hmap.cpu().numpy().squeeze() > 0.1] = 255
+        _ntopdown = nfused[i]
+        _ntopdown[nhmap[i][0].cpu() > 0.1] = 255
         _ntopdown = Image.fromarray(_ntopdown)
-
-        _ntopdown_draw = ImageDraw.Draw(_ntopdown)
-        #_nx, _ny = np.mean(nx[i,0:2]), np.mean(ny[i,0:2])
-        #for _nx, _ny in zip(nx[i], ny[i]):
-        #    _ntopdown_draw.ellipse((_nx-2, _ny-2, _nx+2, _ny+2), (0,255,0))
-
+        _ndraw = ImageDraw.Draw(_ntopdown)
+        for x, y in npoints[i].cpu().numpy():
+            _ndraw.ellipse((x-2, y-2, x+2, y+2), (255,0,0))
+        x, y = naction[i].cpu().numpy().astype(np.uint8)
+        _ndraw.ellipse((x-2, y-2, x+2, y+2), (0,255,0))
+        _ndraw.text((5, 10), f'action = ({x},{y})', textcolor)
+        _ndraw.text((5, 20), f'nQ = {nQ[i].item():.2f}', textcolor)
+        _ndraw.text((5, 30), f'done = {bool(done[i])}', textcolor)
         _ntopdown = cv2.cvtColor(np.array(_ntopdown), cv2.COLOR_BGR2RGB)
 
-        
         _combined = np.hstack((_topdown, _ntopdown))
-        images.append(_combined)
-        cv2.imshow('topdown', _combined)
-        cv2.waitKey(0)
+        cv2.imshow(f'topdown {i}', _combined)
+    cv2.waitKey(0)
+    raise Exception
 
+    
     images.sort(key=lambda x: x[0], reverse=True)
 
     result = torchvision.utils.make_grid([x[1] for x in images], nrow=4)
@@ -122,10 +110,13 @@ class MapModel(pl.LightningModule):
         self.to_heatmap = ToHeatmap(hparams.heatmap_radius)
         self.net = SegmentationModel(10, 4, hack=hparams.hack, temperature=hparams.temperature)
         self.controller = RawController(4)
-        self.criterion = torch.nn.MSELoss()
+        self.criterion = torch.nn.MSELoss(reduction='none')
         #self.discount = 0.99 ** (self.hparams.n + 1)
-        self.n = 20
-        self.discount = 0.99 ** (0 + 1)
+        #if hasattr(hparams, n):
+        #    self.n = hparams.n
+        #else:
+        self.n = 0 if not hasattr(hparams, 'n') else hparams.n
+        self.discount = 0.99 ** (self.n + 1)
 
     def forward(self, topdown, target, debug=False):
         target_heatmap = self.to_heatmap(target, topdown)[:, None]
@@ -168,94 +159,38 @@ class MapModel(pl.LightningModule):
 
         return {'loss': loss}
 
+    # eval and no grad already set
     def validation_step(self, batch, batch_nb):
         state, action, reward, next_state, done = batch
 
-        # retrieve Q prediction
         topdown, target = state
+        points, (vmap, hmap) = self.forward(topdown, target, debug=True)
         ntopdown, ntarget = next_state
-        with torch.no_grad():
-            points, (vmap, hmap) = self.forward(topdown, target, debug=True)
-        points = (points + 1) / 2 * 256
-        with torch.no_grad(): # no gradients on target right?
-            npoints, (nvmap, nhmap) = self.forward(ntopdown, ntarget, debug=True)
-
-        for i in range(action.shape[0]):
-            _topdown = COLOR[topdown[i].argmax(0).cpu()]
-            #heatmap = to_heatmap(target[None], topdown[None]).squeeze()
-            _topdown[hmap[i][0].cpu() > 0.1] = 255
-            _topdown = Image.fromarray(_topdown)
-
-            _draw = ImageDraw.Draw(_topdown)
-            x, y = action[i].cpu().squeeze().numpy().astype(np.uint8)
-            _draw.ellipse((x-2, y-2, x+2, y+2), (0,255,0))
-            for x, y in points[i].cpu().numpy():
-                _draw.ellipse((x-2, y-2, x+2, y+2), (0,255,0))
-            _draw.text((5, 10), f'reward = {reward[i].item():.5f}', (255,255,255))
-            _topdown = cv2.cvtColor(np.array(_topdown), cv2.COLOR_BGR2RGB)
-
-            # next state
-            _ntopdown = COLOR[ntopdown[i].argmax(0).cpu().numpy()]
-            nheatmap = self.to_heatmap(ntarget[i:i+1], ntopdown[i:i+1]).squeeze().cpu()
-            _ntopdown[nheatmap > 0.1] = 255
-            _ntopdown = cv2.cvtColor(_ntopdown, cv2.COLOR_BGR2RGB)
-
-            _combined = np.hstack((_topdown, _ntopdown))
-            cv2.imshow(f'topdown {i}', _combined)
-        cv2.waitKey(0)
-
-#        if True:
-#            _topdown = COLOR[topdown[0].argmax(0).cpu().numpy()]
-#            heatmap = self.to_heatmap(target, topdown)[0].cpu().numpy()
-#            _topdown[heatmap.squeeze() > 0.1] = 255
-#            _topdown = Image.fromarray(_topdown)
-#
-#            _draw = ImageDraw.Draw(_topdown)
-#            x, y = action[0].cpu().squeeze().numpy().astype(np.uint8)
-#            _draw.ellipse((x-2, y-2, x+2, y+2), (0,191,255))
-#            _draw.text((5, 10), f'reward = {reward[0].item():.5f}', (255,255,255))
-#            for x, y in points_plot[0]:
-#                _draw.ellipse((x-2, y-2, x+2, y+2), (255,0,0))
-#            _topdown = cv2.cvtColor(np.array(_topdown), cv2.COLOR_BGR2RGB)
-#
-#            # next state
-#            _ntopdown = COLOR[ntopdown[0].argmax(0).cpu().numpy()]
-#            nheatmap = self.to_heatmap(ntarget, ntopdown)[0].cpu().numpy()
-#            _ntopdown[nheatmap.squeeze() > 0.1] = 255
-#            _ntopdown = cv2.cvtColor(_ntopdown, cv2.COLOR_BGR2RGB)
-#
-#            _combined = np.hstack((_topdown, _ntopdown))
-#            cv2.imshow('topdown', _combined)
-#            cv2.waitKey(0)
-#
+        npoints, (nvmap, nhmap) = self.forward(ntopdown, ntarget, debug=True)
 
         # get action in 1D form
-        #x_aim, y_aim = action[:,0], action[:,1]
-        #action_flat = torch.unsqueeze(y_aim * 256 + x_aim, dim=1)
+        x_aim, y_aim = action[:,0], action[:,1] 
+        aim_flat = torch.unsqueeze(y_aim * 256 + x_aim, dim=1)
 
-        ## average t=0.5, t=1.0: (N, 4, H, W) -> (N, H, W)
-        #aim_vmap = torch.mean(vmap[:,0:2,:,:], dim=1) 
-        #aim_vmap_flat = aim_vmap.view(aim_vmap.shape[:-2] + (-1,)) # (N, H*W)
-        #Q = aim_vmap_flat.gather(1, action_flat.long())
+        # average t=0.5, t=1.0: (N, 4, H, W) -> (N, H, W)
+        aim_vmap = torch.mean(vmap[:,0:2,:,:], dim=1) # (N, H, W)
+        aim_vmap_flat = aim_vmap.view(aim_vmap.shape[:-2] + (-1,)) # (N, H*W)
+        Q = aim_vmap_flat.gather(1, aim_flat.long()) # (N, 1)
+        
+        # retrieve next action using next state's Q values
+        naim_vmap = torch.mean(nvmap[:,0:2,:,:], dim=1) 
+        naim_vmap_flat = naim_vmap.view(naim_vmap.shape[:-2] + (-1,))
+        nQ, naim_flat = torch.max(naim_vmap_flat, -1, keepdim=True)
+        naction = torch.cat((naim_flat % 256, naim_flat // 256), axis=1)
 
-        #ntopdown, ntarget = next_state
-        #with torch.no_grad(): # no gradients on target right?
-        #    npoints, (nvmap, ntgt_hmap) = self.forward(ntopdown, ntarget, debug=True)
-        #naim_vmap = torch.mean(nvmap[:,0:2,:,:], dim=1) 
-        #naim_vmap_flat = naim_vmap.view(naim_vmap.shape[:-2] + (-1,))
-        #nQ, naction_flat = torch.max(naim_vmap_flat, -1, keepdim=True)
-        #naction = torch.cat((naction_flat % 256, naction_flat // 256), axis=1)
+        target = reward + self.discount * nQ
+        diff = (target - Q)**2
+        batch_val_loss = self.criterion(Q, target) # TD(n) error
+        val_loss = batch_val_loss.mean()
 
-        #target = reward + self.discount * nQ
-        #val_loss = self.criterion(Q, target).mean() # TD(n) error
-
-        ## WRITE VISUALIZATION
-        #visualize(
-        #        topdown, tgt_hmap, vmap, action, 
-        #        ntopdown, ntgt_hmap, nvmap, naction, 
-        #        reward, points, npoints)
-
-        ## this state
+        meta = {'Q': Q, 'nQ': nQ, 'batch_loss': batch_val_loss, 'hparams': self.hparams, 'n':self.n}
+        visualize(batch, points, vmap, hmap, npoints, nvmap, nhmap, naction, meta)
+        
         return {'val_loss': val_loss.item()}
         
     def validation_epoch_end(self, batch_metrics):
@@ -292,48 +227,6 @@ class MapModel(pl.LightningModule):
 
 
 def main(hparams):
-    resume = '/home/aaron/workspace/carla/leaderboard-devkit/team_code/rl/config/weights/map_model.ckpt'
-
-    model = MapModel.load_from_checkpoint(resume)
-    model.hparams.dataset_dir = hparams.dataset_dir
-    model.hparams.batch_size = 4
-    #model.eval()
-    #to_heatmap = ToHeatmap(5)
-    #model.dataloader = model.val_dataloader()
-    #for batch in model.dataloader:
-    #    state, action, reward, next_state, done = batch
-
-    #    # this state
-    #    topdown, target = state
-    #    ntopdown, ntarget = next_state
-    #    with torch.no_grad():
-    #        points, (vmap, hmap) = model.forward(topdown, target, debug=True)
-    #    points = (points + 1) / 2 * 256
-
-    #    for i in range(action.shape[0]):
-    #        _topdown = COLOR[topdown[i].argmax(0).cpu()]
-    #        #heatmap = to_heatmap(target[None], topdown[None]).squeeze()
-    #        _topdown[hmap[i][0].cpu() > 0.1] = 255
-    #        _topdown = Image.fromarray(_topdown)
-
-    #        _draw = ImageDraw.Draw(_topdown)
-    #        x, y = action[i].cpu().squeeze().numpy().astype(np.uint8)
-    #        _draw.ellipse((x-2, y-2, x+2, y+2), (0,255,0))
-    #        for x, y in points[i].cpu().numpy():
-    #            _draw.ellipse((x-2, y-2, x+2, y+2), (0,255,0))
-    #        _draw.text((5, 10), f'reward = {reward[0].item():.5f}', (255,255,255))
-    #        _topdown = cv2.cvtColor(np.array(_topdown), cv2.COLOR_BGR2RGB)
-
-    #        # next state
-    #        _ntopdown = COLOR[ntopdown[i].argmax(0).cpu().numpy()]
-    #        nheatmap = to_heatmap(ntarget[i:i+1], ntopdown[i:i+1]).squeeze()
-    #        _ntopdown[nheatmap > 0.1] = 255
-    #        _ntopdown = cv2.cvtColor(_ntopdown, cv2.COLOR_BGR2RGB)
-
-    #        _combined = np.hstack((_topdown, _ntopdown))
-    #        cv2.imshow(f'topdown {i}', _combined)
-    #    cv2.waitKey(0)
-    #    return
 
     logger = False
     if hparams.log:
@@ -341,17 +234,22 @@ def main(hparams):
     checkpoint_callback = ModelCheckpoint(hparams.save_dir, save_top_k=1)
 
     try:
-        #resume_from_checkpoint = sorted(hparams.save_dir.glob('*.ckpt'))[-1]
-        resume_from_checkpoint = '/home/aaron/workspace/carla/leaderboard-devkit/team_code/rl/config/weights/map_model.ckpt'
-    except:
-        resume_from_checkpoint = None
+        resume = '/home/aaron/workspace/carla/leaderboard-devkit/team_code/rl/config/weights/map_model.ckpt'
+        model = MapModel.load_from_checkpoint(resume)
+        model.hparams.dataset_dir = hparams.dataset_dir
+        model.hparams.batch_size = hparams.batch_size
+        model.n = hparams.n
+        print(f'resumed from {resume}')
+    except Exception as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+        resume = None
+
     trainer = pl.Trainer(
             gpus=-1, max_epochs=hparams.max_epochs,
-            resume_from_checkpoint=resume_from_checkpoint,
+            resume_from_checkpoint=resume,
             logger=logger,
             checkpoint_callback=checkpoint_callback)
 
-    model.load_from_checkpoint(resume_from_checkpoint)
     trainer.fit(model)
 
     wandb.save(str(hparams.save_dir / '*.ckpt'))
