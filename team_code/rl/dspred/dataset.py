@@ -184,7 +184,7 @@ if __name__ == '__main__':
             _draw.ellipse((x-2, y-2, x+2, y+2), (0,255,0))
             for x, y in points[i].cpu().numpy():
                 _draw.ellipse((x-2, y-2, x+2, y+2), (0,255,0))
-            _draw.text((5, 10), f'reward = {reward[0].item():.5f}', (255,255,255))
+            _draw.text((5, 10), f'reward = {reward[i].item():.5f}', (255,255,255))
             _topdown = cv2.cvtColor(np.array(_topdown), cv2.COLOR_BGR2RGB)
 
             # next state
@@ -195,5 +195,5 @@ if __name__ == '__main__':
 
             _combined = np.hstack((_topdown, _ntopdown))
             cv2.imshow(f'topdown {i}', _combined)
-        cv2.waitKey(50)
+        cv2.waitKey(0)
 

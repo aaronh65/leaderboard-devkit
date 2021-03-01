@@ -169,7 +169,6 @@ class MapModel(pl.LightningModule):
         return {'loss': loss}
 
     def validation_step(self, batch, batch_nb):
-        self.eval()
         state, action, reward, next_state, done = batch
 
         # retrieve Q prediction
@@ -298,64 +297,64 @@ def main(hparams):
     model = MapModel.load_from_checkpoint(resume)
     model.hparams.dataset_dir = hparams.dataset_dir
     model.hparams.batch_size = 4
-    model.eval()
-    to_heatmap = ToHeatmap(5)
-    model.dataloader = model.val_dataloader()
-    for batch in model.dataloader:
-        state, action, reward, next_state, done = batch
+    #model.eval()
+    #to_heatmap = ToHeatmap(5)
+    #model.dataloader = model.val_dataloader()
+    #for batch in model.dataloader:
+    #    state, action, reward, next_state, done = batch
 
-        # this state
-        topdown, target = state
-        ntopdown, ntarget = next_state
-        with torch.no_grad():
-            points, (vmap, hmap) = model.forward(topdown, target, debug=True)
-        points = (points + 1) / 2 * 256
+    #    # this state
+    #    topdown, target = state
+    #    ntopdown, ntarget = next_state
+    #    with torch.no_grad():
+    #        points, (vmap, hmap) = model.forward(topdown, target, debug=True)
+    #    points = (points + 1) / 2 * 256
 
-        for i in range(action.shape[0]):
-            _topdown = COLOR[topdown[i].argmax(0).cpu()]
-            #heatmap = to_heatmap(target[None], topdown[None]).squeeze()
-            _topdown[hmap[i][0].cpu() > 0.1] = 255
-            _topdown = Image.fromarray(_topdown)
+    #    for i in range(action.shape[0]):
+    #        _topdown = COLOR[topdown[i].argmax(0).cpu()]
+    #        #heatmap = to_heatmap(target[None], topdown[None]).squeeze()
+    #        _topdown[hmap[i][0].cpu() > 0.1] = 255
+    #        _topdown = Image.fromarray(_topdown)
 
-            _draw = ImageDraw.Draw(_topdown)
-            x, y = action[i].cpu().squeeze().numpy().astype(np.uint8)
-            _draw.ellipse((x-2, y-2, x+2, y+2), (0,255,0))
-            for x, y in points[i].cpu().numpy():
-                _draw.ellipse((x-2, y-2, x+2, y+2), (0,255,0))
-            _draw.text((5, 10), f'reward = {reward[0].item():.5f}', (255,255,255))
-            _topdown = cv2.cvtColor(np.array(_topdown), cv2.COLOR_BGR2RGB)
+    #        _draw = ImageDraw.Draw(_topdown)
+    #        x, y = action[i].cpu().squeeze().numpy().astype(np.uint8)
+    #        _draw.ellipse((x-2, y-2, x+2, y+2), (0,255,0))
+    #        for x, y in points[i].cpu().numpy():
+    #            _draw.ellipse((x-2, y-2, x+2, y+2), (0,255,0))
+    #        _draw.text((5, 10), f'reward = {reward[0].item():.5f}', (255,255,255))
+    #        _topdown = cv2.cvtColor(np.array(_topdown), cv2.COLOR_BGR2RGB)
 
-            # next state
-            _ntopdown = COLOR[ntopdown[i].argmax(0).cpu().numpy()]
-            nheatmap = to_heatmap(ntarget[i:i+1], ntopdown[i:i+1]).squeeze()
-            _ntopdown[nheatmap > 0.1] = 255
-            _ntopdown = cv2.cvtColor(_ntopdown, cv2.COLOR_BGR2RGB)
+    #        # next state
+    #        _ntopdown = COLOR[ntopdown[i].argmax(0).cpu().numpy()]
+    #        nheatmap = to_heatmap(ntarget[i:i+1], ntopdown[i:i+1]).squeeze()
+    #        _ntopdown[nheatmap > 0.1] = 255
+    #        _ntopdown = cv2.cvtColor(_ntopdown, cv2.COLOR_BGR2RGB)
 
-            _combined = np.hstack((_topdown, _ntopdown))
-            cv2.imshow(f'topdown {i}', _combined)
-        cv2.waitKey(0)
-        return
+    #        _combined = np.hstack((_topdown, _ntopdown))
+    #        cv2.imshow(f'topdown {i}', _combined)
+    #    cv2.waitKey(0)
+    #    return
 
-    #logger = False
-    #if hparams.log:
-    #    logger = WandbLogger(id=hparams.id, save_dir=str(hparams.save_dir), project='dqn')
-    #checkpoint_callback = ModelCheckpoint(hparams.save_dir, save_top_k=1)
+    logger = False
+    if hparams.log:
+        logger = WandbLogger(id=hparams.id, save_dir=str(hparams.save_dir), project='dqn')
+    checkpoint_callback = ModelCheckpoint(hparams.save_dir, save_top_k=1)
 
-    #try:
-    #    #resume_from_checkpoint = sorted(hparams.save_dir.glob('*.ckpt'))[-1]
-    #    resume_from_checkpoint = '/home/aaron/workspace/carla/leaderboard-devkit/team_code/rl/config/weights/map_model.ckpt'
-    #except:
-    #    resume_from_checkpoint = None
-    #trainer = pl.Trainer(
-    #        gpus=-1, max_epochs=hparams.max_epochs,
-    #        resume_from_checkpoint=resume_from_checkpoint,
-    #        logger=logger,
-    #        checkpoint_callback=checkpoint_callback)
+    try:
+        #resume_from_checkpoint = sorted(hparams.save_dir.glob('*.ckpt'))[-1]
+        resume_from_checkpoint = '/home/aaron/workspace/carla/leaderboard-devkit/team_code/rl/config/weights/map_model.ckpt'
+    except:
+        resume_from_checkpoint = None
+    trainer = pl.Trainer(
+            gpus=-1, max_epochs=hparams.max_epochs,
+            resume_from_checkpoint=resume_from_checkpoint,
+            logger=logger,
+            checkpoint_callback=checkpoint_callback)
 
-    #model.load_from_checkpoint(resume_from_checkpoint)
-    #trainer.fit(model)
+    model.load_from_checkpoint(resume_from_checkpoint)
+    trainer.fit(model)
 
-    #wandb.save(str(hparams.save_dir / '*.ckpt'))
+    wandb.save(str(hparams.save_dir / '*.ckpt'))
 
 
 if __name__ == '__main__':
