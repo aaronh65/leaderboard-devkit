@@ -1,4 +1,5 @@
 import sys, traceback
+from datetime import datetime
 
 import uuid
 import argparse
@@ -70,7 +71,7 @@ def visualize(batch, points, vmap, hmap, npoints, nvmap, nhmap, naction, meta):
         _draw.text((5, 20), f'Q = {Q[i].item():2f}', textcolor)
         _draw.text((5, 30), f'reward = {reward[i].item():.3f}', textcolor)
         _draw.text((5, 40), f'TD({n}) err = {batch_loss[i].item():.2f}', textcolor)
-        _topdown = cv2.cvtColor(np.array(_topdown), cv2.COLOR_BGR2RGB)
+        #_topdown = cv2.cvtColor(np.array(_topdown), cv2.COLOR_BGR2RGB)
 
         # next state
         _ntopdown = nfused[i]
@@ -84,18 +85,16 @@ def visualize(batch, points, vmap, hmap, npoints, nvmap, nhmap, naction, meta):
         _ndraw.text((5, 10), f'action = ({x},{y})', textcolor)
         _ndraw.text((5, 20), f'nQ = {nQ[i].item():.2f}', textcolor)
         _ndraw.text((5, 30), f'done = {bool(done[i])}', textcolor)
-        _ntopdown = cv2.cvtColor(np.array(_ntopdown), cv2.COLOR_BGR2RGB)
+        #_ntopdown = cv2.cvtColor(np.array(_ntopdown), cv2.COLOR_BGR2RGB)
 
-        _combined = np.hstack((_topdown, _ntopdown))
-        cv2.imshow(f'topdown {i}', _combined)
-    cv2.waitKey(0)
-    raise Exception
-
-    
+        _combined = np.hstack((np.array(_topdown), np.array(_ntopdown)))
+        #cv2.imshow(f'topdown{i}', cv2.cvtColor(_combined, cv2.COLOR_BGR2RGB))
+        _combined = _combined.transpose(2,0,1)
+        images.append((batch_loss[i].item(), torch.ByteTensor(_combined)))
+    #cv2.waitKey(0)
     images.sort(key=lambda x: x[0], reverse=True)
-
-    result = torchvision.utils.make_grid([x[1] for x in images], nrow=4)
-    result = wandb.Image(result.numpy().transpose(1, 2, 0))
+    result = torchvision.utils.make_grid([x[1] for x in images], nrow=3)
+    result = wandb.Image(result.numpy().transpose(1,2,0))
 
     return result
 
@@ -130,32 +129,41 @@ class MapModel(pl.LightningModule):
 
     def training_step(self, batch, batch_nb):
         state, action, reward, next_state, done = batch
-        # retrieve Q prediction
+
         topdown, target = state
-        points, (vmap, target_hmap) = self.forward(topdown, target, debug=True)
-        #vmap = (vmap + 1) * 256
-        aim_vmap = torch.mean(vmap[:,0:2,:,:], dim=1) 
+        points, (vmap, hmap) = self.forward(topdown, target, debug=True)
+        ntopdown, ntarget = next_state
+        with torch.no_grad():
+            npoints, (nvmap, nhmap) = self.forward(ntopdown, ntarget, debug=True)
 
         # get action in 1D form
-        x_aim, y_aim = action[:,0], action[:,1]
-        action_flat = torch.unsqueeze(y_aim * 256 + x_aim, dim=1)
+        x_aim, y_aim = action[:,0], action[:,1] 
+        aim_flat = torch.unsqueeze(y_aim * 256 + x_aim, dim=1)
 
-        # flatten last two dims and index the action to get Q
         # average t=0.5, t=1.0: (N, 4, H, W) -> (N, H, W)
-        aim_vmap_flat = aim_vmap.view(aim_vmap.shape[:-2] + (-1,)) # (N, W*H)
-        Q = aim_vmap_flat.gather(1, action_flat.long())
-
-        ntopdown, ntarget = next_state
-        with torch.no_grad(): # no gradients on target right?
-            npoints, (nvmap, _) = self.forward(ntopdown, ntarget, debug=True)
-        #nvmap = (nvmap + 1) * 256
+        aim_vmap = torch.mean(vmap[:,0:2,:,:], dim=1) # (N, H, W)
+        aim_vmap_flat = aim_vmap.view(aim_vmap.shape[:-2] + (-1,)) # (N, H*W)
+        Q = aim_vmap_flat.gather(1, aim_flat.long()) # (N, 1)
+        
+        # retrieve next action using next state's Q values
         naim_vmap = torch.mean(nvmap[:,0:2,:,:], dim=1) 
         naim_vmap_flat = naim_vmap.view(naim_vmap.shape[:-2] + (-1,))
-        nQ, naction_flat = torch.max(naim_vmap_flat, -1, keepdim=True)
-        naction = torch.cat((naction_flat % 256, naction_flat // 256), axis=1)
+        nQ, naim_flat = torch.max(naim_vmap_flat, -1, keepdim=True)
+        naction = torch.cat((naim_flat % 256, naim_flat // 256), axis=1)
 
         target = reward + self.discount * nQ
-        loss = self.criterion(Q, target) # TD(n) error
+        diff = (target - Q)**2
+        batch_loss = self.criterion(Q, target) # TD(n) error
+        loss = batch_loss.mean()
+
+        metrics = {f'TD({self.n}) loss': loss.item()}
+
+        if batch_nb % 10 == 0:
+            meta = {'Q': Q, 'nQ': nQ, 'batch_loss': batch_loss, 'hparams': self.hparams, 'n':self.n}
+            images = visualize(batch, points, vmap, hmap, npoints, nvmap, nhmap, naction, meta)
+            metrics['train_image'] = images
+
+        self.logger.log_metrics(metrics, self.global_step)
 
         return {'loss': loss}
 
@@ -188,8 +196,10 @@ class MapModel(pl.LightningModule):
         batch_val_loss = self.criterion(Q, target) # TD(n) error
         val_loss = batch_val_loss.mean()
 
-        meta = {'Q': Q, 'nQ': nQ, 'batch_loss': batch_val_loss, 'hparams': self.hparams, 'n':self.n}
-        visualize(batch, points, vmap, hmap, npoints, nvmap, nhmap, naction, meta)
+        if batch_nb == 0:
+            meta = {'Q': Q, 'nQ': nQ, 'batch_loss': batch_val_loss, 'hparams': self.hparams, 'n':self.n}
+            images = visualize(batch, points, vmap, hmap, npoints, nvmap, nhmap, naction, meta)
+            self.logger.log_metrics({'val_image': images}, self.global_step)
         
         return {'val_loss': val_loss.item()}
         
@@ -239,7 +249,7 @@ def main(hparams):
         model.hparams.dataset_dir = hparams.dataset_dir
         model.hparams.batch_size = hparams.batch_size
         model.n = hparams.n
-        print(f'resumed from {resume}')
+        print(f'resuming from {resume}')
     except Exception as e:
         traceback.print_exception(type(e), e, e.__traceback__)
         resume = None
@@ -258,7 +268,7 @@ def main(hparams):
 if __name__ == '__main__':
     
     parser = argparse.ArgumentParser()
-    parser.add_argument('--max_epochs', type=int, default=50)
+    parser.add_argument('--max_epochs', type=int, default=40)
     parser.add_argument('--save_dir', type=pathlib.Path, default='checkpoints')
     parser.add_argument('--id', type=str, default=uuid.uuid4().hex) # replace with datetime
 
@@ -270,7 +280,7 @@ if __name__ == '__main__':
 
     # Data args.
     parser.add_argument('--dataset_dir', type=pathlib.Path, required=True)
-    parser.add_argument('--batch_size', type=int, default=5)
+    parser.add_argument('--batch_size', type=int, default=16)
 
     # Optimizer args.
     parser.add_argument('--lr', type=float, default=1e-4)
@@ -280,9 +290,13 @@ if __name__ == '__main__':
     #parser.add_argument('--offline', action='store_true', default=False)
     parser.add_argument('--n', type=int, default=0)
     parser.add_argument('--log', action='store_true')
+    parser.add_argument('-d', '--debug', action='store_true')
 
     parsed = parser.parse_args()
-    parsed.save_dir = parsed.save_dir / parsed.id
+    date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+    parsed.id = date_str
+    save_dir = parsed.save_dir / 'debug' / parsed.id if parsed.debug else parsed.save_dir / parsed.id
+    parsed.save_dir = save_dir
     parsed.save_dir.mkdir(parents=True, exist_ok=True)
 
     main(parsed)

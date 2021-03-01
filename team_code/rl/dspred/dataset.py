@@ -116,7 +116,7 @@ class CarlaDataset(Dataset):
         path = self.dataset_dir
 
         frame = self.frames[i]
-        print(path / 'topdown' / ('%s.png' % frame))
+        #print(path / 'topdown' / ('%s.png' % frame))
         topdown = Image.open(path / 'topdown' / ('%s.png' % frame))
         topdown = topdown.crop((128, 0, 128 + 256, 256))
         topdown = preprocess_semantic(np.array(topdown))

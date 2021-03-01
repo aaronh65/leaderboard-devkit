@@ -81,7 +81,7 @@ else:
 
     # logging
     date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-    suffix = f'debug/{date_str}' if args.debug else f'{date_str}' 
+    suffix = f'debug/{date_str}' if args.debug else date_str
     #save_root = f'/data/leaderboard/results/rl/{args.algo}/{suffix}'
     save_root = f'{args.data_root}/leaderboard/results/rl/{args.algo}/{suffix}'
 
