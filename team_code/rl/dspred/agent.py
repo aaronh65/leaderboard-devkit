@@ -55,6 +55,7 @@ class DSPredAgent(MapAgent):
                     if not os.path.exists(str(path)):
                         os.makedirs(str(path))
         self.initialized = False
+        self.burn_in = False
 
     # remove rgb cameras from base agent
     def sensors(self):
@@ -142,68 +143,63 @@ class DSPredAgent(MapAgent):
     @torch.no_grad()
     def run_step(self, input_data, timestamp):
         if not self.initialized:
-            print('reinitializing agent...')
             self._init()
 
-        
         tick_data = self.tick(input_data)
         topdown = Image.fromarray(tick_data['topdown'])
         topdown = topdown.crop((128, 0, 128+256, 256))
         topdown = np.array(topdown)
-        map_view = COLOR[CONVERTER[topdown.copy()]]
-        tick_data['map_view'] = map_view
-        #cv2.imshow('topdown', topdown_view)
+        topdown_save = topdown.copy()
+        tick_data['map_view'] = COLOR[CONVERTER[topdown.copy()]]
 
-        topdown = preprocess_semantic(topdown)
-        topdown = topdown[None].cuda()
+        if not self.burn_in:
 
-        target = torch.from_numpy(tick_data['target'])
-        target = target[None].cuda()
+            # prepare inputs
+            topdown = preprocess_semantic(topdown)
+            topdown = topdown[None].cuda()
+            target = torch.from_numpy(tick_data['target'])
+            target = target[None].cuda()
 
-        print(target)
-        points, hmaps = self.net.forward(topdown, target, debug=True) # world frame
-        tick_data['hmaps'] = hmaps
-        points_map = points.clone().cpu().squeeze()
-        # what's this conversion for?
-        # was this originally normalized for training stability or something?
-        points_map = points_map + 1
-        points_map = points_map / 2 * 256
-        points_map = np.clip(points_map, 0, 256)
-        points_cam = self.converter.map_to_cam(points_map).numpy()
-        points_world = self.converter.map_to_world(points_map).numpy()
-        points_map = points_map.numpy()
+            # forward
+            points, hmaps = self.net.forward(topdown, target, debug=True) # world frame
 
-        tick_data['points_map'] = points_map
-        tick_data['points_cam'] = points_cam
-        tick_data['points_world'] = points_world
+            # retrieve and transform points
+            points_map = points.clone().cpu().squeeze()
+            points_map = (points_map + 1) / 2 * 256
+            points_map = np.clip(points_map, 0, 256)
+            points_cam = self.converter.map_to_cam(points_map).numpy()
+            points_world = self.converter.map_to_world(points_map).numpy()
+            points_map = points_map.numpy()
 
-        #img = tick_data['image']
+            tick_data['hmaps'] = hmaps
+            tick_data['points_cam'] = points_cam
+            tick_data['points_world'] = points_world
+            tick_data['points_map'] = points_map
 
-        aim = (points_world[1] + points_world[0]) / 2.0
-        angle = np.degrees(np.pi / 2 - np.arctan2(aim[1], aim[0])) / 90
-        steer = self._turn_controller.step(angle)
-        steer = np.clip(steer, -1.0, 1.0)
-        desired_speed = np.linalg.norm(points_world[0] - points_world[1]) * 2.0
-        tick_data['aim_world'] = aim
+            # get aim and controls
+            aim = (points_world[1] + points_world[0]) / 2.0
+            angle = np.degrees(np.pi / 2 - np.arctan2(aim[1], aim[0])) / 90
+            steer = self._turn_controller.step(angle)
+            steer = np.clip(steer, -1.0, 1.0)
+            desired_speed = np.linalg.norm(points_world[0] - points_world[1]) * 2.0
+            speed = tick_data['speed']
+            delta = np.clip(desired_speed - speed, 0.0, 0.25)
+            brake = desired_speed < 0.4 or (speed / desired_speed) > 1.1
+            throttle = self._speed_controller.step(delta)
+            throttle = np.clip(throttle, 0.0, 0.75)
+            throttle = throttle if not brake else 0.0
 
-        speed = tick_data['speed']
-        brake = desired_speed < 0.4 or (speed / desired_speed) > 1.1
-
-        delta = np.clip(desired_speed - speed, 0.0, 0.25)
-        throttle = self._speed_controller.step(delta)
-        throttle = np.clip(throttle, 0.0, 0.75)
-        throttle = throttle if not brake else 0.0
-
-        control = carla.VehicleControl()
-        control.steer = steer
-        control.throttle = throttle
-        control.brake = float(brake)
-        #print(timestamp) # GAMETIME
-
-        if self.config.agent.forward:
             control = carla.VehicleControl()
-            control.steer = 0
-            control.throttle = 0.75
+            control.steer = steer
+            control.throttle = throttle
+            control.brake = float(brake)
+            #print(timestamp) # GAMETIME
+
+            tick_data['aim_world'] = aim
+
+        if self.config.agent.forward or self.burn_in:
+            throttle, steer = np.random.uniform(-1, 1, size=2)
+            control = carla.VehicleControl(throttle/2+1, steer)
             control.brake = False
 
         self.aim = self.converter.world_to_map(torch.Tensor(aim)).numpy()
@@ -221,8 +217,8 @@ class DSPredAgent(MapAgent):
 
         colors = [(0,255,0), (255,0,0), (139,0,139), (139,0,139)] # for waypoints
         
-        target_hmap = tick_data['hmaps'][1]
-        target_hmap = target_hmap[0][0].clone().cpu().numpy()
+        target_hmap = tick_data['hmaps'][1].clone().cpu().numpy()
+        target_hmap = target_hmap[0][0]
         target_hmap = target_hmap / np.amax(target_hmap) * 256
         target_hmap = target_hmap.astype(np.uint8)
 
