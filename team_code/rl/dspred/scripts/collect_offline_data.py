@@ -18,6 +18,7 @@ parser.add_argument('-G', type=int, default=0)
 parser.add_argument('--desc', type=str, default='no description')
 parser.add_argument('--version', type=int, choices=[10,11], default=11) # 0.9.10.1 or 0.9.11
 parser.add_argument('--split', type=str, default='devtest', choices=['debug', 'devtest', 'testing', 'training'])
+
 parser.add_argument('--routenum', type=int) # optional
 parser.add_argument('--scenarios', action='store_true') # leaderboard-triggered scnearios
 parser.add_argument('--repetitions', type=int, default=1) # should we directly default to this in indexer?

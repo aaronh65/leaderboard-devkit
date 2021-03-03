@@ -10,7 +10,7 @@ from PIL import Image, ImageDraw
 from pathlib import Path
 
 #from lbc.carla_project.src.map_model import MapModel
-from rl.dspred.map_model import MapModel
+from rl.dspred.online_map_model import MapModel
 from lbc.carla_project.src.dataset import preprocess_semantic
 from lbc.carla_project.src.converter import Converter
 from lbc.carla_project.src.common import CONVERTER, COLOR
@@ -42,18 +42,18 @@ class DSPredAgent(MapAgent):
         self._speed_controller = PIDController(K_P=5.0, K_I=0.5, K_D=1.0, n=40)
 
     def reset(self):
-        if not self.config.env.save_data:
-            ROUTE_NAME = os.environ.get('ROUTE_NAME', 0)
-            self.save_debug_path = Path(f'{self.config.save_root}/images/{ROUTE_NAME}') 
-            if not os.path.exists(str(self.save_debug_path)):
-                os.makedirs(str(self.save_debug_path))
+        #if not self.config.env.save_data:
+        #    ROUTE_NAME = os.environ.get('ROUTE_NAME', 0)
+        #    self.save_debug_path = Path(f'{self.config.save_root}/images/{ROUTE_NAME}') 
+        #    if not os.path.exists(str(self.save_debug_path)):
+        #        os.makedirs(str(self.save_debug_path))
 
-                rep_number = len(os.listdir(self.save_debug_path))
-                self.rep_name = f'repetition_{rep_number:02d}'
-                paths = [self.save_debug_path / self.rep_name / 'debug', self.save_debug_path / self.rep_name / 'heatmaps']
-                for path in paths:
-                    if not os.path.exists(str(path)):
-                        os.makedirs(str(path))
+        #        rep_number = len(os.listdir(self.save_debug_path))
+        #        self.rep_name = f'repetition_{rep_number:02d}'
+        #        paths = [self.save_debug_path / self.rep_name / 'debug', self.save_debug_path / self.rep_name / 'heatmaps']
+        #        for path in paths:
+        #            if not os.path.exists(str(path)):
+        #                os.makedirs(str(path))
         self.initialized = False
         self.burn_in = False
 
@@ -197,7 +197,7 @@ class DSPredAgent(MapAgent):
 
             tick_data['aim_world'] = aim
 
-        if self.config.agent.forward or self.burn_in:
+        if self.burn_in:
             throttle, steer = np.random.uniform(-1, 1, size=2)
             control = carla.VehicleControl(throttle/2+1, steer)
             control.brake = False

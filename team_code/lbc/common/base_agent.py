@@ -16,7 +16,7 @@ class BaseAgent(autonomous_agent.AutonomousAgent):
             self.config_path = path_to_conf_file
             with open(self.config_path, 'r') as f:
                 config = yaml.load(f, Loader=yaml.Loader)
-            self.config = Bunch(config)
+            self.config = Bunch(config) # deprecated?
         else:
             self.config = path_to_conf_file
 

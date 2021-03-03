@@ -4,7 +4,7 @@ algo: dspred_collect
 description: this is a template configuration
 project_root: /home/aaron/workspace/carla/leaderboard-devkit
 carla_root: /home/aaron/workspace/carla/CARLA_0.9.11
-save_root: /data/leaderboard/results/rl/dspred_collect/debug/template
+#save_root: /data/leaderboard/results/rl/dspred_collect/debug/template
 
 env:
   world_port: 2000
@@ -28,11 +28,7 @@ agent:
   save_images: false
   weights_path: team_code/rl/config/weights/map_model.ckpt
   verbose: false
-  # semantic_bev args
-  bev_size: 360
-  history_size: 5
-  buffer_size: 10000
+  # dspred
+  buffer_size: 50000
   batch_size: 32
-  pid: false
-  forward: false
 

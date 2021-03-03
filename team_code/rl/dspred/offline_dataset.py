@@ -80,7 +80,7 @@ def preprocess_semantic(semantic_np):
 
 
 class CarlaDataset(Dataset):
-    def __init__(self, dataset_dir, transform=transforms.ToTensor(), n=0):
+    def __init__(self, dataset_dir, transform=transforms.ToTensor(), n=0, max_len=50000):
         dataset_dir = Path(dataset_dir)
         measurements = list(sorted((dataset_dir / 'measurements').glob('*.json')))
 
