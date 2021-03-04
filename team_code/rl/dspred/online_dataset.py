@@ -79,66 +79,41 @@ def preprocess_semantic(semantic_np):
     return topdown
 
 
+#class CarlaDataset(IterableDataset):
 class CarlaDataset(Dataset):
-    def __init__(self, dataset_dir, transform=transforms.ToTensor(), n=0, max_len=50000):
-        dataset_dir = Path(dataset_dir)
-        measurements = list(sorted((dataset_dir / 'measurements').glob('*.json')))
-
-        self.transform = transform
-        self.dataset_dir = dataset_dir
-        self.frames = list()
-        self.measurements = pd.DataFrame([eval(x.read_text()) for x in measurements])
-        self.converter = Converter()
-
-        # n-step returns
-        self.n = n
-        self.gamma = 0.99
-        self.discount = [self.gamma**i for i in range(n+1)]
-
-        print(dataset_dir)
-
-        for image_path in sorted((dataset_dir / 'topdown').glob('*.png')):
-            frame = str(image_path.stem)
-
-            #assert (dataset_dir / 'rgb_left' / ('%s.png' % frame)).exists()
-            #assert (dataset_dir / 'rgb_right' / ('%s.png' % frame)).exists()
-            assert (dataset_dir / 'topdown' / ('%s.png' % frame)).exists()
-            assert int(frame) < len(self.measurements)
-
-            self.frames.append(frame)
-
-        assert len(self.frames) > 0, '%s has 0 frames.' % dataset_dir
+    def __init__(self, replay_buffer, batch_size):
+        self.buffer = replay_buffer
+        self.batch_size = batch_size
 
     def __len__(self):
-        return len(self.frames)
+        return len(self.buffer.states)
 
     def __getitem__(self, i):
-        path = self.dataset_dir
 
-        frame = self.frames[i]
-        #print(path / 'topdown' / ('%s.png' % frame))
-        topdown = Image.open(path / 'topdown' / ('%s.png' % frame))
+        #i = i % len(self.buffer.states)
+
+        #states, actions, rewards, dones, next_states = self.buffer.sample(self.batch_size)
+        state, action, reward, done, next_state = self.buffer.sample(i)
+
+        #for i in range(len(states)):
+
+            #print(path / 'topdown' / ('%s.png' % frame))
+            #topdown = Image.open(path / 'topdown' / ('%s.png' % frame))
+        topdown, target = state
+        topdown = Image.fromarray(topdown)
         topdown = topdown.crop((128, 0, 128 + 256, 256))
         topdown = preprocess_semantic(np.array(topdown))
-        tick_data = self.measurements.iloc[i]
-        target = torch.FloatTensor(np.float32((tick_data['x_tgt'], tick_data['y_tgt'])))
-        action = torch.FloatTensor(np.float32((tick_data['x_aim'], tick_data['y_aim'])))
-
-        ni = i + self.n + 1
-        ni = min(ni, len(self.frames))
-        reward = self.measurements.loc[i:ni-1, 'reward'].to_numpy()
-        reward = np.multiply(reward, self.discount[:ni-i]).sum()
+        target = torch.FloatTensor(np.float32(target))
+        action = torch.FloatTensor(np.float32(action))
         reward = torch.FloatTensor([reward])
-        ntick_data = self.measurements.iloc[ni-1]
-        done = torch.FloatTensor([ntick_data['done']])
+        done = torch.FloatTensor([done])
 
-        nframe = self.frames[min(ni, len(self.frames)-1)] # 'next_state' at done edge case
-        ntopdown = Image.open(path / 'topdown' / ('%s.png' % nframe))
+        ntopdown, ntarget = next_state
+        ntopdown = Image.fromarray(ntopdown)
         ntopdown = ntopdown.crop((128, 0, 128 + 256, 256))
         ntopdown = preprocess_semantic(np.array(ntopdown))
-        ntarget = torch.FloatTensor(np.float32((ntick_data['x_tgt'], ntick_data['y_tgt'])))
-
-        
+        ntarget = torch.FloatTensor(np.float32(ntarget))
+    
         #print(f'{frame} {nframe}')
         return (topdown, target), action, reward, (ntopdown, ntarget), done
         

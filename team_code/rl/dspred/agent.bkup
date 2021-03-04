@@ -92,7 +92,6 @@ class DSPredAgent(MapAgent):
         if not self.initialized:
             self._init()
 
-        self.net.eval()
         tick_data = self.tick(input_data)
         topdown = Image.fromarray(tick_data['topdown'])
         topdown = topdown.crop((128, 0, 128+256, 256))
@@ -109,7 +108,7 @@ class DSPredAgent(MapAgent):
             target = target[None].cuda()
 
             # forward
-            points, (vmaps, hmaps) = self.net.forward(topdown, target, debug=True) # world frame
+            points, hmaps = self.net.forward(topdown, target, debug=True) # world frame
 
             # retrieve and transform points
             points_map = points.clone().cpu().squeeze()
@@ -118,50 +117,47 @@ class DSPredAgent(MapAgent):
             points_cam = self.converter.map_to_cam(points_map).numpy()
             points_world = self.converter.map_to_world(points_map).numpy()
             points_map = points_map.numpy()
-                        
+
             tick_data['hmaps'] = hmaps
             tick_data['points_cam'] = points_cam
             tick_data['points_world'] = points_world
             tick_data['points_map'] = points_map
 
-        else: # burning in
-            points_map = np.random.randint(0, 256, size=(4,2)) 
-            points_world = self.converter.map_to_world(torch.Tensor(points_map)).numpy()
-            #print('burning in')
-            #print((points_world[1] + points_world[0]) / 2.0)
-            #print(np.linalg.norm(points_world[0] - points_world[1]) * 2.0)
+            # get aim and controls
+            aim = (points_world[1] + points_world[0]) / 2.0
+            angle = np.degrees(np.pi / 2 - np.arctan2(aim[1], aim[0])) / 90
+            steer = self._turn_controller.step(angle)
+            steer = np.clip(steer, -1.0, 1.0)
+            desired_speed = np.linalg.norm(points_world[0] - points_world[1]) * 2.0
+            speed = tick_data['speed']
+            delta = np.clip(desired_speed - speed, 0.0, 0.25)
+            brake = desired_speed < 0.4 or (speed / desired_speed) > 1.1
+            throttle = self._speed_controller.step(delta)
+            throttle = np.clip(throttle, 0.0, 0.75)
+            throttle = throttle if not brake else 0.0
 
+            control = carla.VehicleControl()
+            control.steer = steer
+            control.throttle = throttle
+            control.brake = float(brake)
+            #print(timestamp) # GAMETIME
 
-        # get aim and controls
-        aim = (points_world[1] + points_world[0]) / 2.0
-        desired_speed = np.linalg.norm(points_world[0] - points_world[1]) * 2.0
+            tick_data['aim_world'] = aim
 
-        angle = np.degrees(np.pi / 2 - np.arctan2(aim[1], aim[0])) / 90
-        steer = self._turn_controller.step(angle)
-        steer = np.clip(steer, -1.0, 1.0)
-        speed = tick_data['speed']
-        delta = np.clip(desired_speed - speed, 0.0, 0.25)
-        brake = desired_speed < 0.4 or (speed / desired_speed) > 1.1
-        throttle = self._speed_controller.step(delta)
-        throttle = np.clip(throttle, 0.0, 0.75)
-        throttle = throttle if not brake else 0.0
+        if self.burn_in:
+            throttle, steer = np.random.uniform(-1, 1, size=2)
+            control = carla.VehicleControl(throttle/2+1, steer)
+            control.brake = False
 
-        control = carla.VehicleControl()
-        control.steer = steer
-        control.throttle = throttle
-        control.brake = float(brake)
-        #print(timestamp) # GAMETIME
+        self.aim = self.converter.world_to_map(torch.Tensor(aim)).numpy()
+        self.obs = (tick_data['topdown'], tick_data['target'])
 
-        tick_data['aim_world'] = aim
+        if DEBUG or self.config.agent.save_images:
 
-        if not self.burn_in and (DEBUG or self.config.agent.save_images):
-            self.debug_display(tick_data, steer, throttle, brake, desired_speed)
-
-        
-        self.action = points_map
-        self.state = (tick_data['topdown'], tick_data['target'])
-        self.net.train()
-
+            # transform image model cam points to overhead BEV image (spectator frame?)
+            self.debug_display(
+                    tick_data, steer, throttle, brake, desired_speed)
+            
         return control
 
     def debug_display(self, tick_data, steer, throttle, brake, desired_speed, r=2):

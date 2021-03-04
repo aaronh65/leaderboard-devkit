@@ -11,7 +11,7 @@ from online_map_model import MapModel
 
 from common.utils import dict_to_sns
 import pytorch_lightning as pl
-
+from pytorch_lightning.callbacks import ModelCheckpoint
 
 def train(config, agent, env):
    
@@ -37,7 +37,6 @@ def train(config, agent, env):
             pass
 
 def main(args, config):
-
     try:
         agent = DSPredAgent(config)
         client = Client('localhost', 2000)
@@ -45,11 +44,18 @@ def main(args, config):
         env = CarlaEnv(config, client, agent)
         model = agent.net
         model.env = env
-        status = model.env.reset()
-        for i in range(10):
-            print(i)
-            model.env.step()
-        #train(config, agent, env)
+        model.setup_train(env, config)
+
+        logger = False
+        checkpoint_callback = ModelCheckpoint(config.save_root, save_top_k=1)
+        trainer = pl.Trainer(
+            gpus=-1, 
+            #max_steps=config.agent.total_timesteps,
+            max_steps=200,
+            logger=logger, 
+            checkpoint_callback=checkpoint_callback)
+        trainer.fit(model)
+
     except KeyboardInterrupt:
         print('caught KeyboardInterrupt')
     except Exception as e:
@@ -59,17 +65,6 @@ def main(args, config):
         del env
 
 def parse_args():
-
-    # assert to make sure setup.bash sourced?
-    #project_root = os.environ['PROJECT_ROOT']
-    project_root = '/home/aaron/workspace/carla/leaderboard-devkit'
-
-    # retrieve template config
-    config_path = f'{project_root}/team_code/rl/config/dspred.yml'
-    with open(config_path, 'r') as f:
-        config = yaml.load(f, Loader=yaml.Loader)
-    config['project_root'] = project_root
-    #config['carla_root'] = os.environ['CARLA_ROOT']
 
     # query new arguments
     parser = argparse.ArgumentParser()
@@ -84,6 +79,22 @@ def parse_args():
     parser.add_argument('--buffer_size', type=int, default=10000)
     parser.add_argument('--batch_size', type=int, default=64)
     args = parser.parse_args()
+
+
+    # assert to make sure setup.bash sourced?
+    #project_root = os.environ['PROJECT_ROOT']
+    project_root = '/home/aaron/workspace/carla/leaderboard-devkit'
+    date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+    suffix = f'debug/{date_str}' if args.debug else date_str
+    save_root = f'{args.data_root}/leaderboard/results/rl/dspred/{suffix}'
+
+    # retrieve template config
+    config_path = f'{project_root}/team_code/rl/config/dspred.yml'
+    with open(config_path, 'r') as f:
+        config = yaml.load(f, Loader=yaml.Loader)
+    config['project_root'] = project_root
+    config['save_root'] = save_root
+    #config['carla_root'] = os.environ['CARLA_ROOT']
 
     # modify template config
     econf = config['env']
@@ -103,9 +114,6 @@ def parse_args():
     aconf['save_frequency'] = save_frequency
 
     # save new config path
-    date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-    suffix = f'debug/{date_str}' if args.debug else date_str
-    save_root = f'{args.data_root}/leaderboard/results/rl/dspred/{suffix}'
     os.makedirs(save_root)
     with open(f'{save_root}/config.yml', 'w') as f:
         yaml.dump(config, f, default_flow_style=False, sort_keys=False)

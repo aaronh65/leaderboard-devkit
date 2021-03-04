@@ -20,6 +20,7 @@ class BaseEnv(gym.Env):
         self.hero_agent = agent # the user-defined agent class
         self.hero_actor = None  # the actual CARLA actor
 
+
         # basic attributes + data provider setup
         self.world = self.client.get_world()
         self.traffic_manager = self.client.get_trafficmanager(

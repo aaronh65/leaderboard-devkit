@@ -5,23 +5,27 @@ import uuid
 import argparse
 import pathlib
 
+import numpy as np
+import cv2
+import wandb
+from PIL import Image, ImageDraw
+
 import torch
 import torch.nn.functional as F
 import pytorch_lightning as pl
 import torchvision
-import numpy as np
-import wandb
-
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
-from PIL import Image, ImageDraw
-import cv2
+from torch.utils.data import DataLoader
+
 
 from lbc.carla_project.src.models import SegmentationModel, RawController, SpatialSoftmax
 from lbc.carla_project.src.utils.heatmap import ToHeatmap
 from lbc.carla_project.src.common import COLOR
 
-from rl.dspred.online_dataset import get_dataset
+#from rl.dspred.online_dataset import get_dataset
+from rl.dspred.online_dataset import CarlaDataset
+ 
 
 # takes (N,3,H,W) topdown and (N,4,H,W) vmaps
 # averages t=0.5s,1.0s vmaps and overlays it on topdown
@@ -111,19 +115,31 @@ class MapModel(pl.LightningModule):
         self.net = SegmentationModel(10, 4, hack=hparams.hack, temperature=hparams.temperature)
         self.controller = RawController(4)
 
-        # RL stuff
-        self.env = None
-        self.n = 0 if not hasattr(hparams, 'n') else hparams.n
+        
+    def setup_train(self, env, config):
+        self.config = config
+        self.env = env
+        self.n = config.agent.n
         self.discount = 0.99 ** (self.n + 1)
         self.criterion = torch.nn.MSELoss(reduction='none') # weights? prioritized replay?
-
         self.populate()
 
-    # burn in
-    def populate(self, steps=1000):
-        pass
+        for action in self.env.buffer.actions:
+            print(action)
 
-    
+    # burn in
+    def populate(self, steps=100):
+        self.env.reset()
+        # make sure agent is burning in instead of inferencing
+        self.env.hero_agent.burn_in = True
+        for step in range(steps):
+            reward, done = self.env.step()
+            if done:
+                self.env.cleanup()
+                self.env.reset()
+        self.env.cleanup()
+        self.env.hero_agent.burn_in = False
+
     def forward(self, topdown, target, debug=False):
         target_heatmap = self.to_heatmap(target, topdown)[:, None]
         out = self.net(torch.cat((topdown, target_heatmap), 1), heatmap=debug)
@@ -138,93 +154,57 @@ class MapModel(pl.LightningModule):
         return points, (logits, target_heatmap)
 
     def get_action(self, vmap):
-        aim_vmap = torch.mean(vmap[:,0:2,:,:], dim=1) #(N, H, W)
-        aim_vmap_flat = aim_vmap.view(aim_vmap.shape[:-2] + (-1,)) # (N, H*W)
-        Q, aim_flat = torch.max(aim_vmap_flat, -1, keepdim=True)
-        action = torch.cat((aim_flat % 256, aim_flat // 256), axis=1)
+        #aim_vmap = torch.mean(vmap[:,0:2,:,:], dim=1) #(N, C, H, W)
+        vmap_flat = vmap.view(vmap.shape[:-2] + (-1,)) # (N, C, H*W)
+        Q, action_flat = torch.max(vmap_flat, -1, keepdim=True) # (N, C, 1)
+        action = torch.cat((
+            torch.remainder(aim_flat, 256),  # aim_flat % 256 = x (column)
+            torch.floor_divide(aim_flat, 256)),  # aim_flat // 256 = y (row)
+            axis=2) # (N, C, 2)
+        
         return action, Q
 
+    def get_action_value(self, vmap, action):
+        # action is (N, C, 2)
+        action_xy = action.view((-1, 4, 2)) # Nx4x2
+        x, y = action[...,0], action[...,1] # Nx4
+        action_flat = torch.unsqueeze(y*256 + x, dim=2) # (N,4, 1)
+        vmap_flat = vmap.view(vmap.shape[:-2] + (-1,)) # (N, 4, H*W)
+        all_Q = vmap_flat.gather(1, action_flat.long()) # (N, 4)
+        Q = torch.mean(all_Q[:, :2, ...])
+        return Q
+
     def training_step(self, batch, batch_nb):
+
+        ## step environment
+        self.env.step()
+
+        ## train on batch
         state, action, reward, next_state, done = batch
         
-        # get currennt state's Q value
+        # get Q values
         topdown, target = state
         points, (vmap, hmap) = self.forward(topdown, target, debug=True)
-        x_aim, y_aim = action[:,0], action[:,1] 
-        aim_flat = torch.unsqueeze(y_aim * 256 + x_aim, dim=1) # (N, 1)
-        aim_vmap = torch.mean(vmap[:,0:2,:,:], dim=1) # (N, H, W)
-        aim_vmap_flat = aim_vmap.view(aim_vmap.shape[:-2] + (-1,)) # (N, H*W)
-        Q = aim_vmap_flat.gather(1, aim_flat.long()) # (N, 1)
+        Q = self.get_action_value(vmap, action)
 
-        # get next state's Q value
         ntopdown, ntarget = next_state
         with torch.no_grad():
             npoints, (nvmap, nhmap) = self.forward(ntopdown, ntarget, debug=True)
         naction, nQ = self.get_action(nvmap)
 
+        # compute loss and metrics
         target = reward + self.discount * nQ
         batch_loss = self.criterion(Q, target) # TD(n) error
         loss = batch_loss.mean()
 
-        metrics = {f'TD({self.n}) loss': loss.item()}
-
-        if batch_nb % 10 == 0:
-            meta = {'Q': Q, 'nQ': nQ, 'batch_loss': batch_loss, 'hparams': self.hparams, 'n':self.n}
-            images = visualize(batch, points, vmap, hmap, npoints, nvmap, nhmap, naction, meta)
-            metrics['train_image'] = images
-
-        self.logger.log_metrics(metrics, self.global_step)
-
+#        metrics = {f'TD({self.n}) loss': loss.item()}
+#        if batch_nb % 10 == 0:
+#            meta = {'Q': Q, 'nQ': nQ, 'batch_loss': batch_loss, 'hparams': self.hparams, 'n':self.n}
+#            images = visualize(batch, points, vmap, hmap, npoints, nvmap, nhmap, naction, meta)
+#            metrics['train_image'] = images
+#        self.logger.log_metrics(metrics, self.global_step)
+#
         return {'loss': loss}
-
-    # eval and no grad already set
-    def validation_step(self, batch, batch_nb):
-        state, action, reward, next_state, done = batch
-
-        topdown, target = state
-        points, (vmap, hmap) = self.forward(topdown, target, debug=True)
-        ntopdown, ntarget = next_state
-        npoints, (nvmap, nhmap) = self.forward(ntopdown, ntarget, debug=True)
-
-        # get action in 1D form
-        x_aim, y_aim = action[:,0], action[:,1] 
-        aim_flat = torch.unsqueeze(y_aim * 256 + x_aim, dim=1)
-
-        # average t=0.5, t=1.0: (N, 4, H, W) -> (N, H, W)
-        aim_vmap = torch.mean(vmap[:,0:2,:,:], dim=1) # (N, H, W)
-        aim_vmap_flat = aim_vmap.view(aim_vmap.shape[:-2] + (-1,)) # (N, H*W)
-        Q = aim_vmap_flat.gather(1, aim_flat.long()) # (N, 1)
-        
-        # retrieve next action using next state's Q values
-        naim_vmap = torch.mean(nvmap[:,0:2,:,:], dim=1) 
-        naim_vmap_flat = naim_vmap.view(naim_vmap.shape[:-2] + (-1,))
-        nQ, naim_flat = torch.max(naim_vmap_flat, -1, keepdim=True)
-        naction = torch.cat((naim_flat % 256, naim_flat // 256), axis=1)
-
-        target = reward + self.discount * nQ
-        batch_val_loss = self.criterion(Q, target) # TD(n) error
-        val_loss = batch_val_loss.mean()
-
-        if batch_nb == 0:
-            meta = {'Q': Q, 'nQ': nQ, 'batch_loss': batch_val_loss, 'hparams': self.hparams, 'n':self.n}
-            images = visualize(batch, points, vmap, hmap, npoints, nvmap, nhmap, naction, meta)
-            self.logger.log_metrics({'val_image': images}, self.global_step)
-        
-        return {'val_loss': val_loss.item()}
-        
-    def validation_epoch_end(self, batch_metrics):
-        results = dict()
-
-        for metrics in batch_metrics:
-            for key in metrics:
-                if key not in results:
-                    results[key] = list()
-
-                results[key].append(metrics[key])
-        summary = {key: np.mean(val) for key, val in results.items()}
-        self.logger.log_metrics(summary, self.global_step)
-
-        return summary
 
     def configure_optimizers(self):
         optim = torch.optim.Adam(
@@ -233,16 +213,17 @@ class MapModel(pl.LightningModule):
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
                 optim, mode='min', factor=0.5, patience=5, min_lr=1e-6,
                 verbose=True)
-
         return [optim], [scheduler]
 
     def train_dataloader(self):
-        print('train dataloader')
-        return get_dataset(self.hparams.dataset_dir, True, self.hparams.batch_size, sample_by=self.hparams.sample_by, n=self.n)
-
-    def val_dataloader(self):
-        print('val dataloader')
-        return get_dataset(self.hparams.dataset_dir, False, self.hparams.batch_size, sample_by=self.hparams.sample_by, n=self.n)
+        dataset = CarlaDataset(
+                self.env.buffer, 
+                self.config.agent.batch_size)
+        dataloader = DataLoader(
+                dataset=dataset,
+                batch_size=self.config.agent.batch_size,
+                sampler=None,)
+        return dataloader
 
 
 def main(hparams):
