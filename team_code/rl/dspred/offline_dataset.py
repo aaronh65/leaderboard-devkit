@@ -5,7 +5,7 @@ import torch
 import imgaug.augmenters as iaa
 import pandas as pd
 
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 from PIL import Image
 from numpy import nan
@@ -44,11 +44,12 @@ def get_weights(data, key='speed', bins=4):
     return class_weights[classes]
 
 
-def get_dataset(dataset_dir, is_train=False, batch_size=4, num_workers=4, sample_by='none', n=0, **kwargs):
+# running mean for efficient prioritized experience replay?
+def get_dataset(data=None, batch_size=4, num_workers=4, sample_by='none', n=0, **kwargs):
     data = list()
     transform = transforms.Compose([
         lambda x: x,
-        #transforms.ToTensor()
+        transforms.ToTensor()
         ])
 
     episodes = list(sorted(Path(dataset_dir).glob('*')))
@@ -158,11 +159,13 @@ if __name__ == '__main__':
     parser.add_argument('--n', type=int, default=0)
     args = parser.parse_args()
 
-    #data = CarlaDataset(args.dataset_dir, n=args.n)
-    val_data = get_dataset(args.dataset_dir, False, 4, sample_by='none', n=args.n)
+    data = CarlaDataset(args.dataset_dir, n=args.n)
+    #val_data = get_dataset(args.dataset_dir, False, 4, sample_by='none', n=args.n)
     converter = Converter()
     to_heatmap = ToHeatmap(5)
 
+    data_let = len(val_data)
+    batch = 
     for batch in val_data:
         state, action, reward, next_state, done = batch
 

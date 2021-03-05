@@ -13,29 +13,6 @@ from common.utils import dict_to_sns
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
 
-def train(config, agent, env):
-   
-    env.reset()
-    for step in tqdm(range(begin_step, config.agent.total_timesteps)):
-
-        # burn in?
-        reward, done = env.step() # epsilon greedy? deterministic? 
-
-        if step > 60 + config.agent.batch_size:
-            batch = env.buf.sample()
-               
-        # save model if applicable
-        episode_rewards[-1] += reward
-        if done:
-            # cleanup and reset
-            env.cleanup()
-            env.reset()
-
-        # train model
-        if True: # can update to wait some number of steps
-            # one gradient step for now
-            pass
-
 def main(args, config):
     try:
         agent = DSPredAgent(config)

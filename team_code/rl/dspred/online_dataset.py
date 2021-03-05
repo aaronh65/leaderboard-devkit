@@ -5,7 +5,7 @@ import torch
 import imgaug.augmenters as iaa
 import pandas as pd
 
-from torch.utils.data import Dataset, IterableDataset
+from torch.utils.data import Dataset, IterableDataset, DataLoader
 from torchvision import transforms
 from PIL import Image
 from numpy import nan
@@ -80,25 +80,51 @@ def preprocess_semantic(semantic_np):
 
 
 #class CarlaDataset(IterableDataset):
+##class CarlaDataset(Dataset):
+#    def __init__(self, replay_buffer, batch_size):
+#        self.buffer = replay_buffer
+#        self.batch_size = batch_size
+#        self.cnt=0
+#
+#    def __len__(self):
+#        return self.buffer.buffer_size
+#
+#    #def __getitem__(self, i):
+#    def __iter__(self):
+#        print(f'iter {self.cnt}')
+#        self.cnt+=1
+#        indices = np.random.choice(len(self.buffer), self.batch_size, replace=False)
+#        for i in indices:
+#            state, action, reward, done, next_state = self.buffer.sample(i)
+#
+#            topdown, target = state
+#            topdown = Image.fromarray(topdown)
+#            topdown = topdown.crop((128, 0, 128 + 256, 256))
+#            topdown = preprocess_semantic(np.array(topdown))
+#            target = torch.FloatTensor(np.float32(target))
+#            action = torch.FloatTensor(np.float32(action))
+#            reward = torch.FloatTensor([reward])
+#            done = torch.FloatTensor([done])
+#
+#            ntopdown, ntarget = next_state
+#            ntopdown = Image.fromarray(ntopdown)
+#            ntopdown = ntopdown.crop((128, 0, 128 + 256, 256))
+#            ntopdown = preprocess_semantic(np.array(ntopdown))
+#            ntarget = torch.FloatTensor(np.float32(ntarget))
+#        
+#            yield (topdown, target), action, reward, (ntopdown, ntarget), done
+        
 class CarlaDataset(Dataset):
-    def __init__(self, replay_buffer, batch_size):
+    def __init__(self, replay_buffer):
         self.buffer = replay_buffer
-        self.batch_size = batch_size
 
     def __len__(self):
-        return len(self.buffer.states)
+        return self.buffer.buffer_size
 
     def __getitem__(self, i):
-
-        #i = i % len(self.buffer.states)
-
-        #states, actions, rewards, dones, next_states = self.buffer.sample(self.batch_size)
+        i =  i % len(self.buffer.states)
         state, action, reward, done, next_state = self.buffer.sample(i)
 
-        #for i in range(len(states)):
-
-            #print(path / 'topdown' / ('%s.png' % frame))
-            #topdown = Image.open(path / 'topdown' / ('%s.png' % frame))
         topdown, target = state
         topdown = Image.fromarray(topdown)
         topdown = topdown.crop((128, 0, 128 + 256, 256))
@@ -114,39 +140,50 @@ class CarlaDataset(Dataset):
         ntopdown = preprocess_semantic(np.array(ntopdown))
         ntarget = torch.FloatTensor(np.float32(ntarget))
     
-        #print(f'{frame} {nframe}')
         return (topdown, target), action, reward, (ntopdown, ntarget), done
-        
+
+def get_dataloader(buf, batch_size, num_workers=4):
+    return DataLoader(CarlaDataset(buf), batch_size=batch_size, num_workers=num_workers,
+             drop_last=True, pin_memory=True)
+
+
 if __name__ == '__main__':
     import sys
     import cv2
     import argparse
     from PIL import ImageDraw
     from lbc.carla_project.src.utils.heatmap import ToHeatmap
-    from rl.dspred.map_model import MapModel
+    from rl.dspred.online_map_model import MapModel
+    import pickle as pkl
+    from itertools import repeat
 
     model = MapModel.load_from_checkpoint('/home/aaron/workspace/carla/leaderboard-devkit/team_code/rl/config/weights/map_model.ckpt')
     model.eval()
+    model.cuda()
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset_dir', type=str, required=True)
-    parser.add_argument('--n', type=int, default=0)
+    #parser.add_argument('--dataset_dir', type=str, required=True)
+    #parser.add_argument('--n', type=int, default=0)
     args = parser.parse_args()
 
     #data = CarlaDataset(args.dataset_dir, n=args.n)
-    val_data = get_dataset(args.dataset_dir, False, 4, sample_by='none', n=args.n)
-    converter = Converter()
-    to_heatmap = ToHeatmap(5)
+    #val_data = get_dataset(args.dataset_dir, False, 4, sample_by='none', n=args.n)
+    with open('buffer.pkl', 'rb') as f:
+        buf = pkl.load(f)
+    buf.buffer_size = 100
+    batch_size = 4
+    loader = get_dataloader(buf, batch_size)
 
-    for batch in val_data:
+    for j, batch in enumerate(loader):
         state, action, reward, next_state, done = batch
-
-        # this state
+        #print(action)
         topdown, target = state
         ntopdown, ntarget = next_state
         with torch.no_grad():
-            points, (vmap, hmap) = model.forward(topdown, target, debug=True)
+            points, (vmap, hmap) = model.forward(topdown.cuda(), target.cuda(), debug=True)
+            npoints, (nvmap, nhmap) = model.forward(ntopdown.cuda(), ntarget.cuda(), debug=True)
         points = (points + 1) / 2 * 256
+        npoints =(npoints + 1) / 2 * 256
 
         for i in range(action.shape[0]):
             _topdown = COLOR[topdown[i].argmax(0).cpu()]
@@ -155,8 +192,8 @@ if __name__ == '__main__':
             _topdown = Image.fromarray(_topdown)
 
             _draw = ImageDraw.Draw(_topdown)
-            x, y = action[i].cpu().squeeze().numpy().astype(np.uint8)
-            _draw.ellipse((x-2, y-2, x+2, y+2), (0,255,0))
+            #x, y = action[i].cpu().squeeze().numpy().astype(np.uint8)
+            #_draw.ellipse((x-2, y-2, x+2, y+2), (0,255,0))
             for x, y in points[i].cpu().numpy():
                 _draw.ellipse((x-2, y-2, x+2, y+2), (0,255,0))
             _draw.text((5, 10), f'reward = {reward[i].item():.5f}', (255,255,255))
@@ -164,8 +201,8 @@ if __name__ == '__main__':
 
             # next state
             _ntopdown = COLOR[ntopdown[i].argmax(0).cpu().numpy()]
-            nheatmap = to_heatmap(ntarget[i:i+1], ntopdown[i:i+1]).squeeze()
-            _ntopdown[nheatmap > 0.1] = 255
+            #nheatmap = to_heatmap(ntarget[i:i+1], ntopdown[i:i+1]).squeeze()
+            _ntopdown[nhmap[i][0].cpu() > 0.1] = 255
             _ntopdown = cv2.cvtColor(_ntopdown, cv2.COLOR_BGR2RGB)
 
             _combined = np.hstack((_topdown, _ntopdown))

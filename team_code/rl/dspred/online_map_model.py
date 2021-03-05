@@ -1,5 +1,6 @@
 import sys, traceback
 from datetime import datetime
+import pickle as pkl
 
 import uuid
 import argparse
@@ -23,8 +24,8 @@ from lbc.carla_project.src.models import SegmentationModel, RawController, Spati
 from lbc.carla_project.src.utils.heatmap import ToHeatmap
 from lbc.carla_project.src.common import COLOR
 
-#from rl.dspred.online_dataset import get_dataset
-from rl.dspred.online_dataset import CarlaDataset
+from rl.dspred.online_dataset import get_dataloader
+#from rl.dspred.online_dataset import CarlaDataset
  
 
 # takes (N,3,H,W) topdown and (N,4,H,W) vmaps
@@ -122,10 +123,10 @@ class MapModel(pl.LightningModule):
         self.n = config.agent.n
         self.discount = 0.99 ** (self.n + 1)
         self.criterion = torch.nn.MSELoss(reduction='none') # weights? prioritized replay?
-        self.populate()
-
-        for action in self.env.buffer.actions:
-            print(action)
+        self.populate(1000)
+        with open('buffer.pkl', 'wb') as f:
+            pkl.dump(self.env.buffer, f)
+        print('done populating')
 
     # burn in
     def populate(self, steps=100):
@@ -138,6 +139,7 @@ class MapModel(pl.LightningModule):
                 self.env.cleanup()
                 self.env.reset()
         self.env.cleanup()
+        self.env.reset()
         self.env.hero_agent.burn_in = False
 
     def forward(self, topdown, target, debug=False):
@@ -216,14 +218,7 @@ class MapModel(pl.LightningModule):
         return [optim], [scheduler]
 
     def train_dataloader(self):
-        dataset = CarlaDataset(
-                self.env.buffer, 
-                self.config.agent.batch_size)
-        dataloader = DataLoader(
-                dataset=dataset,
-                batch_size=self.config.agent.batch_size,
-                sampler=None,)
-        return dataloader
+        return get_dataloader(self.env.buffer, self.config.agent.batch_size)
 
 
 def main(hparams):
@@ -261,7 +256,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--max_epochs', type=int, default=40)
     parser.add_argument('--save_dir', type=pathlib.Path, default='checkpoints')
-    parser.add_argument('--id', type=str, default=uuid.uuid4().hex) # replace with datetime
+    parser.add_argument('--id', type=str, default=datetime.now().strftime("%Y%m%d_%H%M%S")) # replace with datetime
 
     parser.add_argument('--heatmap_radius', type=int, default=5)
     parser.add_argument('--sample_by', type=str, choices=['none', 'even', 'speed', 'steer'], default='even')
@@ -284,8 +279,6 @@ if __name__ == '__main__':
     parser.add_argument('-d', '--debug', action='store_true')
 
     parsed = parser.parse_args()
-    date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-    parsed.id = date_str
     save_dir = parsed.save_dir / 'debug' / parsed.id if parsed.debug else parsed.save_dir / parsed.id
     parsed.save_dir = save_dir
     parsed.save_dir.mkdir(parents=True, exist_ok=True)
