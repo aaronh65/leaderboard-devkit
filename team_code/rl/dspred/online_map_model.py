@@ -31,22 +31,22 @@ from rl.dspred.online_dataset import get_dataloader
 # takes (N,3,H,W) topdown and (N,4,H,W) vmaps
 # averages t=0.5s,1.0s vmaps and overlays it on topdown
 @torch.no_grad()
-def fuse_vmaps(topdown, vmap, hparams, alpha=0.75):
+def fuse_vmaps(topdown, vmap, temperature=10, alpha=0.75):
 
     vmap_mean = torch.mean(vmap[:,0:2,:,:], dim=1, keepdim=True) # N,1,H,W
     vmap_flat = vmap_mean.view(vmap_mean.shape[:-2] + (-1,)) # N,1,H*W
-    vmap_prob = F.softmax(vmap_flat/hparams.temperature, dim=-1) # to prob
+    vmap_prob = F.softmax(vmap_flat/temperature, dim=-1) # to prob
     vmap_norm = vmap_prob / torch.max(vmap_prob, dim=-1, keepdim=True)[0] # to [0,1]
     vmap_show = (vmap_norm * 256).view_as(vmap_mean).cpu().numpy().astype(np.uint8) # N,1,H,W
     vmap_show = np.repeat(vmap_show, repeats=3, axis=1).transpose((0,2,3,1)) # N,H,W,3
     fused = np.array(COLOR[topdown.argmax(1).cpu()]).astype(np.uint8) # N,H,W,3
     for i in range(fused.shape[0]):
         cv2.addWeighted(vmap_show[i], 0.75, fused[i], 1, 0, fused[i])
-    fused = fused.astype(np.uint8)
+    fused = fused.astype(np.uint8) # (N,H,W,3)
     return fused
 
 @torch.no_grad()
-def visualize(batch, points, vmap, hmap, npoints, nvmap, nhmap, naction, meta):
+def visualize(batch, points, vmap, hmap, action, npoints, nvmap, nhmap, naction, meta):
     images = list()
 
     state, action, reward, next_state, done = batch
@@ -55,8 +55,8 @@ def visualize(batch, points, vmap, hmap, npoints, nvmap, nhmap, naction, meta):
     hparams, batch_loss, n = meta['hparams'], meta['batch_loss'], meta['n']
     Q, nQ = meta['Q'], meta['nQ']
 
-    fused = fuse_vmaps(topdown, vmap, hparams, 1.0)
-    nfused = fuse_vmaps(ntopdown, nvmap, hparams, 1.0)
+    fused = fuse_vmaps(topdown, vmap, hparams.temperature, 1.0)
+    nfused = fuse_vmaps(ntopdown, nvmap, hparams.temperature, 1.0)
     points = (points + 1) / 2 * 256 # [-1, 1] -> [0, 256]
     npoints = (npoints + 1) / 2 * 256 # [-1, 1] -> [0, 256]
 
@@ -70,7 +70,8 @@ def visualize(batch, points, vmap, hmap, npoints, nvmap, nhmap, naction, meta):
         _draw = ImageDraw.Draw(_topdown)
         for x, y in points[i].cpu().numpy():
             _draw.ellipse((x-2, y-2, x+2, y+2), (255,0,0))
-        #x, y = action[i].cpu().numpy().astype(np.uint8)
+        _action = action[i].cpu().numpy().astype(np.uint8) # (4,2)
+        x, y = np.mean(_action[0:2], axis=0)
         _draw.ellipse((x-2, y-2, x+2, y+2), (0,255,0))
         _draw.text((5, 10), f'action = ({x},{y})', textcolor)
         _draw.text((5, 20), f'Q = {Q[i].item():2f}', textcolor)
@@ -86,6 +87,8 @@ def visualize(batch, points, vmap, hmap, npoints, nvmap, nhmap, naction, meta):
         for x, y in npoints[i].cpu().numpy():
             _ndraw.ellipse((x-2, y-2, x+2, y+2), (255,0,0))
         #x, y = naction[i].cpu().numpy().astype(np.uint8)
+        _naction = naction[i].cpu().numpy().astype(np.uint8) # (4,2)
+        x, y = np.mean(_naction[0:2], axis=0)
         _ndraw.ellipse((x-2, y-2, x+2, y+2), (0,255,0))
         _ndraw.text((5, 10), f'action = ({x},{y})', textcolor)
         _ndraw.text((5, 20), f'nQ = {nQ[i].item():.2f}', textcolor)
@@ -125,14 +128,15 @@ class MapModel(pl.LightningModule):
         self.discount = 0.99 ** (self.n + 1)
         self.criterion = torch.nn.MSELoss(reduction='none') # weights? prioritized replay?
 
-        self.populate(config.agent.burn_timesteps)
-        print('done populating')
-
+        #self.populate(config.agent.burn_timesteps)
         #with open('buffer.pkl', 'wb') as f:
         #    pkl.dump(self.env.buffer, f)
-        #with open('buffer.pkl', 'rb') as f:
-        #    self.env.buffer = pkl.load(f)
 
+
+        with open('buffer.pkl', 'rb') as f:
+            self.env.buffer = pkl.load(f)
+
+        print('done populating')
         self.env.reset()
         self.last_loss = 0
 
@@ -213,7 +217,7 @@ class MapModel(pl.LightningModule):
         metrics = {f'TD({self.n}) loss': loss.item()}
         if batch_nb % 10 == 0:
             meta = {'Q': Q, 'nQ': nQ, 'batch_loss': batch_loss, 'hparams': self.hparams, 'n':self.n}
-            images = visualize(batch, points, vmap, hmap, npoints, nvmap, nhmap, naction, meta)
+            images = visualize(batch, points, vmap, hmap, action, npoints, nvmap, nhmap, naction, meta)
             metrics['train_image'] = images
         self.last_loss = loss
         if self.logger != None:

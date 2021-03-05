@@ -31,7 +31,7 @@ def main(args, config):
 
         checkpoint_callback = ModelCheckpoint(config.save_root, save_top_k=1)
         trainer = pl.Trainer(
-            gpus=1, 
+            gpus=[args.gpu], 
             max_steps=config.agent.total_timesteps,
             val_check_interval=10,
             logger=logger, 
@@ -53,6 +53,7 @@ def parse_args():
     parser.add_argument('-D', '--debug', action='store_true')
     parser.add_argument('-G', '--gpu', type=int, default=0)
     parser.add_argument('--data_root', type=str, default='/data')
+    parser.add_argument('--remote', action='store_true')
     parser.add_argument('--split', type=str, default='training', choices=['debug', 'devtest', 'testing', 'training'])
     #parser.add_argument('--routenum', type=int) # optional
     parser.add_argument('--no_scenarios', action='store_true') # leaderboard-triggered scnearios
@@ -66,9 +67,9 @@ def parse_args():
     args = parser.parse_args()
 
     # assert to make sure setup.bash sourced?
-    #project_root = os.environ['PROJECT_ROOT']
-    #project_root = '/home/aaron/workspace/carla/leaderboard-devkit'
-    project_root = '/home/aaronhua/leaderboard-devkit'
+    project_root = os.environ['PROJECT_ROOT']
+    #prefix = '/home/aaron/workspace/carla' if not args.remote else '/home/aaronhua'
+    #project_root = f'{prefix}/leaderboard-devkit'
     date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
     suffix = f'debug/{date_str}' if args.debug else date_str
     save_root = f'{args.data_root}/leaderboard/results/rl/dspred/{suffix}'

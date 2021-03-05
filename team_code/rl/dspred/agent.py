@@ -10,7 +10,7 @@ from PIL import Image, ImageDraw
 from pathlib import Path
 
 #from lbc.carla_project.src.map_model import MapModel
-from rl.dspred.online_map_model import MapModel
+from rl.dspred.online_map_model import MapModel, fuse_vmaps
 from lbc.carla_project.src.dataset import preprocess_semantic
 from lbc.carla_project.src.converter import Converter
 from lbc.carla_project.src.common import CONVERTER, COLOR
@@ -29,8 +29,13 @@ class DSPredAgent(MapAgent):
     def setup(self, path_to_conf_file):
         super().setup(path_to_conf_file)
         self.converter = Converter()
+
         project_root = self.config.project_root
-        weights_path = self.config.agent.weights_path
+        self.debug_path = None
+        self.data_path = None
+
+
+        weights_path = self.aconfig.weights_path
         self.net = MapModel.load_from_checkpoint(f'{project_root}/{weights_path}')
         self.net.cuda()
         self.net.eval()
@@ -44,16 +49,42 @@ class DSPredAgent(MapAgent):
         self.initialized = False
         self.burn_in = False
 
+        # make debug directories
+        save_root = self.config.save_root
+        if self.config.save_debug:
+            ROUTE_NAME, REPETITION = os.environ['ROUTE_NAME'], os.environ['REPETITION']
+            self.debug_path = Path(f'{save_root}/debug/{ROUTE_NAME}/{REPETITION}')
+            self.debug_path.mkdir(exist_ok=True, parents=True)
+
+        # TODO: make data directories and reimplement data collection w/better file structure
+        if self.config.save_data:
+            pass
+
     # remove rgb cameras from base agent
     def sensors(self):
-        sensors = super().sensors()
-        if self.config.agent.save_images or DEBUG:
-            sensors = sensors[3:]
+        sensors = super().sensors() 
+        
+        # get rid of old rgb cameras
+        _, _, _, imu, gps, speed, topdown = sensors
+        rgb = {
+            'type': 'sensor.camera.rgb',
+            'x': 1.3, 'y': 0.0, 'z': 1.3,
+            'roll': 0.0, 'pitch': 0.0, 'yaw': 0.0,
+            'width': 456, 'height': 256, 'fov': 90,
+            'id': 'rgb'
+            }
+
+        #rgb_topdown = \ 
+        #    {'type': 'sensor.camera.rgb',
+        #        'x': 0.0, 'y': 0.0, 'z': 100.0,
+        #        'roll': 0.0, 'pitch': -90.0, 'yaw': 0.0,
+        #        'width': 512, 'height': 512, 'fov': 5 * 10.0,
+        #        'id': 'rgb_topdown'}
+        sensors = [rgb, imu, gps, speed, topdown]
         return sensors
 
     def tick(self, input_data):
         result = super().tick(input_data)
-        result['image'] = np.concatenate(tuple(result[x] for x in ['rgb', 'rgb_left', 'rgb_right']), -1)
 
         theta = result['compass']
         theta = 0.0 if np.isnan(theta) else theta
@@ -98,28 +129,32 @@ class DSPredAgent(MapAgent):
         topdown = topdown.crop((128, 0, 128+256, 256))
         topdown = np.array(topdown)
         topdown_save = topdown.copy()
-        tick_data['map_view'] = COLOR[CONVERTER[topdown.copy()]]
 
         if not self.burn_in:
 
             # prepare inputs
             topdown = preprocess_semantic(topdown)
             topdown = topdown[None].cuda()
+            tick_data['topdown_pth'] = topdown.clone().cpu()
             target = torch.from_numpy(tick_data['target'])
             target = target[None].cuda()
 
             # forward
-            points, (vmaps, hmaps) = self.net.forward(topdown, target, debug=True) # world frame
+            points, (vmap, hmap) = self.net.forward(topdown, target, debug=True) # world frame
+
+            # retrieve action
+            actions, Q_all = self.net.get_actions(vmap) # (1,4,2), (1,4)
+            points_map = np.clip(actions.clone().cpu().squeeze(), 0, 256) # (4,2)
 
             # retrieve and transform points
-            points_map = points.clone().cpu().squeeze()
+            #points_map = points.clone().cpu().squeeze()
             points_map = (points_map + 1) / 2 * 256
             points_map = np.clip(points_map, 0, 256)
             points_cam = self.converter.map_to_cam(points_map).numpy()
             points_world = self.converter.map_to_world(points_map).numpy()
             points_map = points_map.numpy()
                         
-            tick_data['hmaps'] = hmaps
+            tick_data['maps'] = (vmap, hmap)
             tick_data['points_cam'] = points_cam
             tick_data['points_world'] = points_world
             tick_data['points_map'] = points_map
@@ -154,7 +189,7 @@ class DSPredAgent(MapAgent):
 
         tick_data['aim_world'] = aim
 
-        if not self.burn_in and (DEBUG or self.config.agent.save_images):
+        if not self.burn_in and (DEBUG or self.aconfig.save_images):
             self.debug_display(tick_data, steer, throttle, brake, desired_speed)
 
         
@@ -168,45 +203,45 @@ class DSPredAgent(MapAgent):
 
         colors = [(0,255,0), (255,0,0), (139,0,139), (139,0,139)] # for waypoints
         
-        target_hmap = tick_data['hmaps'][1].clone().cpu().numpy()
-        target_hmap = target_hmap[0][0]
-        target_hmap = target_hmap / np.amax(target_hmap) * 256
+        vmap, hmap = tick_data['maps'] # (1, H, W)
+
+        hmap = hmap.clone().cpu().numpy().squeeze() # (H,W)
+        target_hmap = hmap / np.amax(hmap) * 256 # to grayscale
         target_hmap = target_hmap.astype(np.uint8)
 
-        zeros = np.zeros(target_hmap.shape)
-        target_hmap = np.dstack((zeros, target_hmap, zeros))
-        hmap_tgt = tick_data['map_view'].copy()
-        hmap_tgt = hmap_tgt + target_hmap
-        hmap_tgt = np.clip(hmap_tgt, a_min=0, a_max=255).astype(np.uint8)
-
-        #cv2.imshow('target', target_hmap)
-
-
+        # rgb image on left, topdown w/vmap image on right
+        # plot Q points instead of LBC version (argmax instead of expectation)
         points_map = tick_data['points_map']
-        logit = tick_data['hmaps'][0]
-        flat = logit.view(logit.shape[:-2] + (-1,))
-        hmap = F.softmax(flat / self.net.net.temperature, dim=-1).view_as(logit)
-        hmap = hmap[0].clone().cpu().numpy()
+        points_cam = tick_data['points_cam']
+
+        # (N,H,W,3) right image
+        fused = fuse_vmaps(tick_data['topdown_pth'], vmap, temperature=10, alpha=1.0)
+        fused = Image.fromarray(fused.squeeze())
+        draw = ImageDraw.Draw(fused)
+
+        # draw aims?
+        for x, y in points_map:
+            draw.ellipse((x-r, y-r, x+r, y+r), (0, 191, 255))
+        x, y = np.mean(points_map[0:1], axis=0)
+        draw.ellipse((x-r, y-r, x+r, y+r), (0, 191, 255))
+
+        rgb = Image.fromarray(tick_data['rgb'])
+        draw = ImageDraw.Draw(rgb)
+        for x,y in points_cam:
+            draw.ellipse((x-r, y-r, x+r, y+r), (0, 191, 255))
+        x, y = np.mean(points_cam[0:1], axis=0)
+        draw.ellipse((x-r, y-r, x+r, y+r), (0, 191, 255))
+        _combined = np.hstack((np.array(rgb), np.array(fused)))
+        cv2.imshow('debug', _combined)
+        cv2.waitKey(1)
+
+        if self.debug_path is not None:
+            frame_number = self.step // 5
+            save_path = self.debug_path / f'{frame_number:06d}.png'
+            cv2.imwrite(str(save_path), _combined)
+
+        return
         
-        alpha = 0.75
-        hmap_stack = []
-        for t in range(len(hmap)):
-            hmap_out = hmap_tgt.copy()
-            
-            hmap_view = hmap[t] / np.amax(hmap[t]) * 256 # rescaling
-            hmap_view = np.dstack((hmap_view, hmap_view, hmap_view))
-            hmap_view = hmap_view.astype(np.uint8)
-            cv2.addWeighted(hmap_view, alpha, hmap_out, 1, 0, hmap_out)
-            #hmap_out = hmap_out.astype(np.uint8)
-            hmap_im = Image.fromarray(hmap_out)
-            hmap_imdraw = ImageDraw.Draw(hmap_im)
-            x, y = points_map[t]
-            hmap_imdraw.ellipse((x-r, y-r, x+r, y+r), (0, 191, 255))
-            #hmap_view = np.expand_dims(hmap_view, 2) * alpha + topdown_view
-            hmap_im = cv2.cvtColor(np.array(hmap_im), cv2.COLOR_BGR2RGB)
-            hmap_stack.append(hmap_im)
-            #cv2.imshow(f't={0.5*(t+1)}', hmap_im)
-        hmap_comb = np.hstack(hmap_stack)
 
         topdown = tick_data['topdown']
         _topdown = Image.fromarray(COLOR[CONVERTER[topdown]])
@@ -275,7 +310,7 @@ class DSPredAgent(MapAgent):
         _save_img = Image.fromarray(np.hstack([_rgb_img, _topdown]))
         _save_img = cv2.cvtColor(np.array(_save_img), cv2.COLOR_BGR2RGB)
 
-        if self.step % 10 == 0 and self.config.agent.save_images:
+        if self.step % 10 == 0 and self.aconfig.save_images:
             frame_number = self.step // 10
             save_path = self.save_debug_path / self.rep_name / 'debug' / f'{frame_number:06d}.png'
             cv2.imwrite(str(save_path), _save_img)

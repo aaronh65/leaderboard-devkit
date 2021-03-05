@@ -1,10 +1,12 @@
 # default config for sac w/semantic bev image as input
 
-algo: dspred_collect
+algo: dspred
 description: this is a template configuration
 project_root: /home/aaron/workspace/carla/leaderboard-devkit
 carla_root: /home/aaron/workspace/carla/CARLA_0.9.11
-#save_root: /data/leaderboard/results/rl/dspred_collect/debug/template
+save_root: /data/leaderboard/results/rl/dspred/debug/template
+save_data: False
+save_debug: False
 
 env:
   world_port: 2000
@@ -14,8 +16,6 @@ env:
   scenarios: no_traffic_scenarios.json
   repetitions: 1
   empty: false
-  hop_resolution: 2
-  save_data: false
 agent:
   mode: train
   total_timesteps: 500000

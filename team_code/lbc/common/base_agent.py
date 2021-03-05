@@ -12,13 +12,13 @@ class BaseAgent(autonomous_agent.AutonomousAgent):
     def setup(self, path_to_conf_file):
         self.track = autonomous_agent.Track.SENSORS
         config_type = type(path_to_conf_file)
-        if config_type == str:
+        if config_type == str: # figure this part out
             self.config_path = path_to_conf_file
             with open(self.config_path, 'r') as f:
                 config = yaml.load(f, Loader=yaml.Loader)
-            self.config = Bunch(config) # deprecated?
         else:
             self.config = path_to_conf_file
+            self.aconfig = self.config.agent
 
         self.step = -1
         self.wall_start = time.time()
@@ -82,24 +82,13 @@ class BaseAgent(autonomous_agent.AutonomousAgent):
     def tick(self, input_data, no_rgb=False):
         self.step += 1
 
-        if not no_rgb:
-            rgb = cv2.cvtColor(input_data['rgb'][1][:, :, :3], cv2.COLOR_BGR2RGB)
-            rgb_left = cv2.cvtColor(input_data['rgb_left'][1][:, :, :3], cv2.COLOR_BGR2RGB)
-            rgb_right = cv2.cvtColor(input_data['rgb_right'][1][:, :, :3], cv2.COLOR_BGR2RGB)
-        else:
-            rgb = None
-            rgb_left = None
-            rgb_right = None
+        result = {}
+        for key in input_data.keys():
+            if 'rgb' in key:
+                result[key] = cv2.cvtColor(input_data[key][1][:,:,:3], cv2.COLOR_BGR2RGB)
 
-        gps = input_data['gps'][1][:2]
-        speed = input_data['speed'][1]['speed']
-        compass = input_data['imu'][1][-1]
+        result['gps'] = input_data['gps'][1][:2]
+        result['speed'] = input_data['speed'][1]['speed']
+        result['compass'] = input_data['imu'][1][-1]
 
-        return {
-                'rgb': rgb,
-                'rgb_left': rgb_left,
-                'rgb_right': rgb_right,
-                'gps': gps,
-                'speed': speed,
-                'compass': compass
-                }
+        return result

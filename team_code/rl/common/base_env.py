@@ -13,8 +13,8 @@ class BaseEnv(gym.Env):
     def __init__(self, config, client, agent):
         super(BaseEnv, self).__init__()
 
-        self.all_config = config
-        self.config = config.env
+        self.config = config
+        self.econfig = config.env
         self.rconfig = None
         self.client = client
         self.hero_agent = agent # the user-defined agent class
@@ -24,21 +24,21 @@ class BaseEnv(gym.Env):
         # basic attributes + data provider setup
         self.world = self.client.get_world()
         self.traffic_manager = self.client.get_trafficmanager(
-                self.config.trafficmanager_port)
+                self.econfig.trafficmanager_port)
         self.traffic_manager.set_random_device_seed(
-                self.config.trafficmanager_seed)
+                self.econfig.trafficmanager_seed)
 
         CarlaDataProvider.set_client(self.client)
         CarlaDataProvider.set_world(self.world)
         CarlaDataProvider.set_traffic_manager_port(
-                self.config.trafficmanager_port)
+                self.econfig.trafficmanager_port)
 
         # leaderboard objects
         data_dir = f'{config.project_root}/leaderboard/data'
         self.indexer = RouteIndexer(
-                f'{data_dir}/{self.config.routes}',
-                f'{data_dir}/{self.config.scenarios}', 
-                self.config.repetitions)
+                f'{data_dir}/{self.econfig.routes}',
+                f'{data_dir}/{self.econfig.scenarios}', 
+                self.econfig.repetitions)
         self.num_routes = len(self.indexer._configs_list)
         self.manager = ScenarioManager(60, False) # 60s timeout?
         self.scenario = None
@@ -58,14 +58,12 @@ class BaseEnv(gym.Env):
         rconfig.agent = self.hero_agent
         self._load_world_and_scenario(rconfig)
 
-
-        self.frame = 0
-
         self.manager.start_system_time = time.time()
         self.manager.start_game_time = GameTime.get_time()
         self.manager._watchdog.start()
         self.manager._running = True
 
+        self.frame = 0
         if log is not None:
             self.env_log = {}
             self.env_log['town'] = rconfig.town
@@ -74,7 +72,9 @@ class BaseEnv(gym.Env):
 
         route_num = int(rconfig.name.split('_')[-1])
         route_name = f'route_{route_num:02d}'
+        repetition = f'repetition_{rconfig.repetition_index:02d}'
         os.environ['ROUTE_NAME'] = route_name
+        os.environ['REPETITION'] = repetition
 
         self.rconfig = rconfig
         self.hero_agent.reset()
@@ -90,14 +90,14 @@ class BaseEnv(gym.Env):
         self.world.apply_settings(settings)
         self.world.reset_all_traffic_lights()
         self.traffic_manager = self.client.get_trafficmanager(
-                self.config.trafficmanager_port)
+                self.econfig.trafficmanager_port)
         self.traffic_manager.set_synchronous_mode(True)
 
         # setup provider and tick to check correctness
         CarlaDataProvider.set_client(self.client)
         CarlaDataProvider.set_world(self.world)
         CarlaDataProvider.set_traffic_manager_port(
-                self.config.trafficmanager_port)
+                self.econfig.trafficmanager_port)
         self.map = CarlaDataProvider.get_map()
         
         if CarlaDataProvider.is_sync_mode():
@@ -109,7 +109,7 @@ class BaseEnv(gym.Env):
         self.scenario = RouteScenario(
                 self.world, rconfig, 
                 criteria_enable=True, 
-                env_config=self.config)
+                env_config=self.econfig)
         self.manager.load_scenario(
                 self.scenario, rconfig.agent,
                 rconfig.repetition_index)

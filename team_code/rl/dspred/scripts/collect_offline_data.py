@@ -23,9 +23,10 @@ parser.add_argument('--routenum', type=int) # optional
 parser.add_argument('--scenarios', action='store_true') # leaderboard-triggered scnearios
 parser.add_argument('--repetitions', type=int, default=1) # should we directly default to this in indexer?
 parser.add_argument('--empty', action='store_true') # other agents present?
-parser.add_argument('--save_images', action='store_true')
+parser.add_argument('--save_debug', action='store_true')
+parser.add_argument('--save_data', action='store_true')
 parser.add_argument('--verbose', action='store_true')
-parser.add_argument('-d', '--debug', action='store_true')
+parser.add_argument('-D', '--debug', action='store_true')
 
 args = parser.parse_args()
 
@@ -63,6 +64,8 @@ config['remote'] = args.remote
 config['project_root'] = project_root
 config['carla_root'] = carla_root
 config['save_root'] = save_root
+config['save_data'] = args.save_data
+config['save_debug'] = args.save_debug
 
 # setup env config
 econf = config['env']
@@ -74,9 +77,8 @@ econf['scenarios'] = scenarios
 econf['repetitions'] = args.repetitions
 econf['empty'] = args.empty
 econf['hop_resolution'] = 2.0
-econf['save_data'] = True
 
-
+# remove timesteps in favor of repetitions?
 aconf = config['agent']
 if args.debug:
     aconf['total_timesteps'] = 2000
@@ -87,11 +89,10 @@ total_timesteps = 2000 if args.debug else aconf['total_timesteps']
 burn_timesteps = 250 if args.debug else 2000
 save_frequency = 500 if args.debug else 5000
 
-aconf['mode'] = 'train'
+aconf['mode'] = 'eval'
 aconf['total_timesteps'] = total_timesteps
 aconf['burn_timesteps'] = burn_timesteps
 aconf['save_frequency'] = save_frequency
-aconf['save_images'] = args.save_images
 
 config_path = f'{save_root}/config.yml'
 with open(config_path, 'w') as f:
