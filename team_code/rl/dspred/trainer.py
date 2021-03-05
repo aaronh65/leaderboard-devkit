@@ -58,23 +58,24 @@ def parse_args():
     parser.add_argument('--no_scenarios', action='store_true') # leaderboard-triggered scnearios
     #parser.add_argument('--repetitions', type=int, default=1) # should we directly default to this in indexer?
     parser.add_argument('--empty', action='store_true')
-    parser.add_argument('--buffer_size', type=int, default=10000)
+    parser.add_argument('--buffer_size', type=int, default=50000)
     parser.add_argument('--batch_size', type=int, default=16)
     parser.add_argument('--log', action='store_true')
     parser.add_argument('--save_dir', type=pathlib.Path, default='checkpoints')
     parser.add_argument('--id', type=str, default=datetime.now().strftime("%Y%m%d_%H%M%S")) # replace with datetime
     args = parser.parse_args()
 
-    save_dir = args.save_dir / 'debug' / args.id if args.debug else args.save_dir / args.id
-    args.save_dir = save_dir
-    args.save_dir.mkdir(parents=True, exist_ok=True)
-
     # assert to make sure setup.bash sourced?
     #project_root = os.environ['PROJECT_ROOT']
-    project_root = '/home/aaron/workspace/carla/leaderboard-devkit'
+    #project_root = '/home/aaron/workspace/carla/leaderboard-devkit'
+    project_root = '/home/aaronhua/leaderboard-devkit'
     date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
     suffix = f'debug/{date_str}' if args.debug else date_str
     save_root = f'{args.data_root}/leaderboard/results/rl/dspred/{suffix}'
+    os.makedirs(save_root)
+
+    args.save_dir = save_root / args.save_dir
+    args.save_dir.mkdir(parents=True, exist_ok=True)
 
     # retrieve template config
     config_path = f'{project_root}/team_code/rl/config/dspred.yml'
@@ -96,15 +97,16 @@ def parse_args():
     burn_timesteps = 250 if args.debug else 2000
     save_frequency = 500 if args.debug else 5000
     batch_size = 4 if args.debug else args.batch_size
+    buffer_size = 200 if args.debug else args.buffer_size
 
     aconf['mode'] = 'train'
     aconf['total_timesteps'] = total_timesteps
     aconf['burn_timesteps'] = burn_timesteps
     aconf['save_frequency'] = save_frequency
     aconf['batch_size' ] = batch_size
+    aconf['buffer_size'] = buffer_size
 
     # save new config path
-    os.makedirs(save_root)
     with open(f'{save_root}/config.yml', 'w') as f:
         yaml.dump(config, f, default_flow_style=False, sort_keys=False)
 

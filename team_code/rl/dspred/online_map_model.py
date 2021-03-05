@@ -125,13 +125,13 @@ class MapModel(pl.LightningModule):
         self.discount = 0.99 ** (self.n + 1)
         self.criterion = torch.nn.MSELoss(reduction='none') # weights? prioritized replay?
 
-        #self.populate(config.agent.burn_timesteps')
-        #print('done populating')
+        self.populate(config.agent.burn_timesteps)
+        print('done populating')
 
         #with open('buffer.pkl', 'wb') as f:
         #    pkl.dump(self.env.buffer, f)
-        with open('buffer.pkl', 'rb') as f:
-            self.env.buffer = pkl.load(f)
+        #with open('buffer.pkl', 'rb') as f:
+        #    self.env.buffer = pkl.load(f)
 
         self.env.reset()
         self.last_loss = 0
