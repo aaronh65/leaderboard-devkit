@@ -54,7 +54,7 @@ def parse_args():
     #parser.add_argument('--repetitions', type=int, default=1) # should we directly default to this in indexer?
     parser.add_argument('--empty', action='store_true')
     parser.add_argument('--buffer_size', type=int, default=10000)
-    parser.add_argument('--batch_size', type=int, default=64)
+    parser.add_argument('--batch_size', type=int, default=16)
     args = parser.parse_args()
 
 
@@ -84,11 +84,13 @@ def parse_args():
     total_timesteps = 2000 if args.debug else aconf['total_timesteps']
     burn_timesteps = 250 if args.debug else 2000
     save_frequency = 500 if args.debug else 5000
+    batch_size = 4 if args.debug else args.batch_size
 
     aconf['mode'] = 'train'
     aconf['total_timesteps'] = total_timesteps
     aconf['burn_timesteps'] = burn_timesteps
     aconf['save_frequency'] = save_frequency
+    aconf['batch_size' ] = batch_size
 
     # save new config path
     os.makedirs(save_root)

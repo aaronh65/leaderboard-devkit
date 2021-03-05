@@ -70,7 +70,7 @@ def visualize(batch, points, vmap, hmap, npoints, nvmap, nhmap, naction, meta):
         _draw = ImageDraw.Draw(_topdown)
         for x, y in points[i].cpu().numpy():
             _draw.ellipse((x-2, y-2, x+2, y+2), (255,0,0))
-        x, y = action[i].cpu().numpy().astype(np.uint8)
+        #x, y = action[i].cpu().numpy().astype(np.uint8)
         _draw.ellipse((x-2, y-2, x+2, y+2), (0,255,0))
         _draw.text((5, 10), f'action = ({x},{y})', textcolor)
         _draw.text((5, 20), f'Q = {Q[i].item():2f}', textcolor)
@@ -85,7 +85,7 @@ def visualize(batch, points, vmap, hmap, npoints, nvmap, nhmap, naction, meta):
         _ndraw = ImageDraw.Draw(_ntopdown)
         for x, y in npoints[i].cpu().numpy():
             _ndraw.ellipse((x-2, y-2, x+2, y+2), (255,0,0))
-        x, y = naction[i].cpu().numpy().astype(np.uint8)
+        #x, y = naction[i].cpu().numpy().astype(np.uint8)
         _ndraw.ellipse((x-2, y-2, x+2, y+2), (0,255,0))
         _ndraw.text((5, 10), f'action = ({x},{y})', textcolor)
         _ndraw.text((5, 20), f'nQ = {nQ[i].item():.2f}', textcolor)
@@ -93,10 +93,11 @@ def visualize(batch, points, vmap, hmap, npoints, nvmap, nhmap, naction, meta):
         #_ntopdown = cv2.cvtColor(np.array(_ntopdown), cv2.COLOR_BGR2RGB)
 
         _combined = np.hstack((np.array(_topdown), np.array(_ntopdown)))
-        #cv2.imshow(f'topdown{i}', cv2.cvtColor(_combined, cv2.COLOR_BGR2RGB))
+        cv2.imshow(f'topdown{i}', cv2.cvtColor(_combined, cv2.COLOR_BGR2RGB))
         _combined = _combined.transpose(2,0,1)
         images.append((batch_loss[i].item(), torch.ByteTensor(_combined)))
-    #cv2.waitKey(0)
+
+    cv2.waitKey(1)
     images.sort(key=lambda x: x[0], reverse=True)
     result = torchvision.utils.make_grid([x[1] for x in images], nrow=3)
     result = wandb.Image(result.numpy().transpose(1,2,0))
@@ -123,23 +124,29 @@ class MapModel(pl.LightningModule):
         self.n = config.agent.n
         self.discount = 0.99 ** (self.n + 1)
         self.criterion = torch.nn.MSELoss(reduction='none') # weights? prioritized replay?
-        self.populate(1000)
-        with open('buffer.pkl', 'wb') as f:
-            pkl.dump(self.env.buffer, f)
-        print('done populating')
+
+        #self.populate(1000)
+        #with open('buffer.pkl', 'wb') as f:
+        #    pkl.dump(self.env.buffer, f)
+        #print('done populating')
+
+        with open('buffer.pkl', 'rb') as f:
+            self.env.buffer = pkl.load(f)
+
+        self.env.reset()
 
     # burn in
     def populate(self, steps=100):
-        self.env.reset()
         # make sure agent is burning in instead of inferencing
         self.env.hero_agent.burn_in = True
+        done = False
         for step in range(steps):
-            reward, done = self.env.step()
-            if done:
-                self.env.cleanup()
+            if done or step % 200 == 0:
+                if step != 0:
+                    self.env.cleanup()
                 self.env.reset()
+            reward, done = self.env.step()
         self.env.cleanup()
-        self.env.reset()
         self.env.hero_agent.burn_in = False
 
     def forward(self, topdown, target, debug=False):
@@ -155,31 +162,30 @@ class MapModel(pl.LightningModule):
 
         return points, (logits, target_heatmap)
 
-    def get_action(self, vmap):
-        #aim_vmap = torch.mean(vmap[:,0:2,:,:], dim=1) #(N, C, H, W)
-        vmap_flat = vmap.view(vmap.shape[:-2] + (-1,)) # (N, C, H*W)
-        Q, action_flat = torch.max(vmap_flat, -1, keepdim=True) # (N, C, 1)
+    def get_actions(self, vmap):
+        #aim_vmap = torch.mean(vmap[:,0:2,:,:], dim=1) #(N, H, W)
+        vmap_flat = vmap.view(vmap.shape[:-2] + (-1,)) # (N, 4, H*W)
+        Q_all, action_flat = torch.max(vmap_flat, -1, keepdim=True) # (N, 4, 1)
         action = torch.cat((
-            torch.remainder(aim_flat, 256),  # aim_flat % 256 = x (column)
-            torch.floor_divide(aim_flat, 256)),  # aim_flat // 256 = y (row)
+            action_flat % 256,
+            action_flat // 256),
             axis=2) # (N, C, 2)
+            #torch.remainder(action_flat, 256),  # aim_flat % 256 = x (column)
+            #torch.floor_divide(action_flat, 256)),  # aim_flat // 256 = y (row)
         
-        return action, Q
+        return action, Q_all.squeeze() # (N,4,2), (N,4)
 
-    def get_action_value(self, vmap, action):
+    def get_action_values(self, vmap, action):
         # action is (N, C, 2)
-        action_xy = action.view((-1, 4, 2)) # Nx4x2
+        #action_xy = action.view((-1, 4, 2)) # Nx4x2
         x, y = action[...,0], action[...,1] # Nx4
         action_flat = torch.unsqueeze(y*256 + x, dim=2) # (N,4, 1)
+        #action_flat = y*256 + x # Nx4
         vmap_flat = vmap.view(vmap.shape[:-2] + (-1,)) # (N, 4, H*W)
-        all_Q = vmap_flat.gather(1, action_flat.long()) # (N, 4)
-        Q = torch.mean(all_Q[:, :2, ...])
-        return Q
+        Q_all = vmap_flat.gather(2, action_flat.long()) # (N, 4, 1)
+        return Q_all.squeeze() # (N,4)
 
     def training_step(self, batch, batch_nb):
-
-        ## step environment
-        self.env.step()
 
         ## train on batch
         state, action, reward, next_state, done = batch
@@ -187,25 +193,35 @@ class MapModel(pl.LightningModule):
         # get Q values
         topdown, target = state
         points, (vmap, hmap) = self.forward(topdown, target, debug=True)
-        Q = self.get_action_value(vmap, action)
+        Q_all = self.get_action_values(vmap, action)
 
         ntopdown, ntarget = next_state
         with torch.no_grad():
             npoints, (nvmap, nhmap) = self.forward(ntopdown, ntarget, debug=True)
-        naction, nQ = self.get_action(nvmap)
+        naction, nQ_all = self.get_actions(nvmap)
+
+        # choose t=1,2
+        Q = torch.mean(Q_all[:, :2], axis=1, keepdim=True)
+        nQ = torch.mean(nQ_all[:, :2], axis=1, keepdim=True)
 
         # compute loss and metrics
         target = reward + self.discount * nQ
         batch_loss = self.criterion(Q, target) # TD(n) error
         loss = batch_loss.mean()
 
-#        metrics = {f'TD({self.n}) loss': loss.item()}
-#        if batch_nb % 10 == 0:
-#            meta = {'Q': Q, 'nQ': nQ, 'batch_loss': batch_loss, 'hparams': self.hparams, 'n':self.n}
-#            images = visualize(batch, points, vmap, hmap, npoints, nvmap, nhmap, naction, meta)
-#            metrics['train_image'] = images
-#        self.logger.log_metrics(metrics, self.global_step)
-#
+        metrics = {f'TD({self.n}) loss': loss.item()}
+        if batch_nb % 10 == 0:
+            meta = {'Q': Q, 'nQ': nQ, 'batch_loss': batch_loss, 'hparams': self.hparams, 'n':self.n}
+            images = visualize(batch, points, vmap, hmap, npoints, nvmap, nhmap, naction, meta)
+            metrics['train_image'] = images
+        #self.logger.log_metrics(metrics, self.global_step)
+
+        ## step environment
+        _reward, _done = self.env.step() # reward, done
+        if _done:
+            self.env.cleanup()
+            _reward, _done = self.env.reset()
+
         return {'loss': loss}
 
     def configure_optimizers(self):
@@ -236,6 +252,7 @@ def main(hparams):
         model.hparams.batch_size = hparams.batch_size
         model.n = hparams.n
         print(f'resuming from {resume}')
+
     except Exception as e:
         traceback.print_exception(type(e), e, e.__traceback__)
         resume = None
