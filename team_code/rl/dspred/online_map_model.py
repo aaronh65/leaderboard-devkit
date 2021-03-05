@@ -216,7 +216,8 @@ class MapModel(pl.LightningModule):
             images = visualize(batch, points, vmap, hmap, npoints, nvmap, nhmap, naction, meta)
             metrics['train_image'] = images
         self.last_loss = loss
-        self.logger.log_metrics(metrics, self.global_step)
+        if self.logger != None:
+            self.logger.log_metrics(metrics, self.global_step)
 
         ## step environment
         _reward, _done = self.env.step() # reward, done
