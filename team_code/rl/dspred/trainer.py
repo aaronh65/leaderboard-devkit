@@ -31,7 +31,7 @@ def main(args, config):
 
         checkpoint_callback = ModelCheckpoint(config.save_root, save_top_k=1)
         trainer = pl.Trainer(
-            gpus=-1, 
+            gpus=1, 
             max_steps=config.agent.total_timesteps,
             val_check_interval=10,
             logger=logger, 
