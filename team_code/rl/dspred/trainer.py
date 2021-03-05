@@ -3,6 +3,7 @@ import yaml, json
 import argparse
 import traceback
 from datetime import datetime
+import pathlib
 
 from carla import Client 
 from env import CarlaEnv
@@ -12,6 +13,7 @@ from online_map_model import MapModel
 from common.utils import dict_to_sns
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning.loggers import WandbLogger
 
 def main(args, config):
     try:
@@ -23,12 +25,15 @@ def main(args, config):
         model.env = env
         model.setup_train(env, config)
 
-        logger = False
+        logger = False 
+        if args.log:
+            logger = WandbLogger(id=args.id, save_dir=str(args.save_dir), project='dqn')
+
         checkpoint_callback = ModelCheckpoint(config.save_root, save_top_k=1)
         trainer = pl.Trainer(
             gpus=-1, 
-            #max_steps=config.agent.total_timesteps,
-            max_steps=200,
+            max_steps=config.agent.total_timesteps,
+            val_check_interval=10,
             logger=logger, 
             checkpoint_callback=checkpoint_callback)
         trainer.fit(model)
@@ -55,8 +60,14 @@ def parse_args():
     parser.add_argument('--empty', action='store_true')
     parser.add_argument('--buffer_size', type=int, default=10000)
     parser.add_argument('--batch_size', type=int, default=16)
+    parser.add_argument('--log', action='store_true')
+    parser.add_argument('--save_dir', type=pathlib.Path, default='checkpoints')
+    parser.add_argument('--id', type=str, default=datetime.now().strftime("%Y%m%d_%H%M%S")) # replace with datetime
     args = parser.parse_args()
 
+    save_dir = args.save_dir / 'debug' / args.id if args.debug else args.save_dir / args.id
+    args.save_dir = save_dir
+    args.save_dir.mkdir(parents=True, exist_ok=True)
 
     # assert to make sure setup.bash sourced?
     #project_root = os.environ['PROJECT_ROOT']

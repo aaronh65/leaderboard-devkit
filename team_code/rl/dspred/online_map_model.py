@@ -93,11 +93,11 @@ def visualize(batch, points, vmap, hmap, npoints, nvmap, nhmap, naction, meta):
         #_ntopdown = cv2.cvtColor(np.array(_ntopdown), cv2.COLOR_BGR2RGB)
 
         _combined = np.hstack((np.array(_topdown), np.array(_ntopdown)))
-        cv2.imshow(f'topdown{i}', cv2.cvtColor(_combined, cv2.COLOR_BGR2RGB))
+        #cv2.imshow(f'topdown{i}', cv2.cvtColor(_combined, cv2.COLOR_BGR2RGB))
         _combined = _combined.transpose(2,0,1)
         images.append((batch_loss[i].item(), torch.ByteTensor(_combined)))
 
-    cv2.waitKey(1)
+    #cv2.waitKey(1)
     images.sort(key=lambda x: x[0], reverse=True)
     result = torchvision.utils.make_grid([x[1] for x in images], nrow=3)
     result = wandb.Image(result.numpy().transpose(1,2,0))
@@ -125,15 +125,16 @@ class MapModel(pl.LightningModule):
         self.discount = 0.99 ** (self.n + 1)
         self.criterion = torch.nn.MSELoss(reduction='none') # weights? prioritized replay?
 
-        #self.populate(1000)
-        #with open('buffer.pkl', 'wb') as f:
-        #    pkl.dump(self.env.buffer, f)
+        #self.populate(config.agent.burn_timesteps')
         #print('done populating')
 
+        #with open('buffer.pkl', 'wb') as f:
+        #    pkl.dump(self.env.buffer, f)
         with open('buffer.pkl', 'rb') as f:
             self.env.buffer = pkl.load(f)
 
         self.env.reset()
+        self.last_loss = 0
 
     # burn in
     def populate(self, steps=100):
@@ -214,15 +215,19 @@ class MapModel(pl.LightningModule):
             meta = {'Q': Q, 'nQ': nQ, 'batch_loss': batch_loss, 'hparams': self.hparams, 'n':self.n}
             images = visualize(batch, points, vmap, hmap, npoints, nvmap, nhmap, naction, meta)
             metrics['train_image'] = images
-        #self.logger.log_metrics(metrics, self.global_step)
+        self.last_loss = loss
+        self.logger.log_metrics(metrics, self.global_step)
 
         ## step environment
         _reward, _done = self.env.step() # reward, done
         if _done:
             self.env.cleanup()
-            _reward, _done = self.env.reset()
+            self.env.reset()
 
         return {'loss': loss}
+
+    def validation_step(self):
+        return self.last_loss.item()
 
     def configure_optimizers(self):
         optim = torch.optim.Adam(
@@ -235,6 +240,7 @@ class MapModel(pl.LightningModule):
 
     def train_dataloader(self):
         return get_dataloader(self.env.buffer, self.config.agent.batch_size)
+
 
 
 def main(hparams):
@@ -262,6 +268,7 @@ def main(hparams):
             resume_from_checkpoint=resume,
             logger=logger,
             checkpoint_callback=checkpoint_callback)
+            #check_val_every
 
     trainer.fit(model)
 
