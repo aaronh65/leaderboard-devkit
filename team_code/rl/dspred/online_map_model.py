@@ -1,4 +1,4 @@
-import sys, traceback
+import os, sys, traceback
 from datetime import datetime
 import pickle as pkl
 
@@ -27,6 +27,7 @@ from lbc.carla_project.src.common import COLOR
 from rl.dspred.online_dataset import get_dataloader
 #from rl.dspred.online_dataset import CarlaDataset
  
+HAS_DISPLAY = int(os.environ['HAS_DISPLAY'])
 
 # takes (N,3,H,W) topdown and (N,4,H,W) vmaps
 # averages t=0.5s,1.0s vmaps and overlays it on topdown
@@ -45,6 +46,7 @@ def fuse_vmaps(topdown, vmap, temperature=10, alpha=0.75):
     fused = fused.astype(np.uint8) # (N,H,W,3)
     return fused
 
+# visualize each timestep's heatmap?
 @torch.no_grad()
 def visualize(batch, points, vmap, hmap, action, npoints, nvmap, nhmap, naction, meta):
     images = list()
@@ -96,11 +98,14 @@ def visualize(batch, points, vmap, hmap, action, npoints, nvmap, nhmap, naction,
         #_ntopdown = cv2.cvtColor(np.array(_ntopdown), cv2.COLOR_BGR2RGB)
 
         _combined = np.hstack((np.array(_topdown), np.array(_ntopdown)))
-        #cv2.imshow(f'topdown{i}', cv2.cvtColor(_combined, cv2.COLOR_BGR2RGB))
+        if HAS_DISPLAY:
+            cv2.imshow(f'topdown{i}', cv2.cvtColor(_combined, cv2.COLOR_BGR2RGB))
         _combined = _combined.transpose(2,0,1)
         images.append((batch_loss[i].item(), torch.ByteTensor(_combined)))
 
-    #cv2.waitKey(1)
+    if HAS_DISPLAY:
+        cv2.waitKey(1)
+
     images.sort(key=lambda x: x[0], reverse=True)
     result = torchvision.utils.make_grid([x[1] for x in images], nrow=3)
     result = wandb.Image(result.numpy().transpose(1,2,0))

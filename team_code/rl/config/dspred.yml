@@ -16,6 +16,7 @@ env:
   scenarios: no_traffic_scenarios.json
   repetitions: 1
   empty: false
+  hop_resolution: 1
 agent:
   mode: train
   total_timesteps: 500000
