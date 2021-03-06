@@ -143,11 +143,11 @@ class CarlaDataset(Dataset):
     
         return (topdown, target), action, reward, (ntopdown, ntarget), done
 
-def get_dataloader(buf, batch_size, is_train=False, num_workers=4):
+def get_dataloader(buf, is_train=False, num_workers=4):
     num_samples = buf.buffer_size if is_train else buf.batch_size
     weights = np.ones(num_samples)
     sampler = torch.utils.data.sampler.WeightedRandomSampler(weights, num_samples)
-    return DataLoader(CarlaDataset(buf, num_samples), batch_size=batch_size, num_workers=num_workers, sampler=sampler, drop_last=True, pin_memory=True)
+    return DataLoader(CarlaDataset(buf, num_samples), batch_size=buf.batch_size, num_workers=num_workers, sampler=sampler, drop_last=True, pin_memory=True)
 
 
 if __name__ == '__main__':

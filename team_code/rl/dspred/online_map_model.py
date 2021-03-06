@@ -133,24 +133,22 @@ class MapModel(pl.LightningModule):
         self.discount = 0.99 ** (self.n + 1)
         self.criterion = torch.nn.MSELoss(reduction='none') # weights? prioritized replay?
 
-        #self.populate(config.agent.burn_timesteps)
+        self.populate(config.agent.burn_timesteps)
         #with open('buffer.pkl', 'wb') as f:
         #    pkl.dump(self.env.buffer, f)
-
-
-        with open('buffer.pkl', 'rb') as f:
-            self.env.buffer = pkl.load(f)
+        #with open('buffer.pkl', 'rb') as f:
+        #    self.env.buffer = pkl.load(f)
 
         print('done populating')
         self.env.reset()
         self.last_loss = 0
 
     # burn in
-    def populate(self, steps=100):
+    def populate(self, steps):
         # make sure agent is burning in instead of inferencing
         self.env.hero_agent.burn_in = True
         done = False
-        for step in range(steps):
+        for step in range(steps + self.env.warmup_frames):
             if done or step % 200 == 0:
                 if step != 0:
                     self.env.cleanup()
@@ -195,6 +193,7 @@ class MapModel(pl.LightningModule):
 
         ## step environment
         self.eval()
+        self.env.hero_agent.burn_in = np.random.random() < self.config.agent.epsilon
         with torch.no_grad():
             _reward, _done = self.env.step() # reward, done
             if _done:
@@ -306,9 +305,9 @@ class MapModel(pl.LightningModule):
 
 
     def train_dataloader(self):
-        return get_dataloader(self.env.buffer, self.config.agent.batch_size, is_train=True)
+        return get_dataloader(self.env.buffer, is_train=True)
     def val_dataloader(self):
-        return get_dataloader(self.env.buffer, self.config.agent.batch_size, is_train=False)
+        return get_dataloader(self.env.buffer, is_train=False)
 
 
 

@@ -66,7 +66,10 @@ def parse_args():
     parser.add_argument('--batch_size', type=int, default=16)
     parser.add_argument('--log', action='store_true')
     parser.add_argument('--save_dir', type=pathlib.Path, default='checkpoints')
-    parser.add_argument('--id', type=str, default=datetime.now().strftime("%Y%m%d_%H%M%S")) # replace with datetime
+    parser.add_argument('--id', type=str, default=datetime.now().strftime("%Y%m%d_%H%M%S"))
+
+    parser.add_argument('--n', type=int, default=20)
+    parser.add_argument('--epsilon', type=float, default=0.1)
     args = parser.parse_args()
 
     # assert to make sure setup.bash sourced?
@@ -98,7 +101,7 @@ def parse_args():
     aconf = config['agent']
     #total_timesteps = 2000 if args.debug else aconf['total_timesteps']
     total_timesteps = 200 if args.debug else aconf['total_timesteps']
-    burn_timesteps = 250 if args.debug else 2000
+    burn_timesteps = 50 if args.debug else 2000
     save_frequency = 500 if args.debug else 5000
     batch_size = 4 if args.debug else args.batch_size
     buffer_size = 200 if args.debug else args.buffer_size
@@ -109,6 +112,8 @@ def parse_args():
     aconf['save_frequency'] = save_frequency
     aconf['batch_size' ] = batch_size
     aconf['buffer_size'] = buffer_size
+    aconf['epsilon'] = args.epsilon
+    aconf['n'] = args.n
 
     # save new config path
     with open(f'{save_root}/config.yml', 'w') as f:

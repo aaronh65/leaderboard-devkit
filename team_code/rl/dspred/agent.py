@@ -40,6 +40,8 @@ class DSPredAgent(MapAgent):
         self.net.cuda()
         self.net.eval()
 
+        self.burn_in = False
+
     def _init(self):
         super()._init()
         self._turn_controller = PIDController(K_P=1.25, K_I=0.75, K_D=0.3, n=40)
@@ -47,7 +49,6 @@ class DSPredAgent(MapAgent):
 
     def reset(self):
         self.initialized = False
-        self.burn_in = False
 
         # make debug directories
         save_root = self.config.save_root
@@ -160,6 +161,7 @@ class DSPredAgent(MapAgent):
         else: # burning in
             points_map = np.random.randint(0, 256, size=(4,2)) 
             points_world = self.converter.map_to_world(torch.Tensor(points_map)).numpy()
+            #points_cam = self.converter.map_to_cam(torch.Tensor(points_map)).numpy()
             #print('burning in')
             #print((points_world[1] + points_world[0]) / 2.0)
             #print(np.linalg.norm(points_world[0] - points_world[1]) * 2.0)
