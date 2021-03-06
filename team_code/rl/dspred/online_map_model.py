@@ -105,7 +105,7 @@ def visualize(batch, points, vmap, hmap, action, npoints, nvmap, nhmap, naction,
     result = torchvision.utils.make_grid([x[1] for x in images], nrow=3)
     result = wandb.Image(result.numpy().transpose(1,2,0))
 
-    return result
+    return images, result
 
 
 
@@ -191,7 +191,14 @@ class MapModel(pl.LightningModule):
         return Q_all.squeeze() # (N,4)
 
     def training_step(self, batch, batch_nb):
+        metrics ={}
 
+        ## step environment
+        _reward, _done = self.env.step() # reward, done
+        if _done:
+            self.env.cleanup()
+            self.env.reset()
+        
         ## train on batch
         state, action, reward, next_state, done = batch
         
@@ -216,19 +223,20 @@ class MapModel(pl.LightningModule):
 
         metrics = {f'TD({self.n}) loss': loss.item()}
         if batch_nb % 10 == 0:
+
+            if self.config.save_debug:
+                img = self.env.agent.debug_img 
+                metrics['debug_image'] = WandB.Image(img)
+
             meta = {'Q': Q, 'nQ': nQ, 'batch_loss': batch_loss, 'hparams': self.hparams, 'n':self.n}
             images = visualize(batch, points, vmap, hmap, action, npoints, nvmap, nhmap, naction, meta)
             metrics['train_image'] = images
+            
         self.last_loss = loss
         if self.logger != None:
             self.logger.log_metrics(metrics, self.global_step)
 
-        ## step environment
-        _reward, _done = self.env.step() # reward, done
-        if _done:
-            self.env.cleanup()
-            self.env.reset()
-
+        
         return {'loss': loss}
 
     def validation_step(self):
