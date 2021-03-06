@@ -27,23 +27,6 @@ class ReplayBuffer():
             buf.append(data)
 
     def sample(self, t):
-        #indices = np.random.randint(len(self.states)-1, size=self.batch_size)
-        #batch = [[], [], [], [], []]
-
-        #for t in indices:
-        #    # check for end index
-        #    end = min(t + self.n, len(self.states) - 1)
-        #    if True in self.dones[t:end+1]:
-        #        end = self.dones[t:end+1].index(True)
-        #    condition = (end == len(self.states)-1) or self.dones[end]
-        #    next_state = self.states[end] if condition else self.states[end+1]
-
-        #    batch[0].append(self.states[end])
-        #    batch[1].append(self.actions[end])
-        #    batch[2].append(np.dot(self.rewards[t:end+1], self.discount[:end-t+1]))
-        #    batch[3].append(self.dones[end])
-        #    batch[4].append(next_state)
-            # check for end index
         end = min(t + self.n, len(self.states) - 1)
         dones = islice(self.dones, t, end+1)
         if True in dones:

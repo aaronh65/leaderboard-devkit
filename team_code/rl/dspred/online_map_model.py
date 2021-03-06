@@ -180,17 +180,12 @@ class MapModel(pl.LightningModule):
             action_flat % 256,
             action_flat // 256),
             axis=2) # (N, C, 2)
-            #torch.remainder(action_flat, 256),  # aim_flat % 256 = x (column)
-            #torch.floor_divide(action_flat, 256)),  # aim_flat // 256 = y (row)
         
         return action, Q_all.squeeze() # (N,4,2), (N,4)
 
     def get_action_values(self, vmap, action):
-        # action is (N, C, 2)
-        #action_xy = action.view((-1, 4, 2)) # Nx4x2
         x, y = action[...,0], action[...,1] # Nx4
         action_flat = torch.unsqueeze(y*256 + x, dim=2) # (N,4, 1)
-        #action_flat = y*256 + x # Nx4
         vmap_flat = vmap.view(vmap.shape[:-2] + (-1,)) # (N, 4, H*W)
         Q_all = vmap_flat.gather(2, action_flat.long()) # (N, 4, 1)
         return Q_all.squeeze() # (N,4)
@@ -230,12 +225,12 @@ class MapModel(pl.LightningModule):
         if batch_nb % 10 == 0:
 
             if self.config.save_debug:
-                img = self.env.agent.debug_img 
-                metrics['debug_image'] = WandB.Image(img)
+                img = cv2.cvtColor(np.array(self.env.hero_agent.debug_img), cv2.COLOR_RGB2BGR)
+                metrics['debug_image'] = wandb.Image(img)
 
             meta = {'Q': Q, 'nQ': nQ, 'batch_loss': batch_loss, 'hparams': self.hparams, 'n':self.n}
-            images = visualize(batch, points, vmap, hmap, action, npoints, nvmap, nhmap, naction, meta)
-            metrics['train_image'] = images
+            images, result = visualize(batch, points, vmap, hmap, action, npoints, nvmap, nhmap, naction, meta)
+            metrics['train_image'] = result
             
         self.last_loss = loss
         if self.logger != None:
@@ -280,12 +275,11 @@ def main(hparams):
     except Exception as e:
         traceback.print_exception(type(e), e, e.__traceback__)
         resume = None
-
-    trainer = pl.Trainer(
+        trainer = pl.Trainer(
             gpus=-1, max_epochs=hparams.max_epochs,
             resume_from_checkpoint=resume,
             logger=logger,
-            checkpoint_callback=checkpoint_callback)
+            checkpoint_callback=checkpoint_callback,)
             #check_val_every
 
     trainer.fit(model)

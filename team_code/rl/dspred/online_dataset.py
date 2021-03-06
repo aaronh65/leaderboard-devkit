@@ -143,8 +143,9 @@ class CarlaDataset(Dataset):
         return (topdown, target), action, reward, (ntopdown, ntarget), done
 
 def get_dataloader(buf, batch_size, num_workers=4):
-    return DataLoader(CarlaDataset(buf), batch_size=batch_size, num_workers=num_workers,
-             drop_last=True, pin_memory=True)
+    weights = np.ones(buf.buffer_size)
+    sampler = torch.utils.data.sampler.WeightedRandomSampler(weights, buf.buffer_size)
+    return DataLoader(CarlaDataset(buf), batch_size=batch_size, num_workers=num_workers, sampler=sampler, drop_last=True, pin_memory=True)
 
 
 if __name__ == '__main__':
@@ -162,12 +163,8 @@ if __name__ == '__main__':
     model.cuda()
 
     parser = argparse.ArgumentParser()
-    #parser.add_argument('--dataset_dir', type=str, required=True)
-    #parser.add_argument('--n', type=int, default=0)
     args = parser.parse_args()
 
-    #data = CarlaDataset(args.dataset_dir, n=args.n)
-    #val_data = get_dataset(args.dataset_dir, False, 4, sample_by='none', n=args.n)
     with open('buffer.pkl', 'rb') as f:
         buf = pkl.load(f)
     buf.buffer_size = 100
@@ -192,8 +189,6 @@ if __name__ == '__main__':
             _topdown = Image.fromarray(_topdown)
 
             _draw = ImageDraw.Draw(_topdown)
-            #x, y = action[i].cpu().squeeze().numpy().astype(np.uint8)
-            #_draw.ellipse((x-2, y-2, x+2, y+2), (0,255,0))
             for x, y in points[i].cpu().numpy():
                 _draw.ellipse((x-2, y-2, x+2, y+2), (0,255,0))
             _draw.text((5, 10), f'reward = {reward[i].item():.5f}', (255,255,255))
@@ -201,7 +196,6 @@ if __name__ == '__main__':
 
             # next state
             _ntopdown = COLOR[ntopdown[i].argmax(0).cpu().numpy()]
-            #nheatmap = to_heatmap(ntarget[i:i+1], ntopdown[i:i+1]).squeeze()
             _ntopdown[nhmap[i][0].cpu() > 0.1] = 255
             _ntopdown = cv2.cvtColor(_ntopdown, cv2.COLOR_BGR2RGB)
 

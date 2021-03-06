@@ -55,6 +55,9 @@ def parse_args():
     parser.add_argument('--data_root', type=str, default='/data')
     parser.add_argument('--remote', action='store_true')
     parser.add_argument('--split', type=str, default='training', choices=['debug', 'devtest', 'testing', 'training'])
+    parser.add_argument('--save_debug', action='store_true')
+    parser.add_argument('--save_data', action='store_true')
+
     #parser.add_argument('--routenum', type=int) # optional
     parser.add_argument('--no_scenarios', action='store_true') # leaderboard-triggered scnearios
     #parser.add_argument('--repetitions', type=int, default=1) # should we directly default to this in indexer?
@@ -68,13 +71,9 @@ def parse_args():
 
     # assert to make sure setup.bash sourced?
     project_root = os.environ['PROJECT_ROOT']
-    #prefix = '/home/aaron/workspace/carla' if not args.remote else '/home/aaronhua'
-    #project_root = f'{prefix}/leaderboard-devkit'
     date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
     suffix = f'debug/{date_str}' if args.debug else date_str
     save_root = f'{args.data_root}/leaderboard/results/rl/dspred/{suffix}'
-    os.makedirs(save_root)
-
     args.save_dir = save_root / args.save_dir
     args.save_dir.mkdir(parents=True, exist_ok=True)
 
@@ -84,6 +83,9 @@ def parse_args():
         config = yaml.load(f, Loader=yaml.Loader)
     config['project_root'] = project_root
     config['save_root'] = save_root
+    config['save_data'] = args.save_data
+    config['save_debug'] = args.save_debug
+
     #config['carla_root'] = os.environ['CARLA_ROOT']
 
     # modify template config
