@@ -194,10 +194,13 @@ class MapModel(pl.LightningModule):
         metrics ={}
 
         ## step environment
-        _reward, _done = self.env.step() # reward, done
-        if _done:
-            self.env.cleanup()
-            self.env.reset()
+        self.eval()
+        with torch.no_grad():
+            _reward, _done = self.env.step() # reward, done
+            if _done:
+                self.env.cleanup()
+                self.env.reset()
+        self.train()
         
         ## train on batch
         state, action, reward, next_state, done = batch
@@ -239,8 +242,58 @@ class MapModel(pl.LightningModule):
         
         return {'loss': loss}
 
-    def validation_step(self):
-        return self.last_loss.item()
+    def validation_step(self, batch, batch_nb):
+        metrics = {}
+
+        ## train on batch
+        state, action, reward, next_state, done = batch
+        
+        # get Q values
+        topdown, target = state
+        with torch.no_grad():
+            points, (vmap, hmap) = self.forward(topdown, target, debug=True)
+        Q_all = self.get_action_values(vmap, action)
+
+        ntopdown, ntarget = next_state
+        with torch.no_grad():
+            npoints, (nvmap, nhmap) = self.forward(ntopdown, ntarget, debug=True)
+        naction, nQ_all = self.get_actions(nvmap)
+
+        # choose t=1,2
+        Q = torch.mean(Q_all[:, :2], axis=1, keepdim=True)
+        nQ = torch.mean(nQ_all[:, :2], axis=1, keepdim=True)
+
+        # compute loss and metrics
+        target = reward + self.discount * nQ
+        batch_val_loss = self.criterion(Q, target) # TD(n) error
+        val_loss = batch_val_loss.mean()
+
+        #metrics = {f'TD({self.n}) loss': loss.item()}
+        meta = {'Q': Q, 'nQ': nQ, 'batch_loss': batch_val_loss, 'hparams': self.hparams, 'n':self.n}
+        images, result = visualize(batch, points, vmap, hmap, action, npoints, nvmap, nhmap, naction, meta)
+        if self.logger != None:
+            metrics['val_image'] = result
+            self.logger.log_metrics(metrics, self.global_step)
+
+
+
+        return {'val_loss': val_loss.item()}
+
+    def validation_epoch_end(self, batch_metrics):
+        results = dict()
+
+        for metrics in batch_metrics:
+            for key in metrics:
+                if key not in results:
+                    results[key] = list()
+
+                results[key].append(metrics[key])
+
+        summary = {key: np.mean(val) for key, val in results.items()}
+        if self.logger != None:
+            self.logger.log_metrics(summary, self.global_step)
+
+        return summary
 
     def configure_optimizers(self):
         optim = torch.optim.Adam(
@@ -251,8 +304,12 @@ class MapModel(pl.LightningModule):
                 verbose=True)
         return [optim], [scheduler]
 
+
     def train_dataloader(self):
-        return get_dataloader(self.env.buffer, self.config.agent.batch_size)
+        return get_dataloader(self.env.buffer, self.config.agent.batch_size, is_train=True)
+    def val_dataloader(self):
+        return get_dataloader(self.env.buffer, self.config.agent.batch_size, is_train=False)
+
 
 
 

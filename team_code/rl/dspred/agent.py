@@ -123,7 +123,6 @@ class DSPredAgent(MapAgent):
         if not self.initialized:
             self._init()
 
-        self.net.eval()
         tick_data = self.tick(input_data)
         topdown = Image.fromarray(tick_data['topdown'])
         topdown = topdown.crop((128, 0, 128+256, 256))
@@ -193,7 +192,6 @@ class DSPredAgent(MapAgent):
         self.action = points_map
         self.state = (tick_data['topdown'], tick_data['target'])
 
-        self.net.train()
         return control
 
     def debug_display(self, tick_data, steer, throttle, brake, desired_speed, r=2):

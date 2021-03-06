@@ -115,11 +115,12 @@ def preprocess_semantic(semantic_np):
 #            yield (topdown, target), action, reward, (ntopdown, ntarget), done
         
 class CarlaDataset(Dataset):
-    def __init__(self, replay_buffer):
+    def __init__(self, replay_buffer, num_samples):
         self.buffer = replay_buffer
+        self.num_samples = num_samples
 
     def __len__(self):
-        return self.buffer.buffer_size
+        return self.num_samples
 
     def __getitem__(self, i):
         i =  i % len(self.buffer.states)
@@ -142,10 +143,11 @@ class CarlaDataset(Dataset):
     
         return (topdown, target), action, reward, (ntopdown, ntarget), done
 
-def get_dataloader(buf, batch_size, num_workers=4):
-    weights = np.ones(buf.buffer_size)
-    sampler = torch.utils.data.sampler.WeightedRandomSampler(weights, buf.buffer_size)
-    return DataLoader(CarlaDataset(buf), batch_size=batch_size, num_workers=num_workers, sampler=sampler, drop_last=True, pin_memory=True)
+def get_dataloader(buf, batch_size, is_train=False, num_workers=4):
+    num_samples = buf.buffer_size if is_train else buf.batch_size
+    weights = np.ones(num_samples)
+    sampler = torch.utils.data.sampler.WeightedRandomSampler(weights, num_samples)
+    return DataLoader(CarlaDataset(buf, num_samples), batch_size=batch_size, num_workers=num_workers, sampler=sampler, drop_last=True, pin_memory=True)
 
 
 if __name__ == '__main__':
