@@ -206,6 +206,7 @@ class DSPredAgent(MapAgent):
         x, y = np.mean(points_map[0:2], axis=0)
         draw.ellipse((x-r, y-r, x+r, y+r), aim_color)
         for i, (x,y) in enumerate(route_map[:4]):
+            if x < 5 or x > 250 or y < 5 or y > 140: continue
             draw.ellipse((x-r, y-r, x+r, y+r), route_colors[i])
         fused = np.array(fused)
 
@@ -217,6 +218,9 @@ class DSPredAgent(MapAgent):
         x, y = np.mean(points_cam[0:1], axis=0)
         draw.ellipse((x-r, y-r, x+r, y+r), aim_color)
         for i, (x,y) in enumerate(route_cam[:4]):
+            if i == 0: # maybe skip first route map waypoint 
+                xt, yt = route_map[0]
+                if xt < 5 or xt > 250 or yt < 5 or yt > 250: continue
             if x < 5 or x > 250 or y < 5 or y > 140: continue
             draw.ellipse((x-r, y-r, x+r, y+r), route_colors[i])
         rgb = Image.fromarray(np.array(rgb.resize((456, 256))))
