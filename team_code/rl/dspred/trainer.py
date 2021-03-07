@@ -53,7 +53,6 @@ def parse_args():
     parser.add_argument('-D', '--debug', action='store_true')
     parser.add_argument('-G', '--gpu', type=int, default=0)
     parser.add_argument('--data_root', type=str, default='/data')
-    parser.add_argument('--remote', action='store_true')
     parser.add_argument('--split', type=str, default='training', choices=['debug', 'devtest', 'testing', 'training'])
     parser.add_argument('--save_debug', action='store_true')
     parser.add_argument('--save_data', action='store_true')
