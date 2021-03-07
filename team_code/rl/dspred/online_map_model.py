@@ -51,8 +51,8 @@ def fuse_vmaps(topdown, vmap, temperature=10, alpha=0.75):
 def visualize(batch, points, vmap, hmap, action, npoints, nvmap, nhmap, naction, meta):
 
     text_color = (255,255,255)
-    points_color = (138,43,226) # purple
-    aim_color = (0, 191, 255) # cyan
+    points_color = (32,178,170) # purple
+    aim_color = (127,255,212) # cyan
     route_colors = [(0,255,0), (255,255,255), (255,0,0), (255,0,0)] 
 
     images = list()
@@ -199,10 +199,14 @@ class MapModel(pl.LightningModule):
         self.eval()
         self.env.hero_agent.burn_in = np.random.random() < self.config.agent.epsilon
         with torch.no_grad():
-            _reward, _done = self.env.step() # reward, done
-            if _done:
-                self.env.cleanup()
-                self.env.reset()
+            for rollout_step in range(self.config.agent.rollout_steps):
+                if self.env.hero_agent.burn_in:
+                    #print('rolling out with random actions!')
+                    pass
+                _reward, _done = self.env.step() # reward, done
+                if _done:
+                    self.env.cleanup()
+                    self.env.reset()
         self.train()
         
         ## train on batch

@@ -69,6 +69,7 @@ def parse_args():
 
     parser.add_argument('--n', type=int, default=20)
     parser.add_argument('--epsilon', type=float, default=0.1)
+    parser.add_argument('--rollout_steps', type=int, default=20)
     args = parser.parse_args()
 
     # assert to make sure setup.bash sourced?
@@ -98,8 +99,7 @@ def parse_args():
     econf['empty'] = args.empty
 
     aconf = config['agent']
-    #total_timesteps = 2000 if args.debug else aconf['total_timesteps']
-    total_timesteps = 200 if args.debug else aconf['total_timesteps']
+    total_timesteps = 2000 if args.debug else aconf['total_timesteps']
     burn_timesteps = 50 if args.debug else 2000
     save_frequency = 500 if args.debug else 5000
     batch_size = 4 if args.debug else args.batch_size
@@ -113,6 +113,7 @@ def parse_args():
     aconf['buffer_size'] = buffer_size
     aconf['epsilon'] = args.epsilon
     aconf['n'] = args.n
+    aconf['rollout_steps'] = args.rollout_steps
 
     # save new config path
     with open(f'{save_root}/config.yml', 'w') as f:

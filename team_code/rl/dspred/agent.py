@@ -200,8 +200,9 @@ class DSPredAgent(MapAgent):
 
         # 
         text_color = (255,255,255)
-        points_color = (138,43,226) # purple
-        aim_color = (0, 191, 255) # cyan
+        #points_color = (138,43,226) # purple
+        points_color = (32,178,170) # purple
+        aim_color = (127,255,212) # cyan
         route_colors = [(0,255,0), (255,255,255), (255,0,0), (255,0,0)] 
         
         vmap, hmap = tick_data['maps'] # (1, H, W)
