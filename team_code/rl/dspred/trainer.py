@@ -70,6 +70,7 @@ def parse_args():
     parser.add_argument('--n', type=int, default=20)
     parser.add_argument('--epsilon', type=float, default=0.1)
     parser.add_argument('--rollout_steps', type=int, default=20)
+    parser.add_argument('--forward', action='store_true')
     args = parser.parse_args()
 
     # assert to make sure setup.bash sourced?
@@ -114,6 +115,8 @@ def parse_args():
     aconf['epsilon'] = args.epsilon
     aconf['n'] = args.n
     aconf['rollout_steps'] = args.rollout_steps
+    aconf['forward'] = args.forward
+
 
     # save new config path
     with open(f'{save_root}/config.yml', 'w') as f:

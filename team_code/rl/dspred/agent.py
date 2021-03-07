@@ -130,7 +130,7 @@ class DSPredAgent(MapAgent):
         topdown = np.array(topdown)
         topdown_save = topdown.copy()
 
-        if not self.burn_in:
+        if not self.burn_in and not self.aconfig.forward:
 
             # prepare inputs
             topdown = preprocess_semantic(topdown)
@@ -187,9 +187,8 @@ class DSPredAgent(MapAgent):
         control.brake = float(brake)
         #print(timestamp) # GAMETIME
 
-        if not self.burn_in and (HAS_DISPLAY or self.config.save_debug):
+        if not self.burn_in and not self.aconfig.forward and (HAS_DISPLAY or self.config.save_debug):
             self.debug_display(tick_data, steer, throttle, brake, desired_speed)
-
         
         self.action = points_map
         self.state = (tick_data['topdown'], tick_data['target'])

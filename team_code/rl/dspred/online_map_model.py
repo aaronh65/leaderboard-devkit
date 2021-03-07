@@ -1,8 +1,8 @@
 import os, sys, traceback
 from datetime import datetime
+from tqdm import tqdm
 import pickle as pkl
 
-import uuid
 import argparse
 import pathlib
 
@@ -137,13 +137,13 @@ class MapModel(pl.LightningModule):
         self.discount = 0.99 ** (self.n + 1)
         self.criterion = torch.nn.MSELoss(reduction='none') # weights? prioritized replay?
 
+        print('populating...')
         self.populate(config.agent.burn_timesteps)
         #with open('buffer.pkl', 'wb') as f:
         #    pkl.dump(self.env.buffer, f)
         #with open('buffer.pkl', 'rb') as f:
         #    self.env.buffer = pkl.load(f)
 
-        print('done populating')
         self.env.reset()
         self.last_loss = 0
 
@@ -152,7 +152,7 @@ class MapModel(pl.LightningModule):
         # make sure agent is burning in instead of inferencing
         self.env.hero_agent.burn_in = True
         done = False
-        for step in range(steps + self.env.warmup_frames):
+        for step in tqdm(range(steps)):
             if done or step % 200 == 0:
                 if step != 0:
                     self.env.cleanup()
