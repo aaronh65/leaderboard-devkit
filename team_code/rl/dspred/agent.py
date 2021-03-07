@@ -200,7 +200,7 @@ class DSPredAgent(MapAgent):
 
         # 
         text_color = (255,255,255)
-        points_color = (139,0,139) # purple
+        points_color = (138,43,226) # purple
         aim_color = (0, 191, 255) # cyan
         route_colors = [(0,255,0), (255,255,255), (255,0,0), (255,0,0)] 
         
@@ -220,7 +220,7 @@ class DSPredAgent(MapAgent):
         fused = fuse_vmaps(tick_data['topdown_pth'], vmap, temperature=10, alpha=1.0).squeeze()
         fused = Image.fromarray(fused)
         draw = ImageDraw.Draw(fused)
-        for x, y in points_map: # agent points
+        for x, y in points_map[0:2]: # agent points
             draw.ellipse((x-r, y-r, x+r, y+r), points_color)
         x, y = np.mean(points_map[0:2], axis=0)
         draw.ellipse((x-r, y-r, x+r, y+r), aim_color)
@@ -231,7 +231,7 @@ class DSPredAgent(MapAgent):
         # left image
         rgb = Image.fromarray(tick_data['rgb'])
         draw = ImageDraw.Draw(rgb)
-        for x,y in points_cam:
+        for x,y in points_cam[0:2]:
             draw.ellipse((x-r, y-r, x+r, y+r), points_color)
         x, y = np.mean(points_cam[0:1], axis=0)
         draw.ellipse((x-r, y-r, x+r, y+r), aim_color)

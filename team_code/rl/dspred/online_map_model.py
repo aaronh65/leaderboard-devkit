@@ -51,7 +51,7 @@ def fuse_vmaps(topdown, vmap, temperature=10, alpha=0.75):
 def visualize(batch, points, vmap, hmap, action, npoints, nvmap, nhmap, naction, meta):
 
     text_color = (255,255,255)
-    points_color = (139,0,139) # purple
+    points_color = (138,43,226) # purple
     aim_color = (0, 191, 255) # cyan
     route_colors = [(0,255,0), (255,255,255), (255,0,0), (255,0,0)] 
 
@@ -75,9 +75,9 @@ def visualize(batch, points, vmap, hmap, action, npoints, nvmap, nhmap, naction,
         _topdown[hmap[i][0].cpu() > 0.1] = 255
         _topdown = Image.fromarray(_topdown)
         _draw = ImageDraw.Draw(_topdown)
-        for x, y in points[i].cpu().numpy():
-            _draw.ellipse((x-2, y-2, x+2, y+2), points_color)
         _action = action[i].cpu().numpy().astype(np.uint8) # (4,2)
+        for x, y in _action[0:2]:
+            _draw.ellipse((x-2, y-2, x+2, y+2), points_color)
         x, y = np.mean(_action[0:2], axis=0)
         _draw.ellipse((x-2, y-2, x+2, y+2), aim_color)
         _draw.text((5, 10), f'action = ({x},{y})', textcolor)
@@ -91,9 +91,9 @@ def visualize(batch, points, vmap, hmap, action, npoints, nvmap, nhmap, naction,
         _ntopdown[nhmap[i][0].cpu() > 0.1] = 255
         _ntopdown = Image.fromarray(_ntopdown)
         _ndraw = ImageDraw.Draw(_ntopdown)
-        for x, y in npoints[i].cpu().numpy():
-            _ndraw.ellipse((x-2, y-2, x+2, y+2), points_color)
         _naction = naction[i].cpu().numpy().astype(np.uint8) # (4,2)
+        for x, y in _naction[0:2]:
+            _ndraw.ellipse((x-2, y-2, x+2, y+2), points_color)
         x, y = np.mean(_naction[0:2], axis=0)
         _ndraw.ellipse((x-2, y-2, x+2, y+2), aim_color)
         _ndraw.text((5, 10), f'action = ({x},{y})', textcolor)
