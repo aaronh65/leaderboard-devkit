@@ -28,9 +28,9 @@ class ReplayBuffer():
 
     def sample(self, t):
         end = min(t + self.n, len(self.states) - 1)
-        dones = islice(self.dones, t, end+1)
+        dones = list(islice(self.dones, t, end+1))
         if True in dones:
-            end = list(dones).index(True)
+            end = dones.index(True)
         
         state = self.states[end]
         action = self.actions[end]
