@@ -78,7 +78,6 @@ class BaseEnv(gym.Env):
         self.hero_agent.reset(route_name, repetition)
         os.environ['ROUTE_NAME'] = route_name
         os.environ['REPETITION'] = repetition
-        print(route_name)
 
         self.rconfig = rconfig
         self.statistics_manager = StatisticsManager()
