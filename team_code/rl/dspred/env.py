@@ -58,7 +58,7 @@ class CarlaEnv(BaseEnv):
         if self.num_infractions < len(infractions): # new infraction
             self.num_infractions = len(infractions)
             self.itype = infractions[-1].get_type()
-            print(f'{self.itype} at frame {self.frame}')
+            #print(f'{self.itype} at frame {self.frame}')
         else:
             self.itype = None
 
@@ -85,7 +85,7 @@ class CarlaEnv(BaseEnv):
 
         if self.itype in collision_types:
             self.last_collision_frame = self.frame
-            print('collision at frame', self.last_collision_frame)
+            #print('collision at frame', self.last_collision_frame)
 
         location = CarlaDataProvider.get_transform(self.hero_actor).location
         x, y = location.x, location.y
@@ -101,6 +101,6 @@ class CarlaEnv(BaseEnv):
             x0, y0 = self.hero_history[0]
             x1, y1 = self.hero_history[-1]
             norm = ((x1-x0)**2+(y1-y0)**2)**0.5
-            print(f'recent collision: {norm:.2f}')
+            #print(f'recent collision: {norm:.2f}')
             done = norm < self.blocked_distance
         return done

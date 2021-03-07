@@ -42,7 +42,7 @@ class BaseEnv(gym.Env):
                 self.econfig.repetitions)
         self.num_routes = len(self.indexer._configs_list)
         self.manager = ScenarioManager(60, False) # 60s timeout?
-        self.stats = StatisticsManager()
+        self.statistic_manager = StatisticsManager()
         self.scenario = None
 
         # forwards SIGINTs to signal handler
@@ -81,6 +81,8 @@ class BaseEnv(gym.Env):
         print(route_name)
 
         self.rconfig = rconfig
+        self.statistics_manager = StatisticsManager()
+        self.statistics_manager.set_route(rconfig.name, rconfig.index)
         return []
 
     def _load_world_and_scenario(self, rconfig):

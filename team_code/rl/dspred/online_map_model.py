@@ -200,9 +200,6 @@ class MapModel(pl.LightningModule):
         self.env.hero_agent.burn_in = np.random.random() < self.config.agent.epsilon
         with torch.no_grad():
             for rollout_step in range(self.config.agent.rollout_steps):
-                if self.env.hero_agent.burn_in:
-                    #print('rolling out with random actions!')
-                    pass
                 _reward, _done = self.env.step() # reward, done
                 if _done:
                     self.env.cleanup()
