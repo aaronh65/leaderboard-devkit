@@ -49,8 +49,13 @@ def fuse_vmaps(topdown, vmap, temperature=10, alpha=0.75):
 # visualize each timestep's heatmap?
 @torch.no_grad()
 def visualize(batch, points, vmap, hmap, action, npoints, nvmap, nhmap, naction, meta):
-    images = list()
 
+    text_color = (255,255,255)
+    points_color = (139,0,139) # purple
+    aim_color = (0, 191, 255) # cyan
+    route_colors = [(0,255,0), (255,255,255), (255,0,0), (255,0,0)] 
+
+    images = list()
     state, action, reward, next_state, done = batch
     topdown, target = state
     ntopdown, target = next_state
@@ -71,10 +76,10 @@ def visualize(batch, points, vmap, hmap, action, npoints, nvmap, nhmap, naction,
         _topdown = Image.fromarray(_topdown)
         _draw = ImageDraw.Draw(_topdown)
         for x, y in points[i].cpu().numpy():
-            _draw.ellipse((x-2, y-2, x+2, y+2), (255,0,0))
+            _draw.ellipse((x-2, y-2, x+2, y+2), points_color)
         _action = action[i].cpu().numpy().astype(np.uint8) # (4,2)
         x, y = np.mean(_action[0:2], axis=0)
-        _draw.ellipse((x-2, y-2, x+2, y+2), (0,255,0))
+        _draw.ellipse((x-2, y-2, x+2, y+2), aim_color)
         _draw.text((5, 10), f'action = ({x},{y})', textcolor)
         _draw.text((5, 20), f'Q = {Q[i].item():2f}', textcolor)
         _draw.text((5, 30), f'reward = {reward[i].item():.3f}', textcolor)
@@ -87,11 +92,10 @@ def visualize(batch, points, vmap, hmap, action, npoints, nvmap, nhmap, naction,
         _ntopdown = Image.fromarray(_ntopdown)
         _ndraw = ImageDraw.Draw(_ntopdown)
         for x, y in npoints[i].cpu().numpy():
-            _ndraw.ellipse((x-2, y-2, x+2, y+2), (255,0,0))
-        #x, y = naction[i].cpu().numpy().astype(np.uint8)
+            _ndraw.ellipse((x-2, y-2, x+2, y+2), points_color)
         _naction = naction[i].cpu().numpy().astype(np.uint8) # (4,2)
         x, y = np.mean(_naction[0:2], axis=0)
-        _ndraw.ellipse((x-2, y-2, x+2, y+2), (0,255,0))
+        _ndraw.ellipse((x-2, y-2, x+2, y+2), aim_color)
         _ndraw.text((5, 10), f'action = ({x},{y})', textcolor)
         _ndraw.text((5, 20), f'nQ = {nQ[i].item():.2f}', textcolor)
         _ndraw.text((5, 30), f'done = {bool(done[i])}', textcolor)
