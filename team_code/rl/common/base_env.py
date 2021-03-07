@@ -5,6 +5,7 @@ import numpy as np
 from leaderboard.scenarios.scenario_manager import ScenarioManager
 from leaderboard.scenarios.route_scenario import RouteScenario
 from leaderboard.utils.route_indexer import RouteIndexer
+from leaderboard.utils.statistics_manager import StatisticsManager
 from srunner.scenariomanager.carla_data_provider import CarlaDataProvider
 from srunner.scenariomanager.timer import GameTime
 
@@ -41,6 +42,7 @@ class BaseEnv(gym.Env):
                 self.econfig.repetitions)
         self.num_routes = len(self.indexer._configs_list)
         self.manager = ScenarioManager(60, False) # 60s timeout?
+        self.stats = StatisticsManager()
         self.scenario = None
 
         # forwards SIGINTs to signal handler
@@ -73,11 +75,12 @@ class BaseEnv(gym.Env):
         route_num = int(rconfig.name.split('_')[-1])
         route_name = f'route_{route_num:02d}'
         repetition = f'repetition_{rconfig.repetition_index:02d}'
+        self.hero_agent.reset(route_name, repetition)
         os.environ['ROUTE_NAME'] = route_name
         os.environ['REPETITION'] = repetition
+        print(route_name)
 
         self.rconfig = rconfig
-        self.hero_agent.reset()
         return []
 
     def _load_world_and_scenario(self, rconfig):
@@ -151,6 +154,7 @@ class BaseEnv(gym.Env):
         if self.manager:
             self.manager.cleanup()
 
+
         CarlaDataProvider.cleanup()
 
         self.world = None
@@ -164,6 +168,9 @@ class BaseEnv(gym.Env):
             # just clears sensor interface for resetting
             self.hero_agent.destroy() 
 
+        if hasattr(self, 'statistics_manager') and self.statistics_manager:
+            self.statistics_manager.scenario = None
+
     def __del__(self):
         if hasattr(self, 'manager') and self.manager:
             del self.manager
@@ -171,7 +178,6 @@ class BaseEnv(gym.Env):
             del self.world
         if hasattr(self, 'scenario') and self.scenario:
             del self.scenario
-
 
 
     def render(self):

@@ -47,14 +47,14 @@ class DSPredAgent(MapAgent):
         self._turn_controller = PIDController(K_P=1.25, K_I=0.75, K_D=0.3, n=40)
         self._speed_controller = PIDController(K_P=5.0, K_I=0.5, K_D=1.0, n=40)
 
-    def reset(self):
+    def reset(self, route_name, repetition):
         self.initialized = False
 
         # make debug directories
         save_root = self.config.save_root
         if self.config.save_debug:
-            ROUTE_NAME, REPETITION = os.environ['ROUTE_NAME'], os.environ['REPETITION']
-            self.debug_path = Path(f'{save_root}/debug/{ROUTE_NAME}/{REPETITION}')
+            #ROUTE_NAME, REPETITION = os.environ['ROUTE_NAME'], os.environ['REPETITION']
+            self.debug_path = Path(f'{save_root}/debug/{route_name}/{repetition}')
             self.debug_path.mkdir(exist_ok=True, parents=True)
 
         # TODO: make data directories and reimplement data collection w/better file structure
@@ -67,20 +67,6 @@ class DSPredAgent(MapAgent):
         
         # get rid of old rgb cameras
         rgb, _, _, imu, gps, speed, topdown = sensors
-        #rgb = {
-        #    'type': 'sensor.camera.rgb',
-        #    'x': 1.3, 'y': 0.0, 'z': 1.3,
-        #    'roll': 0.0, 'pitch': 0.0, 'yaw': 0.0,
-        #    'width': 456, 'height': 256, 'fov': 90,
-        #    'id': 'rgb'
-        #    }
-
-        #rgb_topdown = \ 
-        #    {'type': 'sensor.camera.rgb',
-        #        'x': 0.0, 'y': 0.0, 'z': 100.0,
-        #        'roll': 0.0, 'pitch': -90.0, 'yaw': 0.0,
-        #        'width': 512, 'height': 512, 'fov': 5 * 10.0,
-        #        'id': 'rgb_topdown'}
         sensors = [rgb, imu, gps, speed, topdown]
         return sensors
 
@@ -161,10 +147,6 @@ class DSPredAgent(MapAgent):
         else: # burning in
             points_map = np.random.randint(0, 256, size=(4,2)) 
             points_world = self.converter.map_to_world(torch.Tensor(points_map)).numpy()
-            #points_cam = self.converter.map_to_cam(torch.Tensor(points_map)).numpy()
-            #print('burning in')
-            #print((points_world[1] + points_world[0]) / 2.0)
-            #print(np.linalg.norm(points_world[0] - points_world[1]) * 2.0)
 
 
         # get aim and controls
@@ -189,9 +171,8 @@ class DSPredAgent(MapAgent):
 
         if not self.burn_in and not self.aconfig.forward and (HAS_DISPLAY or self.config.save_debug):
             self.debug_display(tick_data, steer, throttle, brake, desired_speed)
-        
-        self.action = points_map
         self.state = (tick_data['topdown'], tick_data['target'])
+        self.action = points_map
 
         return control
 
@@ -264,8 +245,6 @@ class DSPredAgent(MapAgent):
         if HAS_DISPLAY:
             cv2.imshow('debug', _combined)
             cv2.waitKey(1)
-
-        return
         
 
     def destroy(self):
