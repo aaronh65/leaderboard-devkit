@@ -187,7 +187,7 @@ class DSPredAgent(MapAgent):
         control.brake = float(brake)
         #print(timestamp) # GAMETIME
 
-        if not self.burn_in and (HAS_DISPLAY or self.aconfig.save_images):
+        if not self.burn_in and (HAS_DISPLAY or self.config.save_debug):
             self.debug_display(tick_data, steer, throttle, brake, desired_speed)
 
         
