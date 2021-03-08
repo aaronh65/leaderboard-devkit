@@ -35,7 +35,7 @@ class ReplayBuffer():
         state = self.states[end]
         action = self.actions[end]
         rewards = list(islice(self.rewards, t, end+1))
-        reward = np.dot(rewards, self.discount[:end-t+1])
+        reward = np.dot(rewards, self.discount[:len(rewards)])
         done = self.dones[end]
         condition = (end == len(self.states)-1) or self.dones[end]
         next_state = self.states[end] if condition else self.states[end+1]
