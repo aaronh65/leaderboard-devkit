@@ -131,22 +131,27 @@ class DSPredAgent(MapAgent):
             # retrieve action
             actions, Q_all = self.net.get_actions(vmap) # (1,4,2), (1,4)
             points_map = np.clip(actions.clone().cpu().squeeze(), 0, 256) # (4,2)
+            points_map = points_map.numpy()
 
             # retrieve and transform points
             #points_map = points.clone().cpu().squeeze()
             #points_map = (points_map + 1) / 2 * 256
-            points_map = np.clip(points_map, 0, 256)
-            points_cam = self.converter.map_to_cam(points_map).numpy()
-            points_world = self.converter.map_to_world(points_map).numpy()
-            points_map = points_map.numpy()
+            #points_map = np.clip(points_map, 0, 256).numpy()
                         
             tick_data['maps'] = (vmap, hmap)
-            tick_data['points_cam'] = points_cam
-            tick_data['points_map'] = points_map
-
+            
         else: # burning in
             points_map = np.random.randint(0, 256, size=(4,2)) 
-            points_world = self.converter.map_to_world(torch.Tensor(points_map)).numpy()
+
+        #if self.aconfig.mode == 'train':
+        #    noise = np.random.random(loc=0.0,scale=5.0, shape=points_map.shape)
+        #    points_map = points_map + noise
+        points_map = np.clip(points_map, 0, 256)
+
+        points_cam = self.converter.map_to_cam(torch.Tensor(points_map)).numpy()
+        points_world = self.converter.map_to_world(torch.Tensor(points_map)).numpy()
+        tick_data['points_cam'] = points_cam
+        tick_data['points_map'] = points_map
 
 
         # get aim and controls

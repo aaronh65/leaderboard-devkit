@@ -224,7 +224,7 @@ class MapModel(pl.LightningModule):
         nQ = torch.mean(nQ_all[:, :2], axis=1, keepdim=True)
 
         # compute loss and metrics
-        target = reward + self.discount * nQ
+        target = reward + self.discount * nQ * (1-done)
         batch_loss = self.criterion(Q, target) # TD(n) error
         loss = batch_loss.mean()
 

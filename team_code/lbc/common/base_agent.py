@@ -25,6 +25,7 @@ class BaseAgent(autonomous_agent.AutonomousAgent):
         self.initialized = False
 
     def _init(self):
+        self.step = -1
         self._command_planner = RoutePlanner(7.5, 25.0, 256)
         self._command_planner.set_route(self._global_plan, True)
         self.initialized = True
