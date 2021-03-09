@@ -77,9 +77,6 @@ class CarlaEnv(BaseEnv):
         reward = (route_completion[-1] - route_completion[-2]) - penalty
         done = done or self.check_blocked()
 
-        # 
-        done = done or self.frame > self.warmup_frames + 20
-        
         self.buffer.add_experience(self.hero_agent.state, self.hero_agent.action, reward, done, info)
 
         return reward, done
