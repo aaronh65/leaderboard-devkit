@@ -100,10 +100,7 @@ def parse_args():
     econf['empty'] = args.empty
 
     aconf = config['agent']
-    #total_timesteps = 2000 if args.debug else aconf['total_timesteps']
     total_timesteps = 200 if args.debug else aconf['total_timesteps']
-    #burn_timesteps = 50 if args.debug else 2000
-    burn_timesteps = 
     save_frequency = 500 if args.debug else 5000
     batch_size = 4 if args.debug else args.batch_size
     buffer_size = 200 if args.debug else args.buffer_size
