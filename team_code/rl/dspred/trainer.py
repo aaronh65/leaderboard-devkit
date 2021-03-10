@@ -18,9 +18,11 @@ from pytorch_lightning.loggers import WandbLogger
 def main(args, config):
     try:
         agent = DSPredAgent(config)
-        client = Client('localhost', 2000)
+
+        client = Client('localhost', config.env.world_port)
         client.set_timeout(600)
         env = CarlaEnv(config, client, agent)
+
         model = agent.net
         model.env = env
         model.setup_train(env, config)
