@@ -72,10 +72,22 @@ class CarlaEnv(BaseEnv):
 
     def step(self):
         _, _, done, info = super().step() 
+        done = done or self.check_blocked()
+
+        # driving reward
         penalty = self.compute_penalty()
         route_completion = CarlaDataProvider.get_route_completion_list()
-        reward = (route_completion[-1] - route_completion[-2]) - penalty
-        done = done or self.check_blocked()
+        driving_reward = (route_completion[-1] - route_completion[-2]) - penalty
+
+        # imitation reward
+        threshold = 11 # 2 meters
+        points_map, points_exp = self.hero_agent.action # both (4,2)
+        delta = np.linalg.norm(points_map[:2] - points_exp[:2], axis=1) # (2,1)
+        imitation_reward = max((threshold - np.sum(delta))/threshold, 0)
+
+        reward = imitation_reward + driving_reward
+        info['driving_reward'] = driving_reward
+        info['imitation_reward'] = imitation_reward
 
         self.buffer.add_experience(self.hero_agent.state, self.hero_agent.action, reward, done, info)
 

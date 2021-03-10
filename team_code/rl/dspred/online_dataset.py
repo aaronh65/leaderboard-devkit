@@ -78,42 +78,6 @@ def preprocess_semantic(semantic_np):
 
     return topdown
 
-
-#class CarlaDataset(IterableDataset):
-##class CarlaDataset(Dataset):
-#    def __init__(self, replay_buffer, batch_size):
-#        self.buffer = replay_buffer
-#        self.batch_size = batch_size
-#        self.cnt=0
-#
-#    def __len__(self):
-#        return self.buffer.buffer_size
-#
-#    #def __getitem__(self, i):
-#    def __iter__(self):
-#        print(f'iter {self.cnt}')
-#        self.cnt+=1
-#        indices = np.random.choice(len(self.buffer), self.batch_size, replace=False)
-#        for i in indices:
-#            state, action, reward, done, next_state = self.buffer.sample(i)
-#
-#            topdown, target = state
-#            topdown = Image.fromarray(topdown)
-#            topdown = topdown.crop((128, 0, 128 + 256, 256))
-#            topdown = preprocess_semantic(np.array(topdown))
-#            target = torch.FloatTensor(np.float32(target))
-#            action = torch.FloatTensor(np.float32(action))
-#            reward = torch.FloatTensor([reward])
-#            done = torch.FloatTensor([done])
-#
-#            ntopdown, ntarget = next_state
-#            ntopdown = Image.fromarray(ntopdown)
-#            ntopdown = ntopdown.crop((128, 0, 128 + 256, 256))
-#            ntopdown = preprocess_semantic(np.array(ntopdown))
-#            ntarget = torch.FloatTensor(np.float32(ntarget))
-#        
-#            yield (topdown, target), action, reward, (ntopdown, ntarget), done
-        
 class CarlaDataset(Dataset):
     def __init__(self, replay_buffer, num_samples):
         self.buffer = replay_buffer
@@ -124,14 +88,14 @@ class CarlaDataset(Dataset):
 
     def __getitem__(self, i):
         i =  i % len(self.buffer.states)
-        state, action, reward, done, next_state = self.buffer.sample(i)
+        state, action, reward, done, next_state, info = self.buffer.sample(i)
 
         topdown, target = state
         topdown = Image.fromarray(topdown)
         topdown = topdown.crop((128, 0, 128 + 256, 256))
         topdown = preprocess_semantic(np.array(topdown))
         target = torch.FloatTensor(np.float32(target))
-        action = torch.FloatTensor(np.float32(action))
+        action = torch.FloatTensor(np.float32(action)) # model predictions, not expert
         reward = torch.FloatTensor([reward])
         done = torch.FloatTensor([done])
 
@@ -141,11 +105,11 @@ class CarlaDataset(Dataset):
         ntopdown = preprocess_semantic(np.array(ntopdown))
         ntarget = torch.FloatTensor(np.float32(ntarget))
     
-        return (topdown, target), action, reward, (ntopdown, ntarget), done
+        return (topdown, target), action, reward, (ntopdown, ntarget), done, info
 
 def get_dataloader(buf, is_train=False, num_workers=4):
-    num_samples = buf.buffer_size if is_train else buf.batch_size
-    weights = np.ones(num_samples)
+    num_samples = buf.buffer_size if is_train else buf.batch_size #
+    weights = np.ones(num_samples) # prioritize?
     sampler = torch.utils.data.sampler.WeightedRandomSampler(weights, num_samples)
     return DataLoader(CarlaDataset(buf, num_samples), batch_size=buf.batch_size, num_workers=num_workers, sampler=sampler, drop_last=True, pin_memory=True)
 

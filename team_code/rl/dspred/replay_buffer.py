@@ -26,22 +26,29 @@ class ReplayBuffer():
         for buf, data in zip(self.bufs, exp):
             buf.append(data)
 
+    # centralize data saving here? 
+    def save_latest(self):
+        pass
+
+    # keep imitation/driving score reward split in info?
+    # return rewards and infos as a list
     def sample(self, t):
+        state = self.states[t]
+        action = self.actions[t]
+        info = self.infos[t]
+
         end = min(t + self.n, len(self.states) - 1)
         dones = list(islice(self.dones, t, end+1))
         if True in dones:
             end = dones.index(True)
-        
-        state = self.states[end]
-        action = self.actions[end]
+        done = self.dones[end]
         rewards = list(islice(self.rewards, t, end+1))
         reward = np.dot(rewards, self.discount[:len(rewards)])
-        done = self.dones[end]
         condition = (end == len(self.states)-1) or self.dones[end]
         next_state = self.states[end] if condition else self.states[end+1]
+        info['next_action'] = self.actions[end] if condition else self.actions[end+1]
 
-
-        return state, action, reward, done, next_state
+        return state, action, reward, done, next_state, info
 
     def __len__(self):
         return len(self.states)

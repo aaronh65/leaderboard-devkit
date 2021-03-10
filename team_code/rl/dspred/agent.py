@@ -34,11 +34,14 @@ class DSPredAgent(MapAgent):
         self.debug_path = None
         self.data_path = None
 
-
         weights_path = self.aconfig.weights_path
         self.net = MapModel.load_from_checkpoint(f'{project_root}/{weights_path}')
         self.net.cuda()
         self.net.eval()
+
+        self.expert = MapModel.load_from_checkpoint(f'{project_root}/{weights_path}')
+        self.expert.cuda()
+        self.expert.eval()
 
         self.burn_in = False
 
@@ -111,48 +114,62 @@ class DSPredAgent(MapAgent):
             self._init()
 
         tick_data = self.tick(input_data)
+
+        # prepare inputs
         topdown = Image.fromarray(tick_data['topdown'])
         topdown = topdown.crop((128, 0, 128+256, 256))
         topdown = np.array(topdown)
-        topdown_save = topdown.copy()
+        topdown = preprocess_semantic(topdown)
+        topdown = topdown[None].cuda()
+        tick_data['topdown_pth'] = topdown.clone().cpu()
 
-        if not self.burn_in and not self.aconfig.forward:
+        target = torch.from_numpy(tick_data['target'])
+        target = target[None].cuda()
 
-            # prepare inputs
-            topdown = preprocess_semantic(topdown)
-            topdown = topdown[None].cuda()
-            tick_data['topdown_pth'] = topdown.clone().cpu()
-            target = torch.from_numpy(tick_data['target'])
-            target = target[None].cuda()
+        # either use behavior policy or real policy or burn_in
+        # lets have heatmap sampling be the burn_in distribution
 
+        if self.aconfig.forward or self.burn_in:
+            #points_map = np.random.randint(0, 256, size=(4,2)) 
+            x = np.random.randint(128 - 56, 128 + 56, (4,1))
+            y = np.random.randint(256 - 128, 256, (4,1))
+            points_map = np.hstack((x,y))
+
+        else: # burning in
             # forward
             points, (vmap, hmap) = self.net.forward(topdown, target, debug=True) # world frame
 
-            # retrieve action
-            actions, Q_all = self.net.get_actions(vmap) # (1,4,2), (1,4)
-            points_map = np.clip(actions.clone().cpu().squeeze(), 0, 256) # (4,2)
-            points_map = points_map.numpy()
-
-            # retrieve and transform points
+            # compute action from LBC
             #points_map = points.clone().cpu().squeeze()
             #points_map = (points_map + 1) / 2 * 256
             #points_map = np.clip(points_map, 0, 256).numpy()
-                        
-            tick_data['maps'] = (vmap, hmap)
-            
-        else: # burning in
-            points_map = np.random.randint(0, 256, size=(4,2)) 
 
-        #if self.aconfig.mode == 'train':
-        #    noise = np.random.random(loc=0.0,scale=5.0, shape=points_map.shape)
-        #    points_map = points_map + noise
-        points_map = np.clip(points_map, 0, 256)
+            # compute action from DQN
+            actions, Q_all = self.net.get_actions(vmap, explore=self.burn_in) # (1,4,2), (1,4)
+            points_map = np.clip(actions.clone().cpu().squeeze(), 0, 256) # (4,2)
+            points_map = points_map.numpy()
+                                    
+            tick_data['maps'] = (vmap, hmap)
+        
+        if self.aconfig.mode == 'train':
+
+            # noisy actions?
+            #noise = np.random.random(loc=0.0,scale=5.0, shape=points_map.shape)
+            #points_map = points_map + noise
+
+            # get expert action
+            pass
+
+        points_exp, _ = self.expert.forward(topdown, target, debug=True)
+        points_exp = points_exp.clone().cpu().squeeze()
+        points_exp = (points_exp + 1) / 2 * 256
+        points_exp = np.clip(points_exp, 0, 256).numpy()
+        
+        tick_data['points_exp'] = points_exp
 
         points_cam = self.converter.map_to_cam(torch.Tensor(points_map)).numpy()
         points_world = self.converter.map_to_world(torch.Tensor(points_map)).numpy()
-        tick_data['points_cam'] = points_cam
-        tick_data['points_map'] = points_map
-
+        
 
         # get aim and controls
         aim = (points_world[1] + points_world[0]) / 2.0
@@ -174,10 +191,15 @@ class DSPredAgent(MapAgent):
         control.brake = float(brake)
         #print(timestamp) # GAMETIME
 
+        tick_data['points_cam'] = points_cam
+        tick_data['points_map'] = points_map
+
         if not self.burn_in and not self.aconfig.forward and (HAS_DISPLAY or self.config.save_debug):
             self.debug_display(tick_data, steer, throttle, brake, desired_speed)
+
+        # cache state and action for env to retrieve
         self.state = (tick_data['topdown'], tick_data['target'])
-        self.action = points_map
+        self.action = (points_map, points_exp)
 
         return control
 
@@ -185,7 +207,6 @@ class DSPredAgent(MapAgent):
 
         # 
         text_color = (255,255,255)
-        #points_color = (138,43,226) # purple
         points_color = (32,178,170) # purple
         aim_color = (127,255,212) # cyan
         route_colors = [(0,255,0), (255,255,255), (255,0,0), (255,0,0)] 
@@ -199,6 +220,7 @@ class DSPredAgent(MapAgent):
         # plot Q points instead of LBC version (argmax instead of expectation)
         points_map = tick_data['points_map']
         points_cam = tick_data['points_cam']
+        points_exp = tick_data['points_exp']
         route_map = tick_data['route_map']
         route_cam = self.converter.map_to_cam(torch.Tensor(route_map)).numpy()
 
@@ -210,9 +232,12 @@ class DSPredAgent(MapAgent):
             draw.ellipse((x-r, y-r, x+r, y+r), points_color)
         x, y = np.mean(points_map[0:2], axis=0)
         draw.ellipse((x-r, y-r, x+r, y+r), aim_color)
-        for i, (x,y) in enumerate(route_map[:4]):
-            if x < 5 or x > 250 or y < 5 or y > 140: continue
-            draw.ellipse((x-r, y-r, x+r, y+r), route_colors[i])
+        for x, y in points_exp:
+            draw.ellipse((x-r, y-r, x+r, y+r), (0,255,127))
+        for i, (x,y) in enumerate(route_map[:3]):
+            #if x < 5 or x > 250 or y < 5 or y > 140: continue
+            #if y > 140: continue
+            draw.ellipse((x-2*r, y-2*r, x+2*r, y+2*r), route_colors[i])
         fused = np.array(fused)
 
         # left image
@@ -222,10 +247,14 @@ class DSPredAgent(MapAgent):
             draw.ellipse((x-r, y-r, x+r, y+r), points_color)
         x, y = np.mean(points_cam[0:1], axis=0)
         draw.ellipse((x-r, y-r, x+r, y+r), aim_color)
+        points_exp = self.converter.map_to_cam(torch.Tensor(points_exp)).numpy()
+        for x, y in points_exp:
+            draw.ellipse((x-r, y-r, x+r, y+r), (0,255,127))
         for i, (x,y) in enumerate(route_cam[:4]):
             if i == 0: # maybe skip first route map waypoint 
                 xt, yt = route_map[0]
                 if xt < 5 or xt > 250 or yt < 5 or yt > 250: continue
+                #yt > 250: continue
             if x < 5 or x > 250 or y < 5 or y > 140: continue
             draw.ellipse((x-r, y-r, x+r, y+r), route_colors[i])
         rgb = Image.fromarray(np.array(rgb.resize((456, 256))))

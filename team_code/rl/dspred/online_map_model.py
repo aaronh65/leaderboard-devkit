@@ -48,17 +48,18 @@ def fuse_vmaps(topdown, vmap, temperature=10, alpha=0.75):
 
 # visualize each timestep's heatmap?
 @torch.no_grad()
-def visualize(batch, points, vmap, hmap, action, npoints, nvmap, nhmap, naction, meta):
+def visualize(batch, points, vmap, hmap, npoints, nvmap, nhmap, naction, meta, expert,r=2):
 
     text_color = (255,255,255)
     points_color = (32,178,170) # purple
     aim_color = (127,255,212) # cyan
-    route_colors = [(0,255,0), (255,255,255), (255,0,0), (255,0,0)] 
+    #route_colors = [(0,255,0), (255,255,255), (255,0,0), (255,0,0)] 
 
     images = list()
-    state, action, reward, next_state, done = batch
+    state, action, reward, next_state, done, info = batch
     topdown, target = state
     ntopdown, target = next_state
+    action, expert = action[:,0,...], action[:,1,...]
     hparams, batch_loss, n = meta['hparams'], meta['batch_loss'], meta['n']
     Q, nQ = meta['Q'], meta['nQ']
 
@@ -76,14 +77,22 @@ def visualize(batch, points, vmap, hmap, action, npoints, nvmap, nhmap, naction,
         _topdown = Image.fromarray(_topdown)
         _draw = ImageDraw.Draw(_topdown)
         _action = action[i].cpu().numpy().astype(np.uint8) # (4,2)
+        #_action = action[i].cpu().numpy().astype(np.uint8) # (4,2)
         for x, y in _action[0:2]:
-            _draw.ellipse((x-2, y-2, x+2, y+2), points_color)
+            _draw.ellipse((x-r, y-r, x+r, y+r), points_color)
         x, y = np.mean(_action[0:2], axis=0)
-        _draw.ellipse((x-2, y-2, x+2, y+2), aim_color)
+        _draw.ellipse((x-r, y-r, x+r, y+r), aim_color)
+        _expert = expert[i].cpu().numpy().astype(np.uint8)
+        for x, y in _expert:
+            _draw.ellipse((x-r, y-r, x+r, y+r), (0,255,127))
+
         _draw.text((5, 10), f'action = ({x},{y})', textcolor)
         _draw.text((5, 20), f'Q = {Q[i].item():2f}', textcolor)
         _draw.text((5, 30), f'reward = {reward[i].item():.3f}', textcolor)
         _draw.text((5, 40), f'TD({n}) err = {batch_loss[i].item():.2f}', textcolor)
+        dreward, ireward = info['driving_reward'][i], info['imitation_reward'][i]
+        #_draw.text((5, 50), f'reward (d) = {dreward:.2f}', textcolor)
+        #_draw.text((5, 60), f'reward (i) = {ireward:.2f}', textcolor)
         #_topdown = cv2.cvtColor(np.array(_topdown), cv2.COLOR_BGR2RGB)
 
         # next state
@@ -93,9 +102,13 @@ def visualize(batch, points, vmap, hmap, action, npoints, nvmap, nhmap, naction,
         _ndraw = ImageDraw.Draw(_ntopdown)
         _naction = naction[i].cpu().numpy().astype(np.uint8) # (4,2)
         for x, y in _naction[0:2]:
-            _ndraw.ellipse((x-2, y-2, x+2, y+2), points_color)
+            _ndraw.ellipse((x-r, y-r, x+r, y+r), points_color)
         x, y = np.mean(_naction[0:2], axis=0)
-        _ndraw.ellipse((x-2, y-2, x+2, y+2), aim_color)
+        _ndraw.ellipse((x-r, y-r, x+r, y+r), aim_color)
+        _nexpert = info['next_action'][1][i].cpu().numpy().astype(np.uint8)
+        for x, y in _nexpert:
+            _ndraw.ellipse((x-r, y-r, x+r, y+r), (0,255,127))
+
         _ndraw.text((5, 10), f'action = ({x},{y})', textcolor)
         _ndraw.text((5, 20), f'nQ = {nQ[i].item():.2f}', textcolor)
         _ndraw.text((5, 30), f'done = {bool(done[i])}', textcolor)
@@ -139,13 +152,7 @@ class MapModel(pl.LightningModule):
 
         print('populating...')
         self.populate(config.agent.burn_timesteps)
-        #with open('buffer.pkl', 'wb') as f:
-        #    pkl.dump(self.env.buffer, f)
-        #with open('buffer.pkl', 'rb') as f:
-        #    self.env.buffer = pkl.load(f)
-
         self.env.reset()
-        self.last_loss = 0
 
     # burn in
     def populate(self, steps):
@@ -174,10 +181,22 @@ class MapModel(pl.LightningModule):
 
         return points, (logits, target_heatmap)
 
-    def get_actions(self, vmap):
+    # two modes: sample, argmax
+    def get_actions(self, vmap, explore=False):
         #aim_vmap = torch.mean(vmap[:,0:2,:,:], dim=1) #(N, H, W)
         vmap_flat = vmap.view(vmap.shape[:-2] + (-1,)) # (N, 4, H*W)
         Q_all, action_flat = torch.max(vmap_flat, -1, keepdim=True) # (N, 4, 1)
+
+        if explore:
+            pass
+            #probs = vmap_flat / Q_all
+            #print(probs.shape)
+            #action_flat = np.random.choice(
+            #        np.arange(256*256), 
+            #        size=(len(vmap_flat), 4, 1), 
+            #        p=probs.cpu().numpy())
+            #print(action_flat.shape)
+
         action = torch.cat((
             action_flat % 256,
             action_flat // 256),
@@ -207,7 +226,8 @@ class MapModel(pl.LightningModule):
         self.train()
         
         ## train on batch
-        state, action, reward, next_state, done = batch
+        state, action, reward, next_state, done, info = batch
+        action, expert = action[:,0,...], action[:,1,...]
         
         # get Q values
         topdown, target = state
@@ -230,16 +250,14 @@ class MapModel(pl.LightningModule):
 
         metrics = {f'TD({self.n}) loss': loss.item()}
         if batch_nb % 10 == 0:
-
             if self.config.save_debug:
                 img = cv2.cvtColor(np.array(self.env.hero_agent.debug_img), cv2.COLOR_RGB2BGR)
                 metrics['debug_image'] = wandb.Image(img)
 
             meta = {'Q': Q, 'nQ': nQ, 'batch_loss': batch_loss, 'hparams': self.hparams, 'n':self.n}
-            images, result = visualize(batch, points, vmap, hmap, action, npoints, nvmap, nhmap, naction, meta)
+            images, result = visualize(batch, points, vmap, hmap, npoints, nvmap, nhmap, naction, meta, expert)
             metrics['train_image'] = result
             
-        self.last_loss = loss
         if self.logger != None:
             self.logger.log_metrics(metrics, self.global_step)
 
@@ -250,7 +268,8 @@ class MapModel(pl.LightningModule):
         metrics = {}
 
         ## train on batch
-        state, action, reward, next_state, done = batch
+        state, action, reward, next_state, done, info = batch
+        action, expert = action[:,0,...].squeeze(), action[:,1,...].squeeze()
         
         # get Q values
         topdown, target = state
@@ -274,7 +293,7 @@ class MapModel(pl.LightningModule):
 
         #metrics = {f'TD({self.n}) loss': loss.item()}
         meta = {'Q': Q, 'nQ': nQ, 'batch_loss': batch_val_loss, 'hparams': self.hparams, 'n':self.n}
-        images, result = visualize(batch, points, vmap, hmap, action, npoints, nvmap, nhmap, naction, meta)
+        images, result = visualize(batch, points, vmap, hmap, npoints, nvmap, nhmap, naction, meta, expert)
         if self.logger != None:
             metrics['val_image'] = result
             self.logger.log_metrics(metrics, self.global_step)
