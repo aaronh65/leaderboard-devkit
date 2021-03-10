@@ -10,7 +10,7 @@ from env import CarlaEnv
 from agent import DSPredAgent
 from online_map_model import MapModel
 
-from common.utils import dict_to_sns
+from common.utils import dict_to_sns, port_in_use
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
@@ -57,6 +57,11 @@ def parse_args():
     parser.add_argument('--save_debug', action='store_true')
     parser.add_argument('--save_data', action='store_true')
 
+    # server/client stuff
+    parser.add_argument('-WP', '--world_port', type=int, default=2000)
+    parser.add_argument('-TP', '--traffic_port', type=int, default=8000)
+    parser.add_argument('-TS', '--traffic_seed', type=int, default=0)
+
     #parser.add_argument('--routenum', type=int) # optional
     parser.add_argument('--no_scenarios', action='store_true') # leaderboard-triggered scnearios
     #parser.add_argument('--repetitions', type=int, default=1) # should we directly default to this in indexer?
@@ -72,6 +77,11 @@ def parse_args():
     parser.add_argument('--rollout_steps', type=int, default=20)
     parser.add_argument('--forward', action='store_true')
     args = parser.parse_args()
+
+    assert not port_in_use(args.traffic_port), \
+            f'traffic manager port {args.traffic_port} already in use!!'
+    #assert not port_in_use(args.world_port), \
+    #        f'world port {args.world_port} already in use!!'
 
     # assert to make sure setup.bash sourced?
     project_root = os.environ['PROJECT_ROOT']
@@ -98,9 +108,13 @@ def parse_args():
             else 'all_towns_traffic_scenarios_public.json'
     econf['scenarios'] = scenarios
     econf['empty'] = args.empty
+    econf['world_port'] = args.world_port
+    econf['trafficmanager_port'] = args.traffic_port
+    econf['trafficmanager_seed'] = args.traffic_seed
 
     aconf = config['agent']
     total_timesteps = 200 if args.debug else aconf['total_timesteps']
+    burn_timesteps= 200
     save_frequency = 500 if args.debug else 5000
     batch_size = 4 if args.debug else args.batch_size
     buffer_size = 200 if args.debug else args.buffer_size

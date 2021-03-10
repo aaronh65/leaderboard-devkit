@@ -30,4 +30,8 @@ def parse_config(maybe_config):
         raise Exception('config type not understood')
     return config
 
+def port_in_use(port):
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        return s.connect_ex(('localhost', port)) == 0
 
