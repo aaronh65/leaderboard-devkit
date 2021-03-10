@@ -63,7 +63,7 @@ class CarlaEnv(BaseEnv):
             self.itype = None
 
         if self.itype != TrafficEventType.STOP_INFRACTION and self.itype in penalty_dict.keys():
-            penalty = 50 * (1 - penalty_dict[self.itype]) # 50 base penalty
+            penalty = 100 * (1 - penalty_dict[self.itype]) # 50 base penalty
         else:
             penalty = 0
 
@@ -76,11 +76,12 @@ class CarlaEnv(BaseEnv):
 
         # driving reward
         penalty = self.compute_penalty()
-        route_completion = CarlaDataProvider.get_route_completion_list()
-        driving_reward = (route_completion[-1] - route_completion[-2]) - penalty
+        #route_completion = CarlaDataProvider.get_route_completion_list()
+        #driving_reward = (route_completion[-1] - route_completion[-2]) - penalty
+        driving_reward = penalty
 
         # imitation reward
-        threshold = 11 # 2 meters
+        threshold = 55 # 5 meters
         points_map, points_exp = self.hero_agent.action # both (4,2)
         delta = np.linalg.norm(points_map[:2] - points_exp[:2], axis=1) # (2,1)
         imitation_reward = max((threshold - np.sum(delta))/threshold, 0)
