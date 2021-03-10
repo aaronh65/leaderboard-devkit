@@ -78,7 +78,7 @@ class CarlaEnv(BaseEnv):
         penalty = self.compute_penalty()
         #route_completion = CarlaDataProvider.get_route_completion_list()
         #driving_reward = (route_completion[-1] - route_completion[-2]) - penalty
-        driving_reward = penalty
+        driving_reward = -penalty
 
         # imitation reward
         threshold = 55 # 5 meters
