@@ -24,7 +24,7 @@ def main(args, config):
         env = CarlaEnv(config, client, agent)
 
         model = agent.net
-        model.env = env
+        #model.env = env
         model.setup_train(env, config)
 
         logger = False 
@@ -116,10 +116,11 @@ def parse_args():
 
     aconf = config['agent']
     total_timesteps = 200 if args.debug else aconf['total_timesteps']
-    burn_timesteps= 200
+    #burn_timesteps= 1000
+    burn_timesteps = 50
     save_frequency = 500 if args.debug else 5000
     batch_size = 4 if args.debug else args.batch_size
-    buffer_size = 200 if args.debug else args.buffer_size
+    buffer_size = 1000 if args.debug else args.buffer_size
 
     aconf['mode'] = 'train'
     aconf['total_timesteps'] = total_timesteps

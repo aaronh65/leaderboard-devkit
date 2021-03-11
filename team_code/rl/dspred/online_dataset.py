@@ -87,7 +87,7 @@ class CarlaDataset(Dataset):
         return self.num_samples
 
     def __getitem__(self, i):
-        i =  i % len(self.buffer.states)
+        print(len(self.buffer.states))
         state, action, reward, done, next_state, info = self.buffer.sample(i)
 
         topdown, target = state
@@ -133,12 +133,14 @@ if __name__ == '__main__':
 
     with open('buffer.pkl', 'rb') as f:
         buf = pkl.load(f)
-    buf.buffer_size = 100
+    print(buf.buffer_size)
+    print(len(buf.states))
     batch_size = 4
     loader = get_dataloader(buf, batch_size)
+    print(len(loader))
 
     for j, batch in enumerate(loader):
-        state, action, reward, next_state, done = batch
+        state, action, reward, next_state, done, info = batch
         #print(action)
         topdown, target = state
         ntopdown, ntarget = next_state

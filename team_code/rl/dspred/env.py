@@ -114,6 +114,5 @@ class CarlaEnv(BaseEnv):
             x0, y0 = self.hero_history[0]
             x1, y1 = self.hero_history[-1]
             norm = ((x1-x0)**2+(y1-y0)**2)**0.5
-            #print(f'recent collision: {norm:.2f}')
             done = norm < self.blocked_distance
         return done

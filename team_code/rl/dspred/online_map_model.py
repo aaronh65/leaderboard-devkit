@@ -129,8 +129,6 @@ def visualize(batch, points, vmap, hmap, npoints, nvmap, nhmap, naction, meta, e
 
     return images, result
 
-
-
 class MapModel(pl.LightningModule):
     def __init__(self, hparams):
         super().__init__()
@@ -151,7 +149,13 @@ class MapModel(pl.LightningModule):
         self.criterion = torch.nn.MSELoss(reduction='none') # weights? prioritized replay?
 
         print('populating...')
-        self.populate(config.agent.burn_timesteps)
+        #self.populate(config.agent.burn_timesteps)
+
+        #with open('buffer.pkl', 'wb') as f:
+        #    pkl.dump(self.env.buffer, f)
+        with open('burnt_buffer_new.pkl', 'rb') as f:
+            self.env.buffer = pkl.load(f)
+        
         self.env.reset()
 
     # burn in
@@ -167,6 +171,13 @@ class MapModel(pl.LightningModule):
             reward, done = self.env.step()
         self.env.cleanup()
         self.env.hero_agent.burn_in = False
+
+    #def rollout(self, num_episodes=-1, num_steps=-1):
+    #    assert num_episodes != -1 or num_steps != -1, \
+    #            'specify either num steps or num epsiodes' 
+    #    self.env.reset()
+
+
 
     def forward(self, topdown, target, debug=False):
         target_heatmap = self.to_heatmap(target, topdown)[:, None]
@@ -214,6 +225,8 @@ class MapModel(pl.LightningModule):
     def training_step(self, batch, batch_nb):
         metrics ={}
 
+        print('model', len(self.env.buffer.states))
+
         ## step environment
         self.eval()
         self.env.hero_agent.burn_in = np.random.random() < self.config.agent.epsilon
@@ -249,7 +262,8 @@ class MapModel(pl.LightningModule):
         loss = batch_loss.mean()
 
         metrics = {f'TD({self.n}) loss': loss.item()}
-        if batch_nb % 10 == 0:
+        #if batch_nb % 10 == 0:
+        if batch_nb % 1 == 0:
             if self.config.save_debug:
                 img = cv2.cvtColor(np.array(self.env.hero_agent.debug_img), cv2.COLOR_RGB2BGR)
                 metrics['debug_image'] = wandb.Image(img)
@@ -261,9 +275,9 @@ class MapModel(pl.LightningModule):
         if self.logger != None:
             self.logger.log_metrics(metrics, self.global_step)
 
-        
         return {'loss': loss}
 
+    # make this a validation episode rollout?
     def validation_step(self, batch, batch_nb):
         metrics = {}
 
