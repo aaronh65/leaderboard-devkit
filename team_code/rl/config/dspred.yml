@@ -16,7 +16,7 @@ env:
   scenarios: no_traffic_scenarios.json
   repetitions: 1
   empty: false
-  hop_resolution: 1
+  random: true
 agent:
   mode: train
   total_timesteps: 500000
@@ -26,12 +26,11 @@ agent:
   target_update_interval: 1
   save_frequency: 5000
   log_frequency: 100
-  save_images: false
   weights_path: team_code/rl/config/weights/map_model.ckpt
-  verbose: false
   # dspred
   buffer_size: 50000
   batch_size: 32
   n: 20
   epsilon: 0.1
+  forward: false
 

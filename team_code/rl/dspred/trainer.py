@@ -1,10 +1,10 @@
-import os, sys, time
+import os, time
 import yaml, json
 import argparse
 import traceback
 from datetime import datetime
-import pathlib
 
+from pathlib import Path
 from carla import Client 
 from env import CarlaEnv
 from agent import DSPredAgent
@@ -76,7 +76,7 @@ def parse_args():
     parser.add_argument('--buffer_size', type=int, default=50000)
     parser.add_argument('--batch_size', type=int, default=16)
     parser.add_argument('--log', action='store_true')
-    parser.add_argument('--save_dir', type=pathlib.Path, default='checkpoints')
+    parser.add_argument('--save_dir', type=Path, default='checkpoints')
     parser.add_argument('--id', type=str, default=datetime.now().strftime("%Y%m%d_%H%M%S"))
 
     parser.add_argument('--n', type=int, default=20)
@@ -102,22 +102,22 @@ def parse_args():
     config_path = f'{project_root}/team_code/rl/config/dspred.yml'
     with open(config_path, 'r') as f:
         config = yaml.load(f, Loader=yaml.Loader)
+
     config['project_root'] = project_root
     config['save_root'] = save_root
     config['save_data'] = args.save_data
     config['save_debug'] = args.save_debug
 
-    #config['carla_root'] = os.environ['CARLA_ROOT']
-
     # modify template config
     econf = config['env']
+    econf['world_port'] = args.world_port
+    econf['trafficmanager_port'] = args.traffic_port
+    econf['trafficmanager_seed'] = args.traffic_seed
     scenarios = 'no_traffic_scenarios.json' if args.no_scenarios \
             else 'all_towns_traffic_scenarios_public.json'
     econf['scenarios'] = scenarios
     econf['empty'] = args.empty
-    econf['world_port'] = args.world_port
-    econf['trafficmanager_port'] = args.traffic_port
-    econf['trafficmanager_seed'] = args.traffic_seed
+    econf['random'] = True
 
     aconf = config['agent']
     total_timesteps = 200 if args.debug else aconf['total_timesteps']
@@ -139,13 +139,14 @@ def parse_args():
     aconf['forward'] = args.forward
 
 
-    # save new config path
+    # save new config
     with open(f'{save_root}/config.yml', 'w') as f:
         yaml.dump(config, f, default_flow_style=False, sort_keys=False)
 
     config = dict_to_sns(config)
     config.env = dict_to_sns(config.env)
     config.agent = dict_to_sns(config.agent)
+
     return args, config
 
 if __name__ == '__main__':

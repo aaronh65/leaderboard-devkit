@@ -130,6 +130,8 @@ def visualize(batch, points, vmap, hmap, npoints, nvmap, nhmap, naction, meta, e
 
     return images, result
 
+
+# just needs to know if it's rolling out or nah
 class MapModel(pl.LightningModule):
     def __init__(self, hparams):
         super().__init__()

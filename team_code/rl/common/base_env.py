@@ -21,7 +21,6 @@ class BaseEnv(gym.Env):
         self.hero_agent = agent # the user-defined agent class
         self.hero_actor = None  # the actual CARLA actor
 
-
         # basic attributes + data provider setup
         self.world = self.client.get_world()
         self.traffic_manager = self.client.get_trafficmanager(
@@ -42,7 +41,7 @@ class BaseEnv(gym.Env):
                 self.econfig.repetitions)
         self.num_routes = len(self.indexer._configs_list)
         self.manager = ScenarioManager(60, False) # 60s timeout?
-        self.statistic_manager = StatisticsManager()
+        #self.statistic_manager = StatisticsManager()
         self.scenario = None
 
         # forwards SIGINTs to signal handler
@@ -53,10 +52,17 @@ class BaseEnv(gym.Env):
             self.manager.signal_handler(signum, frame)
         raise KeyboardInterrupt
 
-    def reset(self, log=None, rconfig=None):
-        if rconfig is None:
+    def reset(self):
+
+        # get next config
+        if self.econfig.random:
             idx = np.random.randint(self.num_routes)
             rconfig = self.indexer.get(idx)
+        elif self.indexer.peek():
+            rconfig = self.indexer.next()
+        else:
+            return 'done' # done
+
         rconfig.agent = self.hero_agent
         self._load_world_and_scenario(rconfig)
 
@@ -66,11 +72,6 @@ class BaseEnv(gym.Env):
         self.manager._running = True
 
         self.frame = 0
-        if log is not None:
-            self.env_log = {}
-            self.env_log['town'] = rconfig.town
-            self.env_log['name'] = rconfig.name
-            log['env'] = self.env_log
 
         route_num = int(rconfig.name.split('_')[-1])
         route_name = f'route_{route_num:02d}'
@@ -80,9 +81,9 @@ class BaseEnv(gym.Env):
         os.environ['REPETITION'] = repetition
 
         self.rconfig = rconfig
-        self.statistics_manager = StatisticsManager()
-        self.statistics_manager.set_route(rconfig.name, rconfig.index)
-        return []
+        #self.statistics_manager = StatisticsManager()
+        #self.statistics_manager.set_route(rconfig.name, rconfig.index)
+        return 'running'
 
     def _load_world_and_scenario(self, rconfig):
 
@@ -124,7 +125,7 @@ class BaseEnv(gym.Env):
         else:
             self.world.wait_for_tick()
 
-    def step(self, action=None):
+    def step(self):
         if self.manager._running:
             timestamp = None
             snapshot = self.world.get_snapshot()

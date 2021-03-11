@@ -39,9 +39,10 @@ class DSPredAgent(MapAgent):
         self.net.cuda()
         self.net.eval()
 
-        self.expert = MapModel.load_from_checkpoint(f'{project_root}/{weights_path}')
-        self.expert.cuda()
-        self.expert.eval()
+        if self.aconfig.mode == 'dagger':
+            self.expert = MapModel.load_from_checkpoint(f'{project_root}/{weights_path}')
+            self.expert.cuda()
+            self.expert.eval()
 
         self.burn_in = False
 
@@ -55,14 +56,26 @@ class DSPredAgent(MapAgent):
 
         # make debug directories
         save_root = self.config.save_root
-        if self.config.save_debug:
-            #ROUTE_NAME, REPETITION = os.environ['ROUTE_NAME'], os.environ['REPETITION']
-            self.debug_path = Path(f'{save_root}/debug/{route_name}/{repetition}')
-            self.debug_path.mkdir(exist_ok=True, parents=True)
+        self.save_path = Path(f'{save_root}/{route_name}/{repetition}')
+        self.save_path.mkdir(parents=True, exist_ok=True)
 
-        # TODO: make data directories and reimplement data collection w/better file structure
+        if self.config.save_debug:
+            (self.save_path / 'debug').mkdir()
         if self.config.save_data:
-            pass
+            (self.save_path / 'topdown').mkdir()
+            (self.save_path / 'points_lbc').mkdir()
+            (self.save_path / 'points_dqn').mkdir()
+            (self.save_path / 'measurements').mkdir()
+
+    def save_data(self,  tick_data):
+        sp = self.save_path
+        frame = f'{self.step:06d}'
+        with open(sp / 'points_lbc' / f'{frame}.npy', 'wb') as f:
+            np.save(f, tick_data['points_lbc'])
+        with open(sp / 'points_dqn' / f'{frame}.npy', 'wb') as f:
+            np.save(f, tick_data['points_dqn'])
+        Image.fromarray(tick_data['topdown']).save(sp / 'topdown' / f'{frame}.png')
+
 
     # remove rgb cameras from base agent
     def sensors(self):
@@ -122,56 +135,45 @@ class DSPredAgent(MapAgent):
         topdown = preprocess_semantic(topdown)
         topdown = topdown[None].cuda()
         tick_data['topdown_pth'] = topdown.clone().cpu()
-
         target = torch.from_numpy(tick_data['target'])
         target = target[None].cuda()
 
-        # either use behavior policy or real policy or burn_in
-        # lets have heatmap sampling be the burn_in distribution
+        # expectation points
+        points_exp, (vmap, hmap) = self.net.forward(topdown, target, debug=True) # world frame
+        points_exp = points_exp.clone().cpu().squeeze().numpy()
+        points_exp = (points_exp + 1) / 2 * 256 # (-1,1) to (0,256)
+        points_exp = np.clip(points_exp, 0, 256)
 
-        if self.aconfig.forward or self.burn_in:
+        # dqn points
+        actions, Q_all = self.net.get_actions(vmap, explore=self.burn_in) # (1,4,2), (1,4)
+        points_dqn = np.clip(actions.clone().cpu().squeeze().numpy(), 0, 256) # (4,2)
+
+        tick_data['points_dqn'] = points_dqn
+        tick_data['points_exp'] = points_exp
+        tick_data['maps'] = (vmap, hmap)
+
+        if self.aconfig.mode == 'dagger': # dagger and dqn
+            points_lbc, _ = self.expert.forward(topdown, target, debug=True)
+            points_lbc = points_lbc.clone().cpu().squeeze().numpy()
+            points_lbc = (points_lbc + 1) / 2 * 256
+            points_lbc = np.clip(points_lbc, 0, 256)
+            tick_data['points_lbc'] = points_lbc
+
+        if self.aconfig.mode == 'forward' or self.burn_in:
             #points_map = np.random.randint(0, 256, size=(4,2)) 
             x = np.random.randint(128 - 56, 128 + 56, (4,1))
             y = np.random.randint(256 - 128, 256, (4,1))
             points_map = np.hstack((x,y))
 
-        else: # burning in
-            # forward
-            points, (vmap, hmap) = self.net.forward(topdown, target, debug=True) # world frame
-
-            # compute action from LBC
-            #points_map = points.clone().cpu().squeeze()
-            #points_map = (points_map + 1) / 2 * 256
-            #points_map = np.clip(points_map, 0, 256).numpy()
-
-            # compute action from DQN
-            actions, Q_all = self.net.get_actions(vmap, explore=self.burn_in) # (1,4,2), (1,4)
-            points_map = np.clip(actions.clone().cpu().squeeze(), 0, 256) # (4,2)
-            points_map = points_map.numpy()
-                                    
-            tick_data['maps'] = (vmap, hmap)
-        
-        if self.aconfig.mode == 'train':
-
-            # noisy actions?
-            #noise = np.random.random(loc=0.0,scale=5.0, shape=points_map.shape)
-            #points_map = points_map + noise
-
-            # get expert action
-            pass
-
-        points_exp, _ = self.expert.forward(topdown, target, debug=True)
-        points_exp = points_exp.clone().cpu().squeeze()
-        points_exp = (points_exp + 1) / 2 * 256
-        points_exp = np.clip(points_exp, 0, 256).numpy()
-        
-        tick_data['points_exp'] = points_exp
-
-        points_cam = self.converter.map_to_cam(torch.Tensor(points_map)).numpy()
-        points_world = self.converter.map_to_world(torch.Tensor(points_map)).numpy()
-        
+        if self.aconfig.mode == 'data': # expert behavior policy
+            tick_data['points_lbc'] = points_exp
+            points_map = points_exp
+        else:
+            points_map = points_dqn
+        tick_data['points_map'] = points_map
 
         # get aim and controls
+        points_world = self.converter.map_to_world(torch.Tensor(points_map)).numpy()
         aim = (points_world[1] + points_world[0]) / 2.0
         desired_speed = np.linalg.norm(points_world[0] - points_world[1]) * 2.0
 
@@ -191,16 +193,14 @@ class DSPredAgent(MapAgent):
         control.brake = float(brake)
         #print(timestamp) # GAMETIME
 
-        tick_data['points_cam'] = points_cam
-        tick_data['points_map'] = points_map
-
-        if not self.burn_in and not self.aconfig.forward and (HAS_DISPLAY or self.config.save_debug):
+        condition = not self.burn_in and not self.aconfig.mode == 'forward' # not random
+        condition = condition and (HAS_DISPLAY or self.config.save_debug)
+        if condition:
             self.debug_display(tick_data, steer, throttle, brake, desired_speed)
 
-        # cache state and action for env to retrieve
-        self.state = (tick_data['topdown'], tick_data['target'])
-        self.action = (points_map, points_exp)
-
+        if self.config.save_data:
+            self.save_data(tick_data)
+        self.tick_data = tick_data
         return control
 
     def debug_display(self, tick_data, steer, throttle, brake, desired_speed, r=2):
@@ -219,8 +219,9 @@ class DSPredAgent(MapAgent):
         # rgb image on left, topdown w/vmap image on right
         # plot Q points instead of LBC version (argmax instead of expectation)
         points_map = tick_data['points_map']
-        points_cam = tick_data['points_cam']
+        points_cam = self.converter.map_to_cam(torch.Tensor(points_map)).numpy()
         points_exp = tick_data['points_exp']
+
         route_map = tick_data['route_map']
         route_cam = self.converter.map_to_cam(torch.Tensor(route_map)).numpy()
 
@@ -275,9 +276,10 @@ class DSPredAgent(MapAgent):
         _combined = cv2.cvtColor(np.hstack((rgb, fused)), cv2.COLOR_BGR2RGB)
         self.debug_img = _combined
 
-        if self.debug_path is not None:
+        if self.config.save_debug and self.step % 5 == 0:
+
             frame_number = self.step // 5
-            save_path = self.debug_path / f'{frame_number:06d}.png'
+            save_path = self.save_path / 'debug' / f'{frame_number:06d}.png'
             cv2.imwrite(str(save_path), _combined)
 
         if HAS_DISPLAY:

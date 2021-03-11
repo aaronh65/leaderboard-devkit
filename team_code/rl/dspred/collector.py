@@ -1,77 +1,30 @@
-import time
+import os, time
 import yaml, json
 import argparse
 import traceback
+from datetime import datetime
 
 from tqdm import tqdm
+from pathlib import Path
 from env import CarlaEnv
 from carla import Client
 from agent import DSPredAgent
 
-from team_code.common.utils import dict_to_sns
-
-def setup_episode_log(episode_idx):
-
-    episode_log = {}
-    episode_log['index'] = episode_idx
-    agent_log = {}
-    agent_log['total_steps'] = 0
-    agent_log['total_reward'] = 0
-    episode_log['agent'] = agent_log
-    return episode_log
+from team_code.common.utils import dict_to_sns, port_in_use
 
 def collect(config, agent, env):
 
-    log = {'checkpoints': []}
-    begin_step = 0
-    episode_idx = 0
-
     # start environment and run
-    episode_log = setup_episode_log(episode_idx)
-    agent_log = episode_log['agent']
-    episode_rewards = [0.0]
-    status = env.reset(log=episode_log)
-
+    status = env.reset()
     while status != 'done':
-
-        # get SAC prediction, step the env
-        reward, done = env.step()
-        agent_log['total_steps'] += 1
-
-        #model.num_timesteps += 1
-               
-        # save model if applicable
-        episode_rewards[-1] += reward
+        reward, done, info = env.step()
         if done:
-            # record then reset metrics
-            episode_steps = agent_log['total_steps']
-            agent_log['total_reward'] = episode_rewards[-1]
-            log['checkpoints'].append(episode_log)
-
-            #with open(f'{config.save_root}/logs/log.json', 'w') as f:
-            #    json.dump(log, f, indent=4, sort_keys=False)
-
-
-            episode_rewards.append(0.0)
-            num_episodes = len(episode_rewards) - 1
-
-            # cleanup and reset
             env.cleanup()
-            episode_idx += 1
-            episode_log = setup_episode_log(episode_idx)
-            status = env.reset(log=episode_log)
-            agent_log = episode_log['agent']
+            status = env.reset()
 
-def main(args):
-    client = Client('localhost', 2000)
+def main(args, config):
+    client = Client('localhost', args.world_port)
     client.set_timeout(600)
-
-    # get configs and spin up agent
-    with open(args.config_path, 'r') as f:
-        config = yaml.load(f, Loader=yaml.Loader)
-    config = dict_to_sns(config)
-    config.env = dict_to_sns(config.env)
-    config.agent = dict_to_sns(config.agent)
 
     try:
         agent = DSPredAgent(config)
@@ -88,10 +41,83 @@ def main(args):
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config_path', type=str, required=True)
+
+    parser.add_argument('-D', '--debug', action='store_true')
+    parser.add_argument('-G', '--gpu', type=int, default=0)
+    parser.add_argument('--data_root', type=str, default='/data')
+    parser.add_argument('--save_debug', action='store_true')
+    parser.add_argument('--save_data', action='store_true', default=True)
+    parser.add_argument('--short_stop', action='store_true')
+
+    # server/client stuff
+    parser.add_argument('-WP', '--world_port', type=int, default=2000)
+    parser.add_argument('-TP', '--traffic_port', type=int, default=8000)
+    parser.add_argument('-TS', '--traffic_seed', type=int, default=0)
+
+    # setup
+    parser.add_argument('--split', type=str, default='devtest', choices=['debug', 'devtest', 'testing', 'training'])
+
+    parser.add_argument('--routenum', type=int) # optional
+    parser.add_argument('--scenarios', action='store_true') # leaderboard-triggered scnearios
+    parser.add_argument('--repetitions', type=int, default=1) # should we directly default to this in indexer?
+    parser.add_argument('--empty', action='store_true') # other agents present?
+
     args = parser.parse_args()
-    return args
+
+    assert not port_in_use(args.traffic_port), \
+        f'traffic manager port {args.traffic_port} already in use!!'
+
+    # basic setup
+    project_root = os.environ['PROJECT_ROOT']
+    date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+    suffix = f'debug/{date_str}' if args.debug else f'{date_str}' 
+    save_root = Path(f'{args.data_root}/leaderboard/data/rl/dspred/{suffix}')
+    save_root.mkdir(parents=True, exist_ok=True)
+    
+    # environment setup
+    routes = f'routes_{args.split}'
+    if args.routenum:
+        routes = f'{routes}/route_{args.routenum:02d}'
+    routes = f'{routes}.xml'
+    scenarios = 'all_towns_traffic_scenarios_public.json' if args.scenarios \
+            else 'no_traffic_scenarios.json'
+
+    # get template config
+    config_path = f'{project_root}/team_code/rl/config/dspred.yml'
+    with open(config_path, 'r') as f:
+        config = yaml.load(f, Loader=yaml.Loader)
+    
+    # setup config
+    config['project_root'] = project_root
+    config['save_root'] = save_root
+    config['save_data'] = args.save_data
+    config['save_debug'] = args.save_debug
+
+    # setup env config
+    econf = config['env']
+    econf['world_port'] = args.world_port
+    econf['trafficmanager_port'] = args.traffic_port
+    econf['trafficmanager_seed'] = args.traffic_seed
+    econf['routes'] = routes
+    econf['scenarios'] = scenarios
+    econf['repetitions'] = args.repetitions
+    econf['empty'] = args.empty
+    econf['random'] = False
+    econf['short_stop'] = args.short_stop
+
+    aconf = config['agent']
+    aconf['mode'] = 'data'
+ 
+    # save new config
+    with open(f'{save_root}/config.yml', 'w') as f:
+        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+
+    config = dict_to_sns(config)
+    config.env = dict_to_sns(config.env)
+    config.agent = dict_to_sns(config.agent)
+
+    return args, config
 
 if __name__ == '__main__':
-    args = parse_args()
-    main(args)
+    args, config = parse_args()
+    main(args, config)
