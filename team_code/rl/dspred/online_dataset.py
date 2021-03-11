@@ -87,7 +87,6 @@ class CarlaDataset(Dataset):
         return self.num_samples
 
     def __getitem__(self, i):
-        #print('loader', len(ReplayBuffer.states))
         state, action, reward, done, next_state, info = ReplayBuffer.sample(i)
 
         topdown, target = state

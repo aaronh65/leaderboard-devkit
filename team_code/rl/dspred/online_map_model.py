@@ -24,11 +24,12 @@ from lbc.carla_project.src.models import SegmentationModel, RawController, Spati
 from lbc.carla_project.src.utils.heatmap import ToHeatmap
 from lbc.carla_project.src.common import COLOR
 
-from rl.dspred.online_dataset import get_dataloader
-#from rl.dspred.online_dataset import CarlaDataset
+#from rl.dspred.online_dataset import get_dataloader
+from rl.dspred.offline_dataset import get_dataloader
 from rl.dspred.global_buffer import ReplayBuffer
  
 HAS_DISPLAY = int(os.environ['HAS_DISPLAY'])
+RESUME = '/home/aaron/workspace/carla/leaderboard-devkit/team_code/rl/config/weights/map_model.ckpt'
 
 # takes (N,3,H,W) topdown and (N,4,H,W) vmaps
 # averages t=0.5s,1.0s vmaps and overlays it on topdown
@@ -175,12 +176,24 @@ class MapModel(pl.LightningModule):
         self.env.cleanup()
         self.env.hero_agent.burn_in = False
 
-    #def rollout(self, num_episodes=-1, num_steps=-1):
-    #    assert num_episodes != -1 or num_steps != -1, \
-    #            'specify either num steps or num epsiodes' 
-    #    self.env.reset()
+    # move to environment class
+    def rollout(self, num_episodes=-1, num_steps=-1):
+        assert num_episodes != -1 or num_steps != -1, \
+                'specify either num steps or num epsiodes' 
 
+        num_steps, num_episodes = 0, 0
 
+        ## step environment
+        self.eval()
+        self.env.reset()
+        self.env.hero_agent.burn_in = np.random.random() < self.config.agent.epsilon
+        with torch.no_grad():
+            for rollout_step in range(self.config.agent.rollout_steps):
+                _reward, _done = self.env.step() # reward, done
+                if _done:
+                    self.env.cleanup()
+                    self.env.reset()
+        self.train()
 
     def forward(self, topdown, target, debug=False):
         target_heatmap = self.to_heatmap(target, topdown)[:, None]
@@ -195,14 +208,15 @@ class MapModel(pl.LightningModule):
 
         return points, (logits, target_heatmap)
 
-    # two modes: sample, argmax
-    def get_actions(self, vmap, explore=False):
+    # two modes: sample, argmax?
+    def get_dqn_actions(self, vmap, explore=False):
         #aim_vmap = torch.mean(vmap[:,0:2,:,:], dim=1) #(N, H, W)
         vmap_flat = vmap.view(vmap.shape[:-2] + (-1,)) # (N, 4, H*W)
         Q_all, action_flat = torch.max(vmap_flat, -1, keepdim=True) # (N, 4, 1)
 
         if explore:
             pass
+            # figure out vectorized sampling...
             #probs = vmap_flat / Q_all
             #print(probs.shape)
             #action_flat = np.random.choice(
@@ -218,29 +232,18 @@ class MapModel(pl.LightningModule):
         
         return action, Q_all.squeeze() # (N,4,2), (N,4)
 
-    def get_action_values(self, vmap, action):
+    def get_Q_values(self, vmap, action):
         x, y = action[...,0], action[...,1] # Nx4
         action_flat = torch.unsqueeze(y*256 + x, dim=2) # (N,4, 1)
         vmap_flat = vmap.view(vmap.shape[:-2] + (-1,)) # (N, 4, H*W)
         Q_all = vmap_flat.gather(2, action_flat.long()) # (N, 4, 1)
-        return Q_all.squeeze() # (N,4)
+        return Q_all.squeeze() # (N, 4)
 
     def training_step(self, batch, batch_nb):
         metrics ={}
 
         #print('model', len(ReplayBuffer.states))
 
-        ## step environment
-        self.eval()
-        self.env.hero_agent.burn_in = np.random.random() < self.config.agent.epsilon
-        with torch.no_grad():
-            for rollout_step in range(self.config.agent.rollout_steps):
-                _reward, _done = self.env.step() # reward, done
-                if _done:
-                    self.env.cleanup()
-                    self.env.reset()
-        self.train()
-        
         ## train on batch
         state, action, reward, next_state, done, info = batch
         action, expert = action[:,0,...], action[:,1,...]
@@ -248,12 +251,12 @@ class MapModel(pl.LightningModule):
         # get Q values
         topdown, target = state
         points, (vmap, hmap) = self.forward(topdown, target, debug=True)
-        Q_all = self.get_action_values(vmap, action)
+        Q_all = self.get_Q_values(vmap, action)
 
         ntopdown, ntarget = next_state
         with torch.no_grad():
             npoints, (nvmap, nhmap) = self.forward(ntopdown, ntarget, debug=True)
-        naction, nQ_all = self.get_actions(nvmap)
+        naction, nQ_all = self.get_dqn_actions(nvmap)
 
         # choose t=1,2
         Q = torch.mean(Q_all[:, :2], axis=1, keepdim=True)
@@ -292,12 +295,12 @@ class MapModel(pl.LightningModule):
         topdown, target = state
         with torch.no_grad():
             points, (vmap, hmap) = self.forward(topdown, target, debug=True)
-        Q_all = self.get_action_values(vmap, action)
+        Q_all = self.get_Q_values(vmap, action)
 
         ntopdown, ntarget = next_state
         with torch.no_grad():
             npoints, (nvmap, nhmap) = self.forward(ntopdown, ntarget, debug=True)
-        naction, nQ_all = self.get_actions(nvmap)
+        naction, nQ_all = self.get_dqn_actions(nvmap)
 
         # choose t=1,2
         Q = torch.mean(Q_all[:, :2], axis=1, keepdim=True)
@@ -346,74 +349,83 @@ class MapModel(pl.LightningModule):
 
 
     def train_dataloader(self):
-        return get_dataloader(is_train=True)
+        return get_dataloader(is_train=True, mode=self.data_mode)
+
+    # online val dataloaders spoof a length of N batches, and do N episode rollouts
     def val_dataloader(self):
-        return get_dataloader(is_train=False)
+        return get_dataloader(is_train=False, mode=self.data_mode)
 
 
 
 
-def main(hparams):
+# offline training
+
+def main(args):
 
     logger = False
-    if hparams.log:
-        logger = WandbLogger(id=hparams.id, save_dir=str(hparams.save_dir), project='dqn')
-    checkpoint_callback = ModelCheckpoint(hparams.save_dir, save_top_k=1)
+    if args.log:
+        logger = WandbLogger(id=args.id, save_dir=str(args.save_dir), project='dqn/offline')
+    checkpoint_callback = ModelCheckpoint(args.save_dir, save_top_k=1) # figure out what's up with this
 
-    # pass env into map model constructor
-    try:
-        resume = '/home/aaron/workspace/carla/leaderboard-devkit/team_code/rl/config/weights/map_model.ckpt'
-        model = MapModel.load_from_checkpoint(resume)
-        model.hparams.dataset_dir = hparams.dataset_dir
-        model.hparams.batch_size = hparams.batch_size
-        model.n = hparams.n
-        print(f'resuming from {resume}')
+    # resume and add a couple arguments
+    model = MapModel.load_from_checkpoint(RESUME)
+    model.hparams.dataset_dir = args.dataset_dir
+    model.hparams.batch_size = args.batch_size
+    model.hparams.save_dir = args.save_dir
+    model.hparams.n = args.n
+    model.data_mode = 'offline'
 
-    except Exception as e:
-        traceback.print_exception(type(e), e, e.__traceback__)
-        resume = None
-        trainer = pl.Trainer(
-            gpus=-1, max_epochs=hparams.max_epochs,
-            resume_from_checkpoint=resume,
-            logger=logger,
-            checkpoint_callback=checkpoint_callback,)
-            #check_val_every
+    # offline trainer can use all gpus
+    # when resuming, the network starts at epoch 36
+    trainer = pl.Trainer(
+        gpus=-1, max_epochs=args.max_epochs,
+        resume_from_checkpoint=RESUME,
+        logger=logger,
+        checkpoint_callback=checkpoint_callback,)
 
     trainer.fit(model)
 
-    wandb.save(str(hparams.save_dir / '*.ckpt'))
+    #wandb.save(str(args.save_dir / '*.ckpt'))
+
 
 
 if __name__ == '__main__':
     
     parser = argparse.ArgumentParser()
-    parser.add_argument('--max_epochs', type=int, default=40)
+
+    parser.add_argument('-D', '--debug', action='store_true')
+
+    # Trainer args
+    parser.add_argument('--max_epochs', type=int, default=50)
+    #parser.add_argument('-G', '--gpus', type=int, default=1)
+    
     parser.add_argument('--save_dir', type=pathlib.Path, default='checkpoints')
-    parser.add_argument('--id', type=str, default=datetime.now().strftime("%Y%m%d_%H%M%S")) # replace with datetime
-
-    parser.add_argument('--heatmap_radius', type=int, default=5)
-    parser.add_argument('--sample_by', type=str, choices=['none', 'even', 'speed', 'steer'], default='even')
-    parser.add_argument('--command_coefficient', type=float, default=0.1)
-    parser.add_argument('--temperature', type=float, default=10.0)
-    parser.add_argument('--hack', action='store_true', default=False)
-
-    # Data args.
-    parser.add_argument('--dataset_dir', type=pathlib.Path, required=True)
-    parser.add_argument('--batch_size', type=int, default=16)
-
-    # Optimizer args.
-    parser.add_argument('--lr', type=float, default=1e-4)
-    parser.add_argument('--weight_decay', type=float, default=0.0)
-
-    # RL args
+    parser.add_argument('--data_root', type=pathlib.Path, default='/data')
+    parser.add_argument('--id', type=str, default=datetime.now().strftime("%Y%m%d_%H%M%S")) 
     #parser.add_argument('--offline', action='store_true', default=False)
+
+    # Model args
+    parser.add_argument('--heatmap_radius', type=int, default=5)
+    #parser.add_argument('--command_coefficient', type=float, default=0.1)
+    parser.add_argument('--temperature', type=float, default=10.0)
+    parser.add_argument('--hack', action='store_true', default=False) # what is this again?
+    parser.add_argument('--batch_size', type=int, default=16)
+    parser.add_argument('--weight_decay', type=float, default=0.0)
+    parser.add_argument('--lr', type=float, default=1e-4)
     parser.add_argument('--n', type=int, default=0)
+    parser.add_argument('--sample_by', type=str, 
+            choices=['none', 'even', 'speed', 'steer'], default='even')
+
+    # Program args
+    parser.add_argument('--dataset_dir', type=pathlib.Path, required=True)
     parser.add_argument('--log', action='store_true')
-    parser.add_argument('-d', '--debug', action='store_true')
 
-    parsed = parser.parse_args()
-    save_dir = parsed.save_dir / 'debug' / parsed.id if parsed.debug else parsed.save_dir / parsed.id
-    parsed.save_dir = save_dir
-    parsed.save_dir.mkdir(parents=True, exist_ok=True)
+    
+    args = parser.parse_args()
+    suffix = f'debug/{args.id}' if args.debug else args.id
+    save_root = args.data_root / f'leaderboard/results/rl/dspred/{suffix}'
 
-    main(parsed)
+    args.save_dir = save_root
+    args.save_dir.mkdir(parents=True, exist_ok=True)
+
+    main(args)

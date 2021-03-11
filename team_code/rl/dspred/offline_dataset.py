@@ -45,32 +45,45 @@ def get_weights(data, key='speed', bins=4):
 
 
 # running mean for efficient prioritized experience replay?
-def get_dataset(data=None, batch_size=4, num_workers=4, sample_by='none', n=0, **kwargs):
+def get_dataloader(data=None, fixed=None, batch_size=4, num_workers=4, sample_by='none', n=0, **kwargs):
+
+    if mode == 'hybrid' or mode == 'online':
+        assert num_workers == 0, 'cannot use non-stationary datasets with multiple workers'
+
     data = list()
     transform = transforms.Compose([
         lambda x: x,
         transforms.ToTensor()
         ])
 
-    episodes = list(sorted(Path(dataset_dir).glob('*')))
-    episodes = [elem for elem in episodes if '.yml' not in str(elem)]
-    #print(episodes)
+    # retrieve data paths
+    episodes = list()
+    routes = list(sorted(Path(dataset_dir).glob('*')))
+    routes = [path for path in routes if os.path.isdir(path)]
+    print(routes)
+    for route in routes:
+        episodes.extend(route.glob('*'))
+    print(episodes)
+    #episodes = list(sorted(Path(dataset_dir).glob('*')))
+    #episodes = [elem for elem in episodes if '.yml' not in str(elem)]
 
-    for i, _dataset_dir in enumerate(episodes):
-        add = False
-        add |= (is_train and i % 10 < 9)
-        add |= (not is_train and i % 10 >= 9)
+    ## need at least 10 episode directories for split
+    #for i, _dataset_dir in enumerate(episodes): # 90-10 train/val
+    #    add = False
+    #    add |= (is_train and i % 10 < 9)
+    #    add |= (not is_train and i % 10 >= 9)
 
-        if add:
-            data.append(CarlaDataset(_dataset_dir, transform, **kwargs, n=n))
+    #    if add:
+    #        data.append(CarlaDataset(_dataset_dir, transform, **kwargs, n=n))
 
-    print('%d frames.' % sum(map(len, data)))
+    ## sum up the lengths of each dataset
+    #print('%d frames.' % sum(map(len, data)))
 
-    weights = torch.DoubleTensor(get_weights(data, key=sample_by))
-    sampler = torch.utils.data.sampler.WeightedRandomSampler(weights, len(weights))
-    data = torch.utils.data.ConcatDataset(data)
+    #weights = torch.DoubleTensor(get_weights(data, key=sample_by))
+    #sampler = torch.utils.data.sampler.WeightedRandomSampler(weights, len(weights))
+    #data = torch.utils.data.ConcatDataset(data)
 
-    return Wrap(data, sampler, batch_size, 1000 if is_train else 100, num_workers)
+    #return Wrap(data, sampler, batch_size, 1000 if is_train else 100, num_workers)
 
 def preprocess_semantic(semantic_np):
     topdown = CONVERTER[semantic_np]
@@ -165,7 +178,6 @@ if __name__ == '__main__':
     to_heatmap = ToHeatmap(5)
 
     data_let = len(val_data)
-    batch = 
     for batch in val_data:
         state, action, reward, next_state, done = batch
 
