@@ -347,15 +347,12 @@ class MapModel(pl.LightningModule):
                 verbose=True)
         return [optim], [scheduler]
 
-
     def train_dataloader(self):
-        return get_dataloader(is_train=True, mode=self.data_mode)
+        return get_dataloader(self.hparams, is_train=True)
 
     # online val dataloaders spoof a length of N batches, and do N episode rollouts
     def val_dataloader(self):
-        return get_dataloader(is_train=False, mode=self.data_mode)
-
-
+        return get_dataloader(self.hparams, is_train=False)
 
 
 # offline training
@@ -373,7 +370,9 @@ def main(args):
     model.hparams.batch_size = args.batch_size
     model.hparams.save_dir = args.save_dir
     model.hparams.n = args.n
-    model.data_mode = 'offline'
+    model.hparams.gamma = args.gamma
+    model.hparams.num_workers = args.num_workers
+    model.hparams.data_mode = 'offline'
 
     # offline trainer can use all gpus
     # when resuming, the network starts at epoch 36
@@ -397,6 +396,7 @@ if __name__ == '__main__':
 
     # Trainer args
     parser.add_argument('--max_epochs', type=int, default=50)
+    parser.add_argument('--num_workers', type=int, default=4)
     #parser.add_argument('-G', '--gpus', type=int, default=1)
     
     parser.add_argument('--save_dir', type=pathlib.Path, default='checkpoints')
@@ -415,6 +415,7 @@ if __name__ == '__main__':
     parser.add_argument('--n', type=int, default=0)
     parser.add_argument('--sample_by', type=str, 
             choices=['none', 'even', 'speed', 'steer'], default='even')
+    parser.add_argument('--gamma')
 
     # Program args
     parser.add_argument('--dataset_dir', type=pathlib.Path, required=True)

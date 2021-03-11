@@ -94,8 +94,10 @@ class CarlaEnv(BaseEnv):
 
     def save_data(self, reward, done, info):
         data = info
+        x,y = self.hero_agent.tick_data['target']
+        data['x_tgt'] = x
+        data['y_tgt'] = y
         data['done'] = int(done)
-
         if 'infraction' not in data.keys():
             data['infraction'] = 'none'
         data['infraction'] = str(data['infraction'])

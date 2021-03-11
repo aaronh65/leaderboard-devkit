@@ -145,9 +145,8 @@ class DSPredAgent(MapAgent):
         points_exp = np.clip(points_exp, 0, 256)
 
         # dqn points
-        actions, Q_all = self.net.get_actions(vmap, explore=self.burn_in) # (1,4,2), (1,4)
-        points_dqn = np.clip(actions.clone().cpu().squeeze().numpy(), 0, 256) # (4,2)
-
+        points_dqn, Q_all = self.net.get_dqn_actions(vmap, explore=self.burn_in) # (1,4,2), (1,4)
+        points_dqn = np.clip(points_dqn.clone().cpu().squeeze().numpy(), 0, 256) # (4,2)
         tick_data['points_dqn'] = points_dqn
         tick_data['points_exp'] = points_exp
         tick_data['maps'] = (vmap, hmap)

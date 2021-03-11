@@ -45,45 +45,41 @@ def get_weights(data, key='speed', bins=4):
 
 
 # running mean for efficient prioritized experience replay?
-def get_dataloader(data=None, fixed=None, batch_size=4, num_workers=4, sample_by='none', n=0, **kwargs):
+def get_dataloader(hparams, is_train=False):
 
+    mode = hparams.data_mode
     if mode == 'hybrid' or mode == 'online':
-        assert num_workers == 0, 'cannot use non-stationary datasets with multiple workers'
+        assert hparams.num_workers == 0, 'cannot use non-stationary datasets with multiple workers'
 
-    data = list()
-    transform = transforms.Compose([
-        lambda x: x,
-        transforms.ToTensor()
-        ])
-
+    
     # retrieve data paths
-    episodes = list()
-    routes = list(sorted(Path(dataset_dir).glob('*')))
-    routes = [path for path in routes if os.path.isdir(path)]
-    print(routes)
-    for route in routes:
-        episodes.extend(route.glob('*'))
-    print(episodes)
-    #episodes = list(sorted(Path(dataset_dir).glob('*')))
-    #episodes = [elem for elem in episodes if '.yml' not in str(elem)]
+    if mode == 'offline':
+        assert hasattr(hparams, 'dataset_dir'), 'no offline dataset location'
+        episodes = list()
+        routes = Path(hparams.dataset_dir).glob('*')
+        routes = sorted([path for path in routes if path.is_dir()])
+        for route in routes:
+            episodes.extend(sorted(route.glob('*')))
 
-    ## need at least 10 episode directories for split
-    #for i, _dataset_dir in enumerate(episodes): # 90-10 train/val
-    #    add = False
-    #    add |= (is_train and i % 10 < 9)
-    #    add |= (not is_train and i % 10 >= 9)
+        # need at least 10 episode directories for split data = list()
+        data = list()
+        for i, _dataset_dir in enumerate(episodes): # 90-10 train/val
+            add = False
+            add |= (is_train and i % 10 < 9)
+            add |= (not is_train and i % 10 >= 9)
 
-    #    if add:
-    #        data.append(CarlaDataset(_dataset_dir, transform, **kwargs, n=n))
+            if add:
+                data.append(OfflineCarlaDataset(hparams, _dataset_dir))
 
     ## sum up the lengths of each dataset
-    #print('%d frames.' % sum(map(len, data)))
+    print('%d frames.' % sum(map(len, data)))
 
-    #weights = torch.DoubleTensor(get_weights(data, key=sample_by))
-    #sampler = torch.utils.data.sampler.WeightedRandomSampler(weights, len(weights))
-    #data = torch.utils.data.ConcatDataset(data)
+    weights = torch.DoubleTensor(get_weights(data, key='none'))
+    sampler = torch.utils.data.sampler.WeightedRandomSampler(weights, len(weights))
+    data = torch.utils.data.ConcatDataset(data)
 
-    #return Wrap(data, sampler, batch_size, 1000 if is_train else 100, num_workers)
+    # fourth argument specifies steps/batches per epoch
+    return Wrap(data, sampler, hparams.batch_size, 1000 if is_train else 100, hparams.num_workers)
 
 def preprocess_semantic(semantic_np):
     topdown = CONVERTER[semantic_np]
@@ -93,24 +89,22 @@ def preprocess_semantic(semantic_np):
     return topdown
 
 
-class CarlaDataset(Dataset):
-    def __init__(self, dataset_dir, transform=transforms.ToTensor(), n=0, max_len=50000):
+class OfflineCarlaDataset(Dataset):
+    def __init__(self, hparams, dataset_dir, transform=transforms.ToTensor()):
         dataset_dir = Path(dataset_dir)
         measurements = list(sorted((dataset_dir / 'measurements').glob('*.json')))
 
-        self.transform = transform
-        self.dataset_dir = dataset_dir
-        self.frames = list()
-        self.measurements = pd.DataFrame([eval(x.read_text()) for x in measurements])
-        self.converter = Converter()
-
-        # n-step returns
-        self.n = n
-        self.gamma = 0.99
-        self.discount = [self.gamma**i for i in range(n+1)]
-
         print(dataset_dir)
 
+        self.hparams = hparams
+        self.transform = transform
+        self.dataset_dir = dataset_dir
+        self.measurements = pd.DataFrame([eval(x.read_text()) for x in measurements])
+
+        # n-step returns
+        self.discount = [self.hparams.gamma**i for i in range(hparams.n+1)]
+
+        self.frames = list()
         for image_path in sorted((dataset_dir / 'topdown').glob('*.png')):
             frame = str(image_path.stem)
 
@@ -136,7 +130,12 @@ class CarlaDataset(Dataset):
         topdown = preprocess_semantic(np.array(topdown))
         tick_data = self.measurements.iloc[i]
         target = torch.FloatTensor(np.float32((tick_data['x_tgt'], tick_data['y_tgt'])))
-        action = torch.FloatTensor(np.float32((tick_data['x_aim'], tick_data['y_aim'])))
+        #action = torch.FloatTensor(np.float32((tick_data['x_aim'], tick_data['y_aim'])))
+
+        with open(path / 'points_dqn' / f'{frame}.npy', 'rb') as f:
+            points_dqn = np.load(f)
+        with open(path / 'points_lbc' / f'{frame}.npy', 'rb') as f:
+            points_lbc = np.load(f)
 
         ni = i + self.n + 1
         ni = min(ni, len(self.frames))
@@ -154,31 +153,47 @@ class CarlaDataset(Dataset):
 
         
         #print(f'{frame} {nframe}')
-        return (topdown, target), action, reward, (ntopdown, ntarget), done
+        return (topdown, target), (points_dqn, points_lbc), (ntopdown, ntarget), meta
         
+
+
 if __name__ == '__main__':
-    import sys
-    import cv2
-    import argparse
+    import os, cv2, argparse
     from PIL import ImageDraw
     from lbc.carla_project.src.utils.heatmap import ToHeatmap
-    from rl.dspred.map_model import MapModel
+    from rl.dspred.online_map_model import MapModel
 
-    model = MapModel.load_from_checkpoint('/home/aaron/workspace/carla/leaderboard-devkit/team_code/rl/config/weights/map_model.ckpt')
-    model.eval()
-
+    
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset_dir', type=str, required=True)
+    parser.add_argument('--dataset_dir', type=Path)
     parser.add_argument('--n', type=int, default=0)
+    parser.add_argument('--batch_size', type=int, default=16)
+    parser.add_argument('--gamma', type=float, default=0.99)
+    parser.add_argument('--num_workers', type=int, default=4)
+    parser.add_argument('--mode', type=str, default='offline', 
+            choices=['offline', 'online', 'hybrid'])
     args = parser.parse_args()
 
-    data = CarlaDataset(args.dataset_dir, n=args.n)
-    #val_data = get_dataset(args.dataset_dir, False, 4, sample_by='none', n=args.n)
+    if args.dataset_dir is None: # local
+        args.dataset_dir = '/data/leaderboard/data/rl/dspred/debug/20210311_143718'
+
+    project_root = os.environ['PROJECT_ROOT']
+    RESUME = f'{project_root}/team_code/rl/config/weights/map_model.ckpt'
+    model = MapModel.load_from_checkpoint(RESUME)
+
+    model.hparams.dataset_dir = args.dataset_dir
+    model.hparams.batch_size = args.batch_size
+    #model.hparams.save_dir = args.save_dir
+    model.hparams.n = args.n
+    model.hparams.data_mode = args.mode
+    model.hparams.gamma = args.gamma
+    model.hparams.num_workers = args.num_workers
+
     converter = Converter()
     to_heatmap = ToHeatmap(5)
 
-    data_let = len(val_data)
-    for batch in val_data:
+    loader = get_dataloader(model.hparams, is_train=True)
+    for batch in loader:
         state, action, reward, next_state, done = batch
 
         # this state
