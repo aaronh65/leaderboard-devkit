@@ -58,7 +58,7 @@ def parse_args():
     parser.add_argument('--split', type=str, default='devtest', choices=['debug', 'devtest', 'testing', 'training'])
 
     parser.add_argument('--routenum', type=int) # optional
-    parser.add_argument('--scenarios', action='store_true') # leaderboard-triggered scnearios
+    parser.add_argument('--scenarios', action='store_true', default=True) # leaderboard-triggered scenarios
     parser.add_argument('--repetitions', type=int, default=1) # should we directly default to this in indexer?
     parser.add_argument('--empty', action='store_true') # other agents present?
 

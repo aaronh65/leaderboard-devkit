@@ -59,6 +59,8 @@ class DSPredAgent(MapAgent):
         self.save_path = Path(f'{save_root}/{route_name}/{repetition}')
         self.save_path.mkdir(parents=True, exist_ok=True)
 
+        print(self.save_path)
+
         if self.config.save_debug:
             (self.save_path / 'debug').mkdir()
         if self.config.save_data:
