@@ -89,7 +89,7 @@ def parse_args():
     
     # setup config
     config['project_root'] = project_root
-    config['save_root'] = save_root
+    config['save_root'] = str(save_root)
     config['save_data'] = args.save_data
     config['save_debug'] = args.save_debug
 
@@ -111,7 +111,7 @@ def parse_args():
     # save new config
     with open(f'{save_root}/config.yml', 'w') as f:
         yaml.dump(config, f, default_flow_style=False, sort_keys=False)
-
+    config['save_root'] = save_root
     config = dict_to_sns(config)
     config.env = dict_to_sns(config.env)
     config.agent = dict_to_sns(config.agent)
