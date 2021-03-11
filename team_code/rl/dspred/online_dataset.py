@@ -13,6 +13,7 @@ from numpy import nan
 from lbc.carla_project.src.converter import Converter, PIXELS_PER_WORLD
 from lbc.carla_project.src.dataset_wrapper import Wrap
 from lbc.carla_project.src.common import *
+from rl.dspred.global_buffer import ReplayBuffer
 
 
 # Reproducibility.
@@ -79,16 +80,15 @@ def preprocess_semantic(semantic_np):
     return topdown
 
 class CarlaDataset(Dataset):
-    def __init__(self, replay_buffer, num_samples):
-        self.buffer = replay_buffer
+    def __init__(self, num_samples):
         self.num_samples = num_samples
 
     def __len__(self):
         return self.num_samples
 
     def __getitem__(self, i):
-        print(len(self.buffer.states))
-        state, action, reward, done, next_state, info = self.buffer.sample(i)
+        print('loader', len(ReplayBuffer.states))
+        state, action, reward, done, next_state, info = ReplayBuffer.sample(i)
 
         topdown, target = state
         topdown = Image.fromarray(topdown)
@@ -107,11 +107,11 @@ class CarlaDataset(Dataset):
     
         return (topdown, target), action, reward, (ntopdown, ntarget), done, info
 
-def get_dataloader(buf, is_train=False, num_workers=4):
-    num_samples = buf.buffer_size if is_train else buf.batch_size #
+def get_dataloader(is_train, num_workers=0):
+    num_samples = ReplayBuffer.buffer_size if is_train else ReplayBuffer.batch_size #
     weights = np.ones(num_samples) # prioritize?
     sampler = torch.utils.data.sampler.WeightedRandomSampler(weights, num_samples)
-    return DataLoader(CarlaDataset(buf, num_samples), batch_size=buf.batch_size, num_workers=num_workers, sampler=sampler, drop_last=True, pin_memory=True)
+    return DataLoader(CarlaDataset(num_samples), batch_size=ReplayBuffer.batch_size, num_workers=num_workers, sampler=sampler, drop_last=True, pin_memory=True)
 
 
 if __name__ == '__main__':

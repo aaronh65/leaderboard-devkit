@@ -14,17 +14,22 @@ from common.utils import dict_to_sns, port_in_use
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
+from rl.dspred.global_buffer import ReplayBuffer
 
 def main(args, config):
     try:
-        agent = DSPredAgent(config)
 
         client = Client('localhost', config.env.world_port)
         client.set_timeout(600)
+        agent = DSPredAgent(config)
         env = CarlaEnv(config, client, agent)
 
+        ReplayBuffer.setup(
+                config.agent.buffer_size, 
+                config.agent.batch_size,
+                config.agent.n)
+
         model = agent.net
-        #model.env = env
         model.setup_train(env, config)
 
         logger = False 

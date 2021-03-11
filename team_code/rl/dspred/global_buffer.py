@@ -31,7 +31,7 @@ class ReplayBuffer(object):
     @staticmethod
     def add_experience(state, action, reward, done, info):
         exp = [state, action, reward, done, info]
-        if len(ReplayBuffer.states) >= self.buffer_size:
+        if len(ReplayBuffer.states) >= ReplayBuffer.buffer_size:
             for buf in ReplayBuffer.bufs:
                 buf.popleft()
         for buf, data in zip(ReplayBuffer.bufs, exp):
@@ -53,16 +53,16 @@ class ReplayBuffer(object):
         action = ReplayBuffer.actions[t]
         info = ReplayBuffer.infos[t]
 
-        end = min(t + ReplayBuffer.n, len(self.states) - 1)
+        end = min(t + ReplayBuffer.n, len(ReplayBuffer.states) - 1)
         dones = list(islice(ReplayBuffer.dones, t, end+1))
         if True in dones:
             end = dones.index(True)
         done = ReplayBuffer.dones[end]
         rewards = list(islice(ReplayBuffer.rewards, t, end+1))
         reward = np.dot(rewards, ReplayBuffer.discount[:len(rewards)])
-        condition = (end == len(ReplayBuffer.states)-1) or self.dones[end]
-        next_state = ReplayBuffer.states[end] if condition else self.states[end+1]
-        info['next_action'] = ReplayBuffer.actions[end] if condition else self.actions[end+1]
+        condition = (end == len(ReplayBuffer.states)-1) or ReplayBuffer.dones[end]
+        next_state = ReplayBuffer.states[end] if condition else ReplayBuffer.states[end+1]
+        info['next_action'] = ReplayBuffer.actions[end] if condition else ReplayBuffer.actions[end+1]
 
         return state, action, reward, done, next_state, info
 

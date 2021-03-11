@@ -6,7 +6,8 @@ from itertools import islice
 
 from rl.common.env_utils import *
 from rl.common.base_env import BaseEnv
-from rl.dspred.replay_buffer import ReplayBuffer
+#from rl.dspred.replay_buffer import ReplayBuffer
+from rl.dspred.global_buffer import ReplayBuffer
 
 from leaderboard.utils.statistics_util import penalty_dict, collision_types
 from srunner.scenariomanager.carla_data_provider import CarlaDataProvider
@@ -19,10 +20,10 @@ class CarlaEnv(BaseEnv):
     def __init__(self, config, client, agent):
         super().__init__(config, client, agent)
 
-        self.buffer = ReplayBuffer(
-                config.agent.buffer_size, 
-                config.agent.batch_size,
-                config.agent.n)
+        #self.buffer = ReplayBuffer(
+        #        config.agent.buffer_size, 
+        #        config.agent.batch_size,
+        #        config.agent.n)
         self.warmup_frames = 20
         self.blocked_time = 5
         self.blocked_distance = 1.0
@@ -90,7 +91,7 @@ class CarlaEnv(BaseEnv):
         info['driving_reward'] = driving_reward
         info['imitation_reward'] = imitation_reward
 
-        self.buffer.add_experience(self.hero_agent.state, self.hero_agent.action, reward, done, info)
+        ReplayBuffer.add_experience(self.hero_agent.state, self.hero_agent.action, reward, done, info)
 
         return reward, done
 

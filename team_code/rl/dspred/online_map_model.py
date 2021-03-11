@@ -26,6 +26,7 @@ from lbc.carla_project.src.common import COLOR
 
 from rl.dspred.online_dataset import get_dataloader
 #from rl.dspred.online_dataset import CarlaDataset
+from rl.dspred.global_buffer import ReplayBuffer
  
 HAS_DISPLAY = int(os.environ['HAS_DISPLAY'])
 
@@ -149,12 +150,12 @@ class MapModel(pl.LightningModule):
         self.criterion = torch.nn.MSELoss(reduction='none') # weights? prioritized replay?
 
         print('populating...')
-        #self.populate(config.agent.burn_timesteps)
+        self.populate(config.agent.burn_timesteps)
 
         #with open('buffer.pkl', 'wb') as f:
         #    pkl.dump(self.env.buffer, f)
-        with open('burnt_buffer_new.pkl', 'rb') as f:
-            self.env.buffer = pkl.load(f)
+        #with open('burnt_buffer_new.pkl', 'rb') as f:
+        #    self.env.buffer = pkl.load(f)
         
         self.env.reset()
 
@@ -225,7 +226,7 @@ class MapModel(pl.LightningModule):
     def training_step(self, batch, batch_nb):
         metrics ={}
 
-        print('model', len(self.env.buffer.states))
+        #print('model', len(ReplayBuffer.states))
 
         ## step environment
         self.eval()
@@ -343,9 +344,9 @@ class MapModel(pl.LightningModule):
 
 
     def train_dataloader(self):
-        return get_dataloader(self.env.buffer, is_train=True)
+        return get_dataloader(is_train=True)
     def val_dataloader(self):
-        return get_dataloader(self.env.buffer, is_train=False)
+        return get_dataloader(is_train=False)
 
 
 
