@@ -45,6 +45,7 @@ def parse_args():
     parser.add_argument('-D', '--debug', action='store_true')
     parser.add_argument('-G', '--gpu', type=int, default=0)
     parser.add_argument('--data_root', type=str, default='/data')
+    parser.add_argument('--id', type=str, default=datetime.now().strftime("%Y%m%d_%H%M%S"))
     parser.add_argument('--save_debug', action='store_true')
     parser.add_argument('--save_data', action='store_true', default=True)
     parser.add_argument('--short_stop', action='store_true')
@@ -69,9 +70,8 @@ def parse_args():
 
     # basic setup
     project_root = os.environ['PROJECT_ROOT']
-    date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-    suffix = f'debug/{date_str}' if args.debug else f'{date_str}' 
-    save_root = Path(f'{args.data_root}/leaderboard/data/rl/dspred/{suffix}')
+    suffix = f'debug/{args.id}' if args.debug else args.id
+    save_root = Path(f'{args.data_root}/leaderboard/results/rl/dspred/{suffix}')
     save_root.mkdir(parents=True, exist_ok=True)
     
     # environment setup

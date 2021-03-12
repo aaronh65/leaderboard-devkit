@@ -119,7 +119,7 @@ if __name__ == '__main__':
     import argparse
     from PIL import ImageDraw
     from lbc.carla_project.src.utils.heatmap import ToHeatmap
-    from rl.dspred.online_map_model import MapModel
+    from rl.dspred.map_model import MapModel
     import pickle as pkl
     from itertools import repeat
 

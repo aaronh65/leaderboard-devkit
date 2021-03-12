@@ -8,7 +8,7 @@ from pathlib import Path
 from carla import Client 
 from env import CarlaEnv
 from agent import DSPredAgent
-from online_map_model import MapModel
+from map_model import MapModel
 
 from common.utils import dict_to_sns, port_in_use
 import pytorch_lightning as pl
@@ -87,14 +87,11 @@ def parse_args():
 
     assert not port_in_use(args.traffic_port), \
             f'traffic manager port {args.traffic_port} already in use!!'
-    #assert not port_in_use(args.world_port), \
-    #        f'world port {args.world_port} already in use!!'
 
     # assert to make sure setup.bash sourced?
     project_root = os.environ['PROJECT_ROOT']
-    date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-    suffix = f'debug/{date_str}' if args.debug else date_str
-    save_root = f'{args.data_root}/leaderboard/results/rl/dspred/{suffix}'
+    suffix = f'debug/{args.id}' if args.debug else args.id
+    save_root = args.data_root / f'leaderboard/results/rl/dspred/{suffix}'
     args.save_dir = save_root / args.save_dir
     args.save_dir.mkdir(parents=True, exist_ok=True)
 

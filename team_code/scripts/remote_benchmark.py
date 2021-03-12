@@ -68,7 +68,6 @@ try:
         wp, tp = port_map[gpu]
         env = os.environ.copy()
         env["CUDA_VISIBLE_DEVICES"] = f'{gpu}'
-        env["DISPLAY"] = ""
         
         # CARLA command
         cmd = f'bash {carla_root}/CarlaUE4.sh --world-port={wp} -opengl &> {save_root}/logs/CARLA_G{gpu}.txt'

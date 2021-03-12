@@ -123,8 +123,10 @@ class OfflineCarlaDataset(Dataset):
 
     def __getitem__(self, i):
         path = self.dataset_dir
-
         frame = self.frames[i]
+
+        if 'debug' in path.glob('*'):
+            debug_path = path / 'debug' / ('%s.png' % frame)
         #print(path / 'topdown' / ('%s.png' % frame))
         topdown = Image.open(path / 'topdown' / ('%s.png' % frame))
         topdown = topdown.crop((128, 0, 128 + 256, 256))
@@ -154,9 +156,9 @@ class OfflineCarlaDataset(Dataset):
         penalty = self.measurements.loc[i:ni-1, 'penalty'].to_numpy()
         imitation_reward = self.measurements.loc[i:ni-1, 'imitation_reward'].to_numpy()
         route_reward = self.measurements.loc[i:ni-1, 'route_reward'].to_numpy()
-        discount = self.discount[:len(penalty)]
+        discounts = self.discount[:len(penalty)]
         reward = penalty + imitation_reward
-        reward = np.dot(reward, discount)
+        reward = np.dot(reward, discounts)
         reward = torch.FloatTensor(np.float32([reward]))
 
         #print(route_reward)
@@ -170,11 +172,14 @@ class OfflineCarlaDataset(Dataset):
         ntopdown = ntopdown.crop((128, 0, 128 + 256, 256))
         ntopdown = preprocess_semantic(np.array(ntopdown))
         ntarget = torch.FloatTensor(np.float32((ntick_data['x_tgt'], ntick_data['y_tgt'])))
+        
+        # last discount
+        discount = torch.FloatTensor(np.float32([self.discount[ni-i-1]]))
 
-        info = {'discount': torch.FloatTensor(np.float32([self.discount[ni-i-1]])), 
+        info = {'discount': discount, 
                 'points_dqn': points_dqn, 
-                'points_lbc': points_lbc}
-        #return (topdown, target), (points_dqn, points_lbc), (ntopdown, ntarget) 
+                'points_lbc': points_lbc,
+                'debug_path': debug_path}
 
         # state, action, reward, next_state, done, info
         return (topdown, target), points_lbc, reward, (ntopdown, ntarget), done, info
@@ -185,7 +190,7 @@ if __name__ == '__main__':
     import os, cv2, argparse
     from PIL import ImageDraw
     from lbc.carla_project.src.utils.heatmap import ToHeatmap
-    from rl.dspred.online_map_model import MapModel, visualize
+    from rl.dspred.map_model import MapModel, visualize
 
     
     parser = argparse.ArgumentParser()

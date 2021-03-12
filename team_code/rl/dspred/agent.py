@@ -10,7 +10,7 @@ from PIL import Image, ImageDraw
 from pathlib import Path
 
 #from lbc.carla_project.src.map_model import MapModel
-from rl.dspred.online_map_model import MapModel, fuse_vmaps
+from rl.dspred.map_model import MapModel, fuse_vmaps
 from lbc.carla_project.src.dataset import preprocess_semantic
 from lbc.carla_project.src.converter import Converter
 from lbc.carla_project.src.common import CONVERTER, COLOR
