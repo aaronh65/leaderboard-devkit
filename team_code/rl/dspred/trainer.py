@@ -135,7 +135,6 @@ def parse_args():
     aconf['rollout_steps'] = args.rollout_steps
     aconf['forward'] = args.forward
 
-
     # save new config
     with open(f'{save_root}/config.yml', 'w') as f:
         yaml.dump(config, f, default_flow_style=False, sort_keys=False)

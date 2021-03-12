@@ -1,4 +1,4 @@
-import os, sys, traceback
+import os, sys, traceback, yaml
 from datetime import datetime
 from tqdm import tqdm
 import pickle as pkl
@@ -21,12 +21,11 @@ from torch.utils.data import DataLoader
 
 
 from lbc.carla_project.src.models import SegmentationModel, RawController, SpatialSoftmax
-from lbc.carla_project.src.utils.heatmap import ToHeatmap
+from lbc.carla_project.src.utils.heatmap import ToHeatmap, ToTemporalHeatmap
 from lbc.carla_project.src.common import COLOR
 
 #from rl.dspred.online_dataset import get_dataloader
 from rl.dspred.offline_dataset import get_dataloader
-from rl.dspred.global_buffer import ReplayBuffer
  
 HAS_DISPLAY = int(os.environ['HAS_DISPLAY'])
 RESUME = '/home/aaron/workspace/carla/leaderboard-devkit/team_code/rl/config/weights/map_model.ckpt'
@@ -64,7 +63,7 @@ def visualize(batch, vmap, hmap, nvmap, nhmap, naction, meta, r=2):
     state, action, reward, next_state, done, info = batch
     hparams, batch_loss = meta['hparams'], meta['batch_loss']
     Q, nQ = meta['Q'], meta['nQ']
-    discount = info['discount']
+    discount = info['discount'].cpu()
     n = hparams.n
 
     topdown, target = state
@@ -96,7 +95,7 @@ def visualize(batch, vmap, hmap, nvmap, nhmap, naction, meta, r=2):
         _draw.ellipse((x-r, y-r, x+r, y+r), aim_color)
 
         _draw.text((5, 10), f'action = ({x},{y})', textcolor)
-        _draw.text((5, 20), f'Q = {Q[i].item():2f}', textcolor)
+        _draw.text((5, 20), f'Q = {Q[i].item():.2f}', textcolor)
         _draw.text((5, 30), f'reward = {reward[i].item():.3f}', textcolor)
         _draw.text((5, 40), f'done = {bool(done[i])}', textcolor)
 
@@ -115,7 +114,7 @@ def visualize(batch, vmap, hmap, nvmap, nhmap, naction, meta, r=2):
 
         _ndraw.text((5, 10), f'action = ({x},{y})', textcolor)
         _ndraw.text((5, 20), f'nQ = {nQ[i].item():.2f}', textcolor)
-        _ndraw.text((5, 30), f'discount = {discount[i]}', textcolor)
+        _ndraw.text((5, 30), f'discount = {discount[i].item():.2f}', textcolor)
         _ndraw.text((5, 40), f'TD({n}) err = {batch_loss[i].item():.2f}', textcolor)
         #_ntopdown = cv2.cvtColor(np.array(_ntopdown), cv2.COLOR_BGR2RGB)
 
@@ -144,9 +143,12 @@ class MapModel(pl.LightningModule):
 
         # model stuff
         self.to_heatmap = ToHeatmap(hparams.heatmap_radius)
+        self.expert_heatmap = ToTemporalHeatmap(128)
         self.net = SegmentationModel(10, 4, hack=hparams.hack, temperature=hparams.temperature)
         self.controller = RawController(4)
-        self.criterion = torch.nn.MSELoss(reduction='none') # weights? prioritized replay?
+        #self.criterion = torch.nn.MSELoss(reduction='none') # weights? prioritized replay?
+        self.td_criterion = torch.nn.MSELoss(reduction='none') # weights? prioritized replay?
+        self.margin_criterion = torch.nn.MSELoss(reduction='none')
 
         
     def setup_train(self, env, config):
@@ -260,12 +262,20 @@ class MapModel(pl.LightningModule):
         #discount = info['discount'].unsqueeze(1)
         discount = info['discount']
         td_target = reward + discount * nQ * (1-done)
-        batch_loss = self.criterion(Q, td_target) # TD(n) error
+        td_loss = self.td_criterion(Q, td_target) # TD(n) error Nx1
+
+        expert_heatmap = self.expert_heatmap(info['points_lbc'], vmap)
+        margin = vmap + (1 - expert_heatmap)
+        _, Q_margin = self.get_dqn_actions(margin)
+        Q_expert = self.get_Q_values(vmap, info['points_lbc'])
+        margin_loss = Q_margin - Q_expert # Nx4
+        margin_loss = torch.mean(margin_loss, axis=1, keepdim=True) # Nx1
+        batch_loss = margin_loss + td_loss
+
+
         loss = batch_loss.mean()
 
         meta = {'Q': Q, 'nQ': nQ, 'batch_loss': batch_loss, 'hparams': self.hparams}
-
-
 
         metrics = {f'TD({self.hparams.n}) loss': loss.item()}
         #if batch_nb % 10 == 0:
@@ -290,7 +300,8 @@ class MapModel(pl.LightningModule):
 
         state, action, reward, next_state, done, info = batch
         topdown, target = state
-        points, (vmap, hmap) = self.forward(topdown, target, debug=True)
+        with torch.no_grad():
+            points, (vmap, hmap) = self.forward(topdown, target, debug=True)
         Q_all = self.get_Q_values(vmap, action)
         Q = torch.mean(Q_all[:, :2], axis=1, keepdim=True)
 
@@ -303,10 +314,18 @@ class MapModel(pl.LightningModule):
         #discount = info['discount'].unsqueeze(1)
         discount = info['discount']
         td_target = reward + discount * nQ * (1-done)
-        batch_val_loss = self.criterion(Q, td_target) # TD(n) error
-        val_loss = batch_val_loss.mean()
+        td_loss = self.td_criterion(Q, td_target) # TD(n) error
 
-        meta = {'Q': Q, 'nQ': nQ, 'batch_loss': batch_val_loss, 'hparams': self.hparams}
+        expert_heatmap = self.expert_heatmap(info['points_lbc'], vmap)
+        margin = vmap + (1 - expert_heatmap)
+        _, Q_margin = self.get_dqn_actions(margin)
+        Q_expert = self.get_Q_values(vmap, info['points_lbc'])
+        margin_loss = Q_margin - Q_expert # Nx4
+        margin_loss = torch.mean(margin_loss, axis=1, keepdim=True) # Nx1
+        batch_loss = margin_loss + td_loss
+        val_loss = batch_loss.mean()
+
+        meta = {'Q': Q, 'nQ': nQ, 'batch_loss': batch_loss, 'hparams': self.hparams}
         images, result = visualize(batch, vmap, hmap, nvmap, nhmap, naction, meta)
 
         if self.logger != None:
@@ -354,18 +373,21 @@ def main(args):
 
     logger = False
     if args.log:
-        logger = WandbLogger(id=args.id, save_dir=str(args.save_dir), project='dqn/offline')
+        logger = WandbLogger(id=args.id, save_dir=str(args.save_dir), project='dqn_offline')
     checkpoint_callback = ModelCheckpoint(args.save_dir, save_top_k=1) # figure out what's up with this
 
     # resume and add a couple arguments
     model = MapModel.load_from_checkpoint(RESUME)
     model.hparams.dataset_dir = args.dataset_dir
-    model.hparams.batch_size = args.batch_size
+    model.hparams.batch_size = 4 if args.debug else args.batch_size
     model.hparams.save_dir = args.save_dir
     model.hparams.n = args.n
     model.hparams.gamma = args.gamma
     model.hparams.num_workers = args.num_workers
     model.hparams.data_mode = 'offline'
+
+    with open(args.save_dir / 'config.yml', 'w') as f:
+        yaml.dump(model.hparams, f, default_flow_style=False, sort_keys=False)
 
     # offline trainer can use all gpus
     # when resuming, the network starts at epoch 36
@@ -405,7 +427,7 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', type=int, default=16)
     parser.add_argument('--weight_decay', type=float, default=0.0)
     parser.add_argument('--lr', type=float, default=1e-4)
-    parser.add_argument('--n', type=int, default=0)
+    parser.add_argument('--n', type=int, default=20)
     parser.add_argument('--sample_by', type=str, 
             choices=['none', 'even', 'speed', 'steer'], default='none')
     parser.add_argument('--gamma', type=float, default=0.99)
@@ -418,7 +440,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if args.dataset_dir is None: # local
-        args.dataset_dir = '/data/leaderboard/data/rl/dspred/debug/20210311_143718'
+        #args.dataset_dir = '/data/leaderboard/data/rl/dspred/debug/20210311_143718'
+        args.dataset_dir = '/data/leaderboard/data/rl/dspred/20210311_213726'
 
     suffix = f'debug/{args.id}' if args.debug else args.id
     save_root = args.data_root / f'leaderboard/results/rl/dspred/{suffix}'

@@ -57,7 +57,7 @@ def get_dataloader(hparams, is_train=False):
         assert hasattr(hparams, 'dataset_dir'), 'no offline dataset location'
         episodes = list()
         routes = Path(hparams.dataset_dir).glob('*')
-        routes = sorted([path for path in routes if path.is_dir()])
+        routes = sorted([path for path in routes if path.is_dir() and 'logs' not in str(path)])
         for route in routes:
             episodes.extend(sorted(route.glob('*')))
 
@@ -75,8 +75,8 @@ def get_dataloader(hparams, is_train=False):
     print('%d frames.' % sum(map(len, data)))
 
     weights = torch.DoubleTensor(get_weights(data, key='none'))
-    #sampler = torch.utils.data.sampler.WeightedRandomSampler(weights, len(weights))
-    sampler = None
+    sampler = torch.utils.data.sampler.WeightedRandomSampler(weights, len(weights))
+    #sampler = None
     data = torch.utils.data.ConcatDataset(data)
 
     # fourth argument specifies steps/batches per epoch
@@ -125,8 +125,10 @@ class OfflineCarlaDataset(Dataset):
         path = self.dataset_dir
         frame = self.frames[i]
 
-        if 'debug' in path.glob('*'):
+        debug_path = 'none'
+        if 'debug' in list(path.glob('*')):
             debug_path = path / 'debug' / ('%s.png' % frame)
+
         #print(path / 'topdown' / ('%s.png' % frame))
         topdown = Image.open(path / 'topdown' / ('%s.png' % frame))
         topdown = topdown.crop((128, 0, 128 + 256, 256))
@@ -157,7 +159,8 @@ class OfflineCarlaDataset(Dataset):
         imitation_reward = self.measurements.loc[i:ni-1, 'imitation_reward'].to_numpy()
         route_reward = self.measurements.loc[i:ni-1, 'route_reward'].to_numpy()
         discounts = self.discount[:len(penalty)]
-        reward = penalty + imitation_reward
+        #reward = penalty + imitation_reward
+        reward = penalty
         reward = np.dot(reward, discounts)
         reward = torch.FloatTensor(np.float32([reward]))
 
