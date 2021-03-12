@@ -309,14 +309,12 @@ class MapModel(pl.LightningModule):
 
         state, action, reward, next_state, done, info = batch
         topdown, target = state
-        with torch.no_grad():
-            points, vmap, hmap = self.forward(topdown, target, debug=True)
+        points, vmap, hmap = self.forward(topdown, target, debug=True)
         Q_all = self.get_Q_values(vmap, action)
         Q = torch.mean(Q_all[:, :2], axis=1, keepdim=False)
 
         ntopdown, ntarget = next_state
-        with torch.no_grad():
-            npoints, nvmap, nhmap = self.forward(ntopdown, ntarget, debug=True)
+        npoints, nvmap, nhmap = self.forward(ntopdown, ntarget, debug=True)
         naction, nQ_all = self.get_dqn_actions(nvmap)
         nQ = torch.mean(nQ_all[:, :2], axis=1, keepdim=False)
 
@@ -362,7 +360,7 @@ class MapModel(pl.LightningModule):
                 if key not in results:
                     results[key] = list()
 
-                results[key].append(metrics[key])
+                results[key].append(metrics[key].item())
 
         summary = {key: np.mean(val) for key, val in results.items()}
         if self.logger != None:
