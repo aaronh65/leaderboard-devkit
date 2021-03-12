@@ -130,7 +130,7 @@ def visualize(batch, vmap, hmap, nvmap, nhmap, naction, meta, r=2):
         cv2.waitKey(1)
 
     images.sort(key=lambda x: x[0], reverse=True)
-    result = torchvision.utils.make_grid([x[1] for x in images], nrow=3)
+    result = torchvision.utils.make_grid([x[1] for x in images], nrow=4)
     result = wandb.Image(result.numpy().transpose(1,2,0))
 
     return images, result
@@ -275,7 +275,7 @@ class MapModel(pl.LightningModule):
         margin_loss = self.margin_weight*torch.mean(margin_loss, axis=1, keepdim=False) # Nx1
         batch_loss = margin_loss + td_loss
 
-        loss = batch_loss.mean()
+        loss = torch.mean(batch_loss, dim=0)
         
 
         if batch_nb % 10 == 0:
@@ -330,7 +330,7 @@ class MapModel(pl.LightningModule):
         margin_loss = Q_margin - Q_expert # Nx4x1
         margin_loss = self.margin_weight * torch.mean(margin_loss, axis=1, keepdim=False) # Nx1
         batch_loss = margin_loss + td_loss
-        val_loss = batch_loss.mean()
+        val_loss = torch.mean(batch_loss, axis=0)
 
                 
         if self.logger != None:
@@ -349,7 +349,6 @@ class MapModel(pl.LightningModule):
 
             self.logger.log_metrics(metrics, self.global_step)
             self.logger.log_metrics(loss_metrics, self.global_step)
-
         return {'val_loss': val_loss}
 
     def validation_epoch_end(self, batch_metrics):
@@ -359,8 +358,7 @@ class MapModel(pl.LightningModule):
             for key in metrics:
                 if key not in results:
                     results[key] = list()
-
-                results[key].append(metrics[key].item())
+                results[key].append(metrics[key].mean().item())
 
         summary = {key: np.mean(val) for key, val in results.items()}
         if self.logger != None:
@@ -397,7 +395,9 @@ def main(args):
     # resume and add a couple arguments
     model = MapModel.load_from_checkpoint(RESUME)
     model.hparams.dataset_dir = args.dataset_dir
-    model.hparams.batch_size = 4 if args.debug else args.batch_size
+    model.hparams.batch_size = 8 if args.debug else args.batch_size
+    print(args.debug)
+    print(model.hparams.batch_size)
     model.hparams.save_dir = args.save_dir
     model.hparams.n = args.n
     model.hparams.gamma = args.gamma
@@ -409,11 +409,21 @@ def main(args):
 
     # offline trainer can use all gpus
     # when resuming, the network starts at epoch 36
-    trainer = pl.Trainer(
-        gpus=-1, max_epochs=args.max_epochs,
-        resume_from_checkpoint=RESUME,
-        logger=logger,
-        checkpoint_callback=checkpoint_callback,)
+    if args.gpus == 0:
+        trainer = pl.Trainer(
+            gpus=0, max_epochs=args.max_epochs,
+            resume_from_checkpoint=RESUME,
+            logger=logger,
+            checkpoint_callback=checkpoint_callback,)
+    else:
+        trainer = pl.Trainer(
+            gpus=args.gpus, max_epochs=args.max_epochs,
+            resume_from_checkpoint=RESUME,
+            logger=logger,
+            checkpoint_callback=checkpoint_callback,
+            distributed_backend='dp',
+            )
+
 
     trainer.fit(model)
 
@@ -430,7 +440,7 @@ if __name__ == '__main__':
     # Trainer args
     parser.add_argument('--max_epochs', type=int, default=50)
     parser.add_argument('--num_workers', type=int, default=4)
-    #parser.add_argument('-G', '--gpus', type=int, default=1)
+    parser.add_argument('-G', '--gpus', type=int, default=0)
     
     parser.add_argument('--save_dir', type=pathlib.Path)
     parser.add_argument('--data_root', type=pathlib.Path, default='/data')
@@ -442,7 +452,7 @@ if __name__ == '__main__':
     #parser.add_argument('--command_coefficient', type=float, default=0.1)
     parser.add_argument('--temperature', type=float, default=10.0)
     parser.add_argument('--hack', action='store_true', default=False) # what is this again?
-    parser.add_argument('--batch_size', type=int, default=16)
+    parser.add_argument('--batch_size', type=int, default=32)
     parser.add_argument('--weight_decay', type=float, default=0.0)
     parser.add_argument('--lr', type=float, default=1e-4)
     parser.add_argument('--n', type=int, default=20)
@@ -456,6 +466,7 @@ if __name__ == '__main__':
 
     
     args = parser.parse_args()
+    print(args.debug)
     if args.dataset_dir is None: # local
         #args.dataset_dir = '/data/leaderboard/data/rl/dspred/debug/20210311_143718'
         args.dataset_dir = '/data/leaderboard/data/rl/dspred/20210311_213726'
