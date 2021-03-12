@@ -75,7 +75,8 @@ def get_dataloader(hparams, is_train=False):
     print('%d frames.' % sum(map(len, data)))
 
     weights = torch.DoubleTensor(get_weights(data, key='none'))
-    sampler = torch.utils.data.sampler.WeightedRandomSampler(weights, len(weights))
+    #sampler = torch.utils.data.sampler.WeightedRandomSampler(weights, len(weights))
+    sampler = None
     data = torch.utils.data.ConcatDataset(data)
 
     # fourth argument specifies steps/batches per epoch
@@ -147,6 +148,7 @@ class OfflineCarlaDataset(Dataset):
             done = 1
         else:
             done = 0
+        done = torch.FloatTensor(np.float32([done]))
 
         # reward
         penalty = self.measurements.loc[i:ni-1, 'penalty'].to_numpy()
@@ -155,6 +157,7 @@ class OfflineCarlaDataset(Dataset):
         discount = self.discount[:len(penalty)]
         reward = penalty + imitation_reward
         reward = np.dot(reward, discount)
+        reward = torch.FloatTensor(np.float32([reward]))
 
         #print(route_reward)
         #reward = self.measurements.loc[i:ni-1, 'reward'].to_numpy()
@@ -168,7 +171,7 @@ class OfflineCarlaDataset(Dataset):
         ntopdown = preprocess_semantic(np.array(ntopdown))
         ntarget = torch.FloatTensor(np.float32((ntick_data['x_tgt'], ntick_data['y_tgt'])))
 
-        info = {'discount': self.discount[ni-i-1], 
+        info = {'discount': torch.FloatTensor(np.float32([self.discount[ni-i-1]])), 
                 'points_dqn': points_dqn, 
                 'points_lbc': points_lbc}
         #return (topdown, target), (points_dqn, points_lbc), (ntopdown, ntarget) 

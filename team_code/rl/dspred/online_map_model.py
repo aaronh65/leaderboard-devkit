@@ -126,7 +126,7 @@ def visualize(batch, vmap, hmap, nvmap, nhmap, naction, meta, r=2):
         images.append((batch_loss[i].item(), torch.ByteTensor(_combined)))
 
     if HAS_DISPLAY:
-        cv2.waitKey(0)
+        cv2.waitKey(1)
 
     images.sort(key=lambda x: x[0], reverse=True)
     result = torchvision.utils.make_grid([x[1] for x in images], nrow=3)
@@ -146,6 +146,7 @@ class MapModel(pl.LightningModule):
         self.to_heatmap = ToHeatmap(hparams.heatmap_radius)
         self.net = SegmentationModel(10, 4, hack=hparams.hack, temperature=hparams.temperature)
         self.controller = RawController(4)
+        self.criterion = torch.nn.MSELoss(reduction='none') # weights? prioritized replay?
 
         
     def setup_train(self, env, config):
@@ -153,7 +154,6 @@ class MapModel(pl.LightningModule):
         self.env = env
         self.n = config.agent.n
         self.discount = 0.99 ** (self.n + 1)
-        self.criterion = torch.nn.MSELoss(reduction='none') # weights? prioritized replay?
 
         print('populating...')
         self.populate(config.agent.burn_timesteps)
@@ -245,36 +245,35 @@ class MapModel(pl.LightningModule):
     def training_step(self, batch, batch_nb):
         metrics ={}
 
-        #print('model', len(ReplayBuffer.states))
-
-        ## train on batch
         state, action, reward, next_state, done, info = batch
-        
-        # get Q values
         topdown, target = state
         points, (vmap, hmap) = self.forward(topdown, target, debug=True)
         Q_all = self.get_Q_values(vmap, action)
+        Q = torch.mean(Q_all[:, :2], axis=1, keepdim=True)
 
         ntopdown, ntarget = next_state
         with torch.no_grad():
             npoints, (nvmap, nhmap) = self.forward(ntopdown, ntarget, debug=True)
         naction, nQ_all = self.get_dqn_actions(nvmap)
-
-        # choose t=1,2
-        Q = torch.mean(Q_all[:, :2], axis=1, keepdim=True)
         nQ = torch.mean(nQ_all[:, :2], axis=1, keepdim=True)
 
-        # compute loss and metrics
-        target = reward + self.discount * nQ * (1-done)
-        batch_loss = self.criterion(Q, target) # TD(n) error
+        #discount = info['discount'].unsqueeze(1)
+        discount = info['discount']
+        td_target = reward + discount * nQ * (1-done)
+        batch_loss = self.criterion(Q, td_target) # TD(n) error
         loss = batch_loss.mean()
 
-        metrics = {f'TD({self.n}) loss': loss.item()}
+        meta = {'Q': Q, 'nQ': nQ, 'batch_loss': batch_loss, 'hparams': self.hparams}
+
+
+
+        metrics = {f'TD({self.hparams.n}) loss': loss.item()}
         #if batch_nb % 10 == 0:
         if batch_nb % 1 == 0:
-            if self.config.save_debug:
-                img = cv2.cvtColor(np.array(self.env.hero_agent.debug_img), cv2.COLOR_RGB2BGR)
-                metrics['debug_image'] = wandb.Image(img)
+            # TODO: handle debug images
+            #if self.config.save_debug:
+            #    img = cv2.cvtColor(np.array(self.env.hero_agent.debug_img), cv2.COLOR_RGB2BGR)
+            #    metrics['debug_image'] = wandb.Image(img)
 
             meta = {'Q': Q, 'nQ': nQ, 'batch_loss': batch_loss, 'hparams': self.hparams}
             images, result = visualize(batch, vmap, hmap, nvmap, nhmap, naction, meta)
@@ -287,40 +286,32 @@ class MapModel(pl.LightningModule):
 
     # make this a validation episode rollout?
     def validation_step(self, batch, batch_nb):
-        metrics = {}
+        metrics ={}
 
-        ## train on batch
         state, action, reward, next_state, done, info = batch
-        action, expert = action[:,0,...].squeeze(), action[:,1,...].squeeze()
-        
-        # get Q values
         topdown, target = state
-        with torch.no_grad():
-            points, (vmap, hmap) = self.forward(topdown, target, debug=True)
+        points, (vmap, hmap) = self.forward(topdown, target, debug=True)
         Q_all = self.get_Q_values(vmap, action)
+        Q = torch.mean(Q_all[:, :2], axis=1, keepdim=True)
 
         ntopdown, ntarget = next_state
         with torch.no_grad():
             npoints, (nvmap, nhmap) = self.forward(ntopdown, ntarget, debug=True)
         naction, nQ_all = self.get_dqn_actions(nvmap)
-
-        # choose t=1,2
-        Q = torch.mean(Q_all[:, :2], axis=1, keepdim=True)
         nQ = torch.mean(nQ_all[:, :2], axis=1, keepdim=True)
 
-        # compute loss and metrics
-        target = reward + self.discount * nQ
-        batch_val_loss = self.criterion(Q, target) # TD(n) error
+        #discount = info['discount'].unsqueeze(1)
+        discount = info['discount']
+        td_target = reward + discount * nQ * (1-done)
+        batch_val_loss = self.criterion(Q, td_target) # TD(n) error
         val_loss = batch_val_loss.mean()
 
-        #metrics = {f'TD({self.n}) loss': loss.item()}
-        meta = {'Q': Q, 'nQ': nQ, 'batch_loss': batch_val_loss, 'hparams': self.hparams, 'n':self.n}
-        images, result = visualize(batch, vmap, hmap, nvmap, nhmap, naction, meta, expert)
+        meta = {'Q': Q, 'nQ': nQ, 'batch_loss': batch_val_loss, 'hparams': self.hparams}
+        images, result = visualize(batch, vmap, hmap, nvmap, nhmap, naction, meta)
+
         if self.logger != None:
             metrics['val_image'] = result
             self.logger.log_metrics(metrics, self.global_step)
-
-
 
         return {'val_loss': val_loss.item()}
 
@@ -401,7 +392,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_workers', type=int, default=4)
     #parser.add_argument('-G', '--gpus', type=int, default=1)
     
-    parser.add_argument('--save_dir', type=pathlib.Path, default='checkpoints')
+    parser.add_argument('--save_dir', type=pathlib.Path)
     parser.add_argument('--data_root', type=pathlib.Path, default='/data')
     parser.add_argument('--id', type=str, default=datetime.now().strftime("%Y%m%d_%H%M%S")) 
     #parser.add_argument('--offline', action='store_true', default=False)
@@ -416,15 +407,19 @@ if __name__ == '__main__':
     parser.add_argument('--lr', type=float, default=1e-4)
     parser.add_argument('--n', type=int, default=0)
     parser.add_argument('--sample_by', type=str, 
-            choices=['none', 'even', 'speed', 'steer'], default='even')
-    parser.add_argument('--gamma')
+            choices=['none', 'even', 'speed', 'steer'], default='none')
+    parser.add_argument('--gamma', type=float, default=0.99)
 
     # Program args
-    parser.add_argument('--dataset_dir', type=pathlib.Path, required=True)
+    parser.add_argument('--dataset_dir', type=pathlib.Path)
     parser.add_argument('--log', action='store_true')
 
     
     args = parser.parse_args()
+
+    if args.dataset_dir is None: # local
+        args.dataset_dir = '/data/leaderboard/data/rl/dspred/debug/20210311_143718'
+
     suffix = f'debug/{args.id}' if args.debug else args.id
     save_root = args.data_root / f'leaderboard/results/rl/dspred/{suffix}'
 
