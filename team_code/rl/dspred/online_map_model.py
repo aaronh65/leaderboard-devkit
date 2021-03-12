@@ -50,27 +50,30 @@ def fuse_vmaps(topdown, vmap, temperature=10, alpha=0.75):
 
 # visualize each timestep's heatmap?
 @torch.no_grad()
-def visualize(batch, points, vmap, hmap, npoints, nvmap, nhmap, naction, meta, expert,r=2):
+def visualize(batch, vmap, hmap, nvmap, nhmap, naction, meta, r=2):
 
     text_color = (255,255,255)
     points_color = (32,178,170) # purple
-    aim_color = (127,255,212) # cyan
+    aim_color = (65,105,225) # cyan
+    #dqn_color = (154,205,50)
+    dqn_color = (60,179,113)
+    lbc_color = (178,34,34)
+    textcolor = (255,255,255)
     #route_colors = [(0,255,0), (255,255,255), (255,0,0), (255,0,0)] 
 
-    images = list()
     state, action, reward, next_state, done, info = batch
-    topdown, target = state
-    ntopdown, target = next_state
-    action, expert = action[:,0,...], action[:,1,...]
-    hparams, batch_loss, n = meta['hparams'], meta['batch_loss'], meta['n']
+    hparams, batch_loss = meta['hparams'], meta['batch_loss']
     Q, nQ = meta['Q'], meta['nQ']
+    discount = info['discount']
+    n = hparams.n
 
+    topdown, target = state
     fused = fuse_vmaps(topdown, vmap, hparams.temperature, 1.0)
-    nfused = fuse_vmaps(ntopdown, nvmap, hparams.temperature, 1.0)
-    points = (points + 1) / 2 * 256 # [-1, 1] -> [0, 256]
-    npoints = (npoints + 1) / 2 * 256 # [-1, 1] -> [0, 256]
 
-    textcolor = (255,255,255)
+    ntopdown, ntarget = next_state
+    nfused = fuse_vmaps(ntopdown, nvmap, hparams.temperature, 1.0)
+
+    images = list()
     for i in range(action.shape[0]):
 
         # current state
@@ -79,23 +82,23 @@ def visualize(batch, points, vmap, hmap, npoints, nvmap, nhmap, naction, meta, e
         _topdown = Image.fromarray(_topdown)
         _draw = ImageDraw.Draw(_topdown)
         _action = action[i].cpu().numpy().astype(np.uint8) # (4,2)
-        #_action = action[i].cpu().numpy().astype(np.uint8) # (4,2)
-        for x, y in _action[0:2]:
-            _draw.ellipse((x-r, y-r, x+r, y+r), points_color)
+        #for x, y in _action[0:2]:
+        #    _draw.ellipse((x-r, y-r, x+r, y+r), points_color)
+        if 'points_lbc' in info.keys():
+            points_lbc = info['points_lbc']
+            for x, y in points_lbc[i]:
+                _draw.ellipse((x-r, y-r, x+r, y+r), lbc_color)
+        if 'points_dqn' in info.keys():
+            points_dqn = info['points_dqn']
+            for x, y in points_dqn[i][:2]:
+                _draw.ellipse((x-r, y-r, x+r, y+r), dqn_color)
         x, y = np.mean(_action[0:2], axis=0)
         _draw.ellipse((x-r, y-r, x+r, y+r), aim_color)
-        _expert = expert[i].cpu().numpy().astype(np.uint8)
-        for x, y in _expert:
-            _draw.ellipse((x-r, y-r, x+r, y+r), (0,255,127))
 
         _draw.text((5, 10), f'action = ({x},{y})', textcolor)
         _draw.text((5, 20), f'Q = {Q[i].item():2f}', textcolor)
         _draw.text((5, 30), f'reward = {reward[i].item():.3f}', textcolor)
-        _draw.text((5, 40), f'TD({n}) err = {batch_loss[i].item():.2f}', textcolor)
-        dreward, ireward = info['driving_reward'][i], info['imitation_reward'][i]
-        #_draw.text((5, 50), f'reward (d) = {dreward:.2f}', textcolor)
-        #_draw.text((5, 60), f'reward (i) = {ireward:.2f}', textcolor)
-        #_topdown = cv2.cvtColor(np.array(_topdown), cv2.COLOR_BGR2RGB)
+        _draw.text((5, 40), f'done = {bool(done[i])}', textcolor)
 
         # next state
         _ntopdown = nfused[i]
@@ -104,16 +107,16 @@ def visualize(batch, points, vmap, hmap, npoints, nvmap, nhmap, naction, meta, e
         _ndraw = ImageDraw.Draw(_ntopdown)
         _naction = naction[i].cpu().numpy().astype(np.uint8) # (4,2)
         for x, y in _naction[0:2]:
-            _ndraw.ellipse((x-r, y-r, x+r, y+r), points_color)
+            _ndraw.ellipse((x-r, y-r, x+r, y+r), dqn_color)
+        #for x, y in npoints_lbc[i]:
+        #    _ndraw.ellipse((x-r, y-r, x+r, y+r), (0,255,127))
         x, y = np.mean(_naction[0:2], axis=0)
         _ndraw.ellipse((x-r, y-r, x+r, y+r), aim_color)
-        _nexpert = info['next_action'][1][i].cpu().numpy().astype(np.uint8)
-        for x, y in _nexpert:
-            _ndraw.ellipse((x-r, y-r, x+r, y+r), (0,255,127))
 
         _ndraw.text((5, 10), f'action = ({x},{y})', textcolor)
         _ndraw.text((5, 20), f'nQ = {nQ[i].item():.2f}', textcolor)
-        _ndraw.text((5, 30), f'done = {bool(done[i])}', textcolor)
+        _ndraw.text((5, 30), f'discount = {discount[i]}', textcolor)
+        _ndraw.text((5, 40), f'TD({n}) err = {batch_loss[i].item():.2f}', textcolor)
         #_ntopdown = cv2.cvtColor(np.array(_ntopdown), cv2.COLOR_BGR2RGB)
 
         _combined = np.hstack((np.array(_topdown), np.array(_ntopdown)))
@@ -123,7 +126,7 @@ def visualize(batch, points, vmap, hmap, npoints, nvmap, nhmap, naction, meta, e
         images.append((batch_loss[i].item(), torch.ByteTensor(_combined)))
 
     if HAS_DISPLAY:
-        cv2.waitKey(1)
+        cv2.waitKey(0)
 
     images.sort(key=lambda x: x[0], reverse=True)
     result = torchvision.utils.make_grid([x[1] for x in images], nrow=3)
@@ -246,7 +249,6 @@ class MapModel(pl.LightningModule):
 
         ## train on batch
         state, action, reward, next_state, done, info = batch
-        action, expert = action[:,0,...], action[:,1,...]
         
         # get Q values
         topdown, target = state
@@ -274,8 +276,8 @@ class MapModel(pl.LightningModule):
                 img = cv2.cvtColor(np.array(self.env.hero_agent.debug_img), cv2.COLOR_RGB2BGR)
                 metrics['debug_image'] = wandb.Image(img)
 
-            meta = {'Q': Q, 'nQ': nQ, 'batch_loss': batch_loss, 'hparams': self.hparams, 'n':self.n}
-            images, result = visualize(batch, points, vmap, hmap, npoints, nvmap, nhmap, naction, meta, expert)
+            meta = {'Q': Q, 'nQ': nQ, 'batch_loss': batch_loss, 'hparams': self.hparams}
+            images, result = visualize(batch, vmap, hmap, nvmap, nhmap, naction, meta)
             metrics['train_image'] = result
             
         if self.logger != None:
@@ -313,7 +315,7 @@ class MapModel(pl.LightningModule):
 
         #metrics = {f'TD({self.n}) loss': loss.item()}
         meta = {'Q': Q, 'nQ': nQ, 'batch_loss': batch_val_loss, 'hparams': self.hparams, 'n':self.n}
-        images, result = visualize(batch, points, vmap, hmap, npoints, nvmap, nhmap, naction, meta, expert)
+        images, result = visualize(batch, vmap, hmap, nvmap, nhmap, naction, meta, expert)
         if self.logger != None:
             metrics['val_image'] = result
             self.logger.log_metrics(metrics, self.global_step)
