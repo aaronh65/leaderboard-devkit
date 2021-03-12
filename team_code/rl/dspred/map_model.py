@@ -150,6 +150,7 @@ class MapModel(pl.LightningModule):
         #self.criterion = torch.nn.MSELoss(reduction='none') # weights? prioritized replay?
         self.td_criterion = torch.nn.MSELoss(reduction='none') # weights? prioritized replay?
         self.margin_criterion = torch.nn.MSELoss(reduction='none')
+        self.margin_weight = 100
 
         
     def setup_train(self, env, config):
@@ -270,30 +271,32 @@ class MapModel(pl.LightningModule):
         _, Q_margin = self.get_dqn_actions(margin)
         Q_expert = self.get_Q_values(vmap, info['points_lbc'])
         margin_loss = Q_margin - Q_expert # Nx4
-        margin_loss = torch.mean(margin_loss, axis=1, keepdim=False) # Nx1
+        margin_loss = self.margin_weight*torch.mean(margin_loss, axis=1, keepdim=False) # Nx1
         batch_loss = margin_loss + td_loss
 
         loss = batch_loss.mean()
-        loss_metrics = {
-            f'TD({self.hparams.n}) loss': td_loss.mean().item(),
-            'margin_loss': margin_loss.mean().item(),
-            'batch_loss': batch_loss.mean().item(),}
+        
 
-
-                #if batch_nb % 10 == 0:
-        if batch_nb % 1 == 0:
+        if batch_nb % 10 == 0:
             # TODO: handle debug images
             #if self.config.save_debug:
             #    img = cv2.cvtColor(np.array(self.env.hero_agent.debug_img), cv2.COLOR_RGB2BGR)
             #    metrics['debug_image'] = wandb.Image(img)
-            
-            meta = {'Q': Q, 'nQ': nQ, 'hparams': self.hparams,
-                    'td_loss': td_loss, 'margin_loss': margin_loss}
 
+            meta = {
+                    'Q': Q, 'nQ': nQ, 'hparams': self.hparams,
+                    'td_loss': td_loss, 'margin_loss': margin_loss,
+                    }
             images, result = visualize(batch, vmap, hmap, nvmap, nhmap, naction, meta)
             metrics['train_image'] = result
             
         if self.logger != None:
+            loss_metrics = {
+                f'TD({self.hparams.n}) loss': td_loss.mean().item(),
+                'margin_loss': margin_loss.mean().item(),
+                'batch_loss': batch_loss.mean().item(),
+                }
+
             self.logger.log_metrics(metrics, self.global_step)
             self.logger.log_metrics(loss_metrics, self.global_step)
 
@@ -326,20 +329,25 @@ class MapModel(pl.LightningModule):
         _, Q_margin = self.get_dqn_actions(margin)
         Q_expert = self.get_Q_values(vmap, info['points_lbc'])
         margin_loss = Q_margin - Q_expert # Nx4x1
-        margin_loss = torch.mean(margin_loss, axis=1, keepdim=False) # Nx1
+        margin_loss = self.margin_weight * torch.mean(margin_loss, axis=1, keepdim=False) # Nx1
         batch_loss = margin_loss + td_loss
         val_loss = batch_loss.mean()
 
-        loss_metrics = {
-                f'TD({self.hparams.n}) loss': td_loss.mean().item(),
-                'margin_loss': margin_loss.mean().item(),
-                'batch_loss': batch_loss.mean().item(),}
-        
-        meta = {'Q': Q, 'nQ': nQ, 'hparams': self.hparams, 'td_loss': td_loss, \ 
-                'margin_loss': margin_loss}
-        images, result = visualize(batch, vmap, hmap, nvmap, nhmap, naction, meta)
+                
         if self.logger != None:
+            loss_metrics = {
+                    f'TD({self.hparams.n}) loss': td_loss.mean().item(),
+                    'margin_loss': margin_loss.mean().item(),
+                    'batch_loss': batch_loss.mean().item(),
+                    }
+
+            meta = {
+                    'Q': Q, 'nQ': nQ, 'hparams': self.hparams, 
+                    'td_loss': td_loss,'margin_loss': margin_loss,
+                    }
+            images, result = visualize(batch, vmap, hmap, nvmap, nhmap, naction, meta)
             metrics['val_image'] = result
+
             self.logger.log_metrics(metrics, self.global_step)
             self.logger.log_metrics(loss_metrics, self.global_step)
 
