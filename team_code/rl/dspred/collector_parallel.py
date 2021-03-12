@@ -49,7 +49,7 @@ try:
 
     timeout = max(args.gpus*3, 10)
     print(f'opened {len(gpus)} CARLA servers, warming up for {timeout} seconds')
-    #time.sleep(timeout)
+    time.sleep(timeout)
 
     split_len = {'devtest':4,'testing':26,'training':50,}
     routes = deque(list(range(split_len[args.split])))
