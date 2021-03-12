@@ -28,7 +28,8 @@ from lbc.carla_project.src.common import COLOR
 from rl.dspred.offline_dataset import get_dataloader
  
 HAS_DISPLAY = int(os.environ['HAS_DISPLAY'])
-RESUME = '/home/aaron/workspace/carla/leaderboard-devkit/team_code/rl/config/weights/map_model.ckpt'
+PROJECT_ROOT = os.environ['PROJECT_ROOT']
+RESUME = f'{PROJECT_ROOT}/team_code/rl/config/weights/map_model.ckpt'
 
 # takes (N,3,H,W) topdown and (N,4,H,W) vmaps
 # averages t=0.5s,1.0s vmaps and overlays it on topdown
@@ -213,7 +214,7 @@ class MapModel(pl.LightningModule):
 
         # extract action?
 
-        return points, (logits, target_heatmap)
+        return points, logits, target_heatmap
 
     # two modes: sample, argmax?
     def get_dqn_actions(self, vmap, explore=False):
@@ -251,13 +252,13 @@ class MapModel(pl.LightningModule):
 
         state, action, reward, next_state, done, info = batch
         topdown, target = state
-        points, (vmap, hmap) = self.forward(topdown, target, debug=True)
+        points, vmap, hmap = self.forward(topdown, target, debug=True)
         Q_all = self.get_Q_values(vmap, action)
         Q = torch.mean(Q_all[:, :2], axis=1, keepdim=False)
 
         ntopdown, ntarget = next_state
         with torch.no_grad():
-            npoints, (nvmap, nhmap) = self.forward(ntopdown, ntarget, debug=True)
+            npoints, nvmap, nhmap = self.forward(ntopdown, ntarget, debug=True)
         naction, nQ_all = self.get_dqn_actions(nvmap)
         nQ = torch.mean(nQ_all[:, :2], axis=1, keepdim=False)
 
@@ -309,13 +310,13 @@ class MapModel(pl.LightningModule):
         state, action, reward, next_state, done, info = batch
         topdown, target = state
         with torch.no_grad():
-            points, (vmap, hmap) = self.forward(topdown, target, debug=True)
+            points, vmap, hmap = self.forward(topdown, target, debug=True)
         Q_all = self.get_Q_values(vmap, action)
         Q = torch.mean(Q_all[:, :2], axis=1, keepdim=False)
 
         ntopdown, ntarget = next_state
         with torch.no_grad():
-            npoints, (nvmap, nhmap) = self.forward(ntopdown, ntarget, debug=True)
+            npoints, nvmap, nhmap = self.forward(ntopdown, ntarget, debug=True)
         naction, nQ_all = self.get_dqn_actions(nvmap)
         nQ = torch.mean(nQ_all[:, :2], axis=1, keepdim=False)
 
@@ -457,7 +458,6 @@ if __name__ == '__main__':
 
     
     args = parser.parse_args()
-
     if args.dataset_dir is None: # local
         #args.dataset_dir = '/data/leaderboard/data/rl/dspred/debug/20210311_143718'
         args.dataset_dir = '/data/leaderboard/data/rl/dspred/20210311_213726'

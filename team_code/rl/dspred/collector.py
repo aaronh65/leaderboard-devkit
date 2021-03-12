@@ -71,7 +71,7 @@ def parse_args():
     # basic setup
     project_root = os.environ['PROJECT_ROOT']
     suffix = f'debug/{args.id}' if args.debug else args.id
-    save_root = Path(f'{args.data_root}/leaderboard/results/rl/dspred/{suffix}')
+    save_root = Path(f'{args.data_root}/leaderboard/data/rl/dspred/{suffix}')
     save_root.mkdir(parents=True, exist_ok=True)
     
     # environment setup

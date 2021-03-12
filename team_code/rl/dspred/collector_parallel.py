@@ -31,7 +31,7 @@ def get_open_port():
 
 CARLA_ROOT = os.environ['CARLA_ROOT']
 suffix = f'debug/{args.id}' if args.debug else args.id
-save_root = Path(f'{args.data_root}/leaderboard/results/rl/dspred/{suffix}')
+save_root = Path(f'{args.data_root}/leaderboard/data/rl/dspred/{suffix}')
 save_root.mkdir(parents=True, exist_ok=True)
 (save_root / 'logs').mkdir()
 
@@ -80,7 +80,9 @@ try:
 
         env = os.environ.copy()
         env["CUDA_VISIBLE_DEVICES"] = str(gpu)
-        cmd = f'python collector.py --data_root {args.data_root} --id {args.id} --split {args.split} --routenum {routenum} --repetitions {args.repetitions} -WP {wp} -TP {tp} --save_data --save_debug '
+        cmd = f'python collector.py --data_root {args.data_root} --id {args.id} --split {args.split} --routenum {routenum} --repetitions {args.repetitions} -WP {wp} -TP {tp} --save_data --save_debug'
+        if args.debug:
+            cmd += ' --debug'
         worker_procs.append(subprocess.Popen(cmd, env=env, shell=True))
         print(cmd)
         gpu_free[gpu] = False
