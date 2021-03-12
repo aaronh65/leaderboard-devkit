@@ -160,7 +160,8 @@ class OfflineCarlaDataset(Dataset):
         route_reward = self.measurements.loc[i:ni-1, 'route_reward'].to_numpy()
         discounts = self.discount[:len(penalty)]
         #reward = penalty + imitation_reward
-        reward = penalty
+        #reward = penalty
+        reward = route_reward - penalty
         reward = np.dot(reward, discounts)
         reward = torch.FloatTensor(np.float32([reward]))
 

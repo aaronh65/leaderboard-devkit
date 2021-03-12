@@ -61,7 +61,7 @@ def visualize(batch, vmap, hmap, nvmap, nhmap, naction, meta, r=2):
     #route_colors = [(0,255,0), (255,255,255), (255,0,0), (255,0,0)] 
 
     state, action, reward, next_state, done, info = batch
-    hparams, batch_loss = meta['hparams'], meta['batch_loss']
+    hparams, td_loss, margin_loss = meta['hparams'], meta['td_loss'], meta['margin_loss']
     Q, nQ = meta['Q'], meta['nQ']
     discount = info['discount'].cpu()
     n = hparams.n
@@ -115,14 +115,15 @@ def visualize(batch, vmap, hmap, nvmap, nhmap, naction, meta, r=2):
         _ndraw.text((5, 10), f'action = ({x},{y})', textcolor)
         _ndraw.text((5, 20), f'nQ = {nQ[i].item():.2f}', textcolor)
         _ndraw.text((5, 30), f'discount = {discount[i].item():.2f}', textcolor)
-        _ndraw.text((5, 40), f'TD({n}) err = {batch_loss[i].item():.2f}', textcolor)
+        _ndraw.text((5, 40), f'td_loss = {td_loss[i].item():.2f}', textcolor)
+        _ndraw.text((5, 50), f'margin_loss = {margin_loss[i].item():.2f}', textcolor)
         #_ntopdown = cv2.cvtColor(np.array(_ntopdown), cv2.COLOR_BGR2RGB)
 
         _combined = np.hstack((np.array(_topdown), np.array(_ntopdown)))
         if HAS_DISPLAY:
             cv2.imshow(f'topdown{i}', cv2.cvtColor(_combined, cv2.COLOR_BGR2RGB))
         _combined = _combined.transpose(2,0,1)
-        images.append((batch_loss[i].item(), torch.ByteTensor(_combined)))
+        images.append((td_loss[i].item() + margin_loss[i].item(), torch.ByteTensor(_combined)))
 
     if HAS_DISPLAY:
         cv2.waitKey(1)
@@ -235,14 +236,14 @@ class MapModel(pl.LightningModule):
             action_flat // 256),
             axis=2) # (N, C, 2)
         
-        return action, Q_all.squeeze() # (N,4,2), (N,4)
+        return action, Q_all # (N,4,2), (N,4,1)
 
     def get_Q_values(self, vmap, action):
         x, y = action[...,0], action[...,1] # Nx4
         action_flat = torch.unsqueeze(y*256 + x, dim=2) # (N,4, 1)
         vmap_flat = vmap.view(vmap.shape[:-2] + (-1,)) # (N, 4, H*W)
         Q_all = vmap_flat.gather(2, action_flat.long()) # (N, 4, 1)
-        return Q_all.squeeze() # (N, 4)
+        return Q_all # (N,4,1)
 
     def training_step(self, batch, batch_nb):
         metrics ={}
@@ -251,13 +252,13 @@ class MapModel(pl.LightningModule):
         topdown, target = state
         points, (vmap, hmap) = self.forward(topdown, target, debug=True)
         Q_all = self.get_Q_values(vmap, action)
-        Q = torch.mean(Q_all[:, :2], axis=1, keepdim=True)
+        Q = torch.mean(Q_all[:, :2], axis=1, keepdim=False)
 
         ntopdown, ntarget = next_state
         with torch.no_grad():
             npoints, (nvmap, nhmap) = self.forward(ntopdown, ntarget, debug=True)
         naction, nQ_all = self.get_dqn_actions(nvmap)
-        nQ = torch.mean(nQ_all[:, :2], axis=1, keepdim=True)
+        nQ = torch.mean(nQ_all[:, :2], axis=1, keepdim=False)
 
         #discount = info['discount'].unsqueeze(1)
         discount = info['discount']
@@ -269,28 +270,32 @@ class MapModel(pl.LightningModule):
         _, Q_margin = self.get_dqn_actions(margin)
         Q_expert = self.get_Q_values(vmap, info['points_lbc'])
         margin_loss = Q_margin - Q_expert # Nx4
-        margin_loss = torch.mean(margin_loss, axis=1, keepdim=True) # Nx1
+        margin_loss = torch.mean(margin_loss, axis=1, keepdim=False) # Nx1
         batch_loss = margin_loss + td_loss
 
-
         loss = batch_loss.mean()
+        loss_metrics = {
+            f'TD({self.hparams.n}) loss': td_loss.mean().item(),
+            'margin_loss': margin_loss.mean().item(),
+            'batch_loss': batch_loss.mean().item(),}
 
-        meta = {'Q': Q, 'nQ': nQ, 'batch_loss': batch_loss, 'hparams': self.hparams}
 
-        metrics = {f'TD({self.hparams.n}) loss': loss.item()}
-        #if batch_nb % 10 == 0:
+                #if batch_nb % 10 == 0:
         if batch_nb % 1 == 0:
             # TODO: handle debug images
             #if self.config.save_debug:
             #    img = cv2.cvtColor(np.array(self.env.hero_agent.debug_img), cv2.COLOR_RGB2BGR)
             #    metrics['debug_image'] = wandb.Image(img)
+            
+            meta = {'Q': Q, 'nQ': nQ, 'hparams': self.hparams,
+                    'td_loss': td_loss, 'margin_loss': margin_loss}
 
-            meta = {'Q': Q, 'nQ': nQ, 'batch_loss': batch_loss, 'hparams': self.hparams}
             images, result = visualize(batch, vmap, hmap, nvmap, nhmap, naction, meta)
             metrics['train_image'] = result
             
         if self.logger != None:
             self.logger.log_metrics(metrics, self.global_step)
+            self.logger.log_metrics(loss_metrics, self.global_step)
 
         return {'loss': loss}
 
@@ -303,13 +308,13 @@ class MapModel(pl.LightningModule):
         with torch.no_grad():
             points, (vmap, hmap) = self.forward(topdown, target, debug=True)
         Q_all = self.get_Q_values(vmap, action)
-        Q = torch.mean(Q_all[:, :2], axis=1, keepdim=True)
+        Q = torch.mean(Q_all[:, :2], axis=1, keepdim=False)
 
         ntopdown, ntarget = next_state
         with torch.no_grad():
             npoints, (nvmap, nhmap) = self.forward(ntopdown, ntarget, debug=True)
         naction, nQ_all = self.get_dqn_actions(nvmap)
-        nQ = torch.mean(nQ_all[:, :2], axis=1, keepdim=True)
+        nQ = torch.mean(nQ_all[:, :2], axis=1, keepdim=False)
 
         #discount = info['discount'].unsqueeze(1)
         discount = info['discount']
@@ -320,17 +325,23 @@ class MapModel(pl.LightningModule):
         margin = vmap + (1 - expert_heatmap)
         _, Q_margin = self.get_dqn_actions(margin)
         Q_expert = self.get_Q_values(vmap, info['points_lbc'])
-        margin_loss = Q_margin - Q_expert # Nx4
-        margin_loss = torch.mean(margin_loss, axis=1, keepdim=True) # Nx1
+        margin_loss = Q_margin - Q_expert # Nx4x1
+        margin_loss = torch.mean(margin_loss, axis=1, keepdim=False) # Nx1
         batch_loss = margin_loss + td_loss
         val_loss = batch_loss.mean()
 
-        meta = {'Q': Q, 'nQ': nQ, 'batch_loss': batch_loss, 'hparams': self.hparams}
+        loss_metrics = {
+                f'TD({self.hparams.n}) loss': td_loss.mean().item(),
+                'margin_loss': margin_loss.mean().item(),
+                'batch_loss': batch_loss.mean().item(),}
+        
+        meta = {'Q': Q, 'nQ': nQ, 'hparams': self.hparams, 'td_loss': td_loss, \ 
+                'margin_loss': margin_loss}
         images, result = visualize(batch, vmap, hmap, nvmap, nhmap, naction, meta)
-
         if self.logger != None:
             metrics['val_image'] = result
             self.logger.log_metrics(metrics, self.global_step)
+            self.logger.log_metrics(loss_metrics, self.global_step)
 
         return {'val_loss': val_loss.item()}
 
