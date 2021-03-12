@@ -203,7 +203,7 @@ class MapModel(pl.LightningModule):
                     self.env.reset()
         self.train()
 
-    def forward(self, topdown, target, debug=False):
+    def forward(self, topdown, target, debug=True):
         target_heatmap = self.to_heatmap(target, topdown)[:, None]
         out = self.net(torch.cat((topdown, target_heatmap), 1), heatmap=debug)
 
@@ -214,7 +214,7 @@ class MapModel(pl.LightningModule):
 
         # extract action?
 
-        return points, logits, target_heatmap
+        return (points, logits, target_heatmap)
 
     # two modes: sample, argmax?
     def get_dqn_actions(self, vmap, explore=False):
@@ -352,7 +352,7 @@ class MapModel(pl.LightningModule):
             self.logger.log_metrics(metrics, self.global_step)
             self.logger.log_metrics(loss_metrics, self.global_step)
 
-        return {'val_loss': val_loss.item()}
+        return {'val_loss': val_loss}
 
     def validation_epoch_end(self, batch_metrics):
         results = dict()
