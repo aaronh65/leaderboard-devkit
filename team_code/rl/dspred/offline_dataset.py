@@ -72,7 +72,13 @@ def get_dataloader(hparams, is_train=False):
                 data.append(OfflineCarlaDataset(hparams, _dataset_dir))
 
     ## sum up the lengths of each dataset
-    print('%d frames.' % sum(map(len, data)))
+
+    data_len = sum(map(len, data))
+    num_samples = data_len // hparams.batch_size
+    print('train set' if is_train else 'val_set')
+    print(f'data_len: {data_len}')
+    print(f'batch_size: {hparams.batch_size}')
+    print(f'epoch_len: {num_samples}')
 
     weights = torch.DoubleTensor(get_weights(data, key='none'))
     sampler = torch.utils.data.sampler.WeightedRandomSampler(weights, len(weights))
@@ -80,7 +86,7 @@ def get_dataloader(hparams, is_train=False):
     data = torch.utils.data.ConcatDataset(data)
 
     # fourth argument specifies steps/batches per epoch
-    return Wrap(data, sampler, hparams.batch_size, 1000 if is_train else 100, hparams.num_workers)
+    return Wrap(data, sampler, hparams.batch_size, num_samples, hparams.num_workers)
 
 def preprocess_semantic(semantic_np):
     topdown = CONVERTER[semantic_np]

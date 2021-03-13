@@ -74,7 +74,7 @@ def visualize(batch, vmap, hmap, nvmap, nhmap, naction, meta, r=2):
     nfused = fuse_vmaps(ntopdown, nvmap, hparams.temperature, 1.0)
 
     images = list()
-    for i in range(action.shape[0]):
+    for i in range(min(action.shape[0], 32)):
 
         # current state
         _topdown = fused[i]
@@ -145,7 +145,7 @@ class MapModel(pl.LightningModule):
 
         # model stuff
         self.to_heatmap = ToHeatmap(hparams.heatmap_radius)
-        self.expert_heatmap = ToTemporalHeatmap(128)
+        self.expert_heatmap = ToTemporalHeatmap(56)
         self.net = SegmentationModel(10, 4, hack=hparams.hack, temperature=hparams.temperature)
         self.controller = RawController(4)
         #self.criterion = torch.nn.MSELoss(reduction='none') # weights? prioritized replay?
@@ -278,7 +278,7 @@ class MapModel(pl.LightningModule):
         loss = torch.mean(batch_loss, dim=0)
         
 
-        if batch_nb % 10 == 0:
+        if batch_nb % 50 == 0:
             # TODO: handle debug images
             #if self.config.save_debug:
             #    img = cv2.cvtColor(np.array(self.env.hero_agent.debug_img), cv2.COLOR_RGB2BGR)
@@ -395,9 +395,7 @@ def main(args):
     # resume and add a couple arguments
     model = MapModel.load_from_checkpoint(RESUME)
     model.hparams.dataset_dir = args.dataset_dir
-    model.hparams.batch_size = 8 if args.debug else args.batch_size
-    print(args.debug)
-    print(model.hparams.batch_size)
+    model.hparams.batch_size = args.batch_size
     model.hparams.save_dir = args.save_dir
     model.hparams.n = args.n
     model.hparams.gamma = args.gamma
@@ -452,7 +450,7 @@ if __name__ == '__main__':
     #parser.add_argument('--command_coefficient', type=float, default=0.1)
     parser.add_argument('--temperature', type=float, default=10.0)
     parser.add_argument('--hack', action='store_true', default=False) # what is this again?
-    parser.add_argument('--batch_size', type=int, default=32)
+    parser.add_argument('--batch_size', type=int, default=4)
     parser.add_argument('--weight_decay', type=float, default=0.0)
     parser.add_argument('--lr', type=float, default=1e-4)
     parser.add_argument('--n', type=int, default=20)
@@ -466,7 +464,6 @@ if __name__ == '__main__':
 
     
     args = parser.parse_args()
-    print(args.debug)
     if args.dataset_dir is None: # local
         #args.dataset_dir = '/data/leaderboard/data/rl/dspred/debug/20210311_143718'
         args.dataset_dir = '/data/leaderboard/data/rl/dspred/20210311_213726'
