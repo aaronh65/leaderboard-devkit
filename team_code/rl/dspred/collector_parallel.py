@@ -29,13 +29,14 @@ def get_open_port():
     s.close()
     return port
 
-CARLA_ROOT = os.environ['CARLA_ROOT']
 suffix = f'debug/{args.id}' if args.debug else args.id
 save_root = Path(f'{args.data_root}/leaderboard/data/rl/dspred/{suffix}')
 save_root.mkdir(parents=True, exist_ok=True)
 (save_root / 'logs').mkdir()
 
 try:
+    CARLA_ROOT = os.environ['CARLA_ROOT']
+
     carla_procs = list()
     gpus=list(range(args.gpus))
     port_map = {gpu: (get_open_port(), get_open_port()) for gpu in gpus}
@@ -55,18 +56,15 @@ try:
     routes = deque(list(range(split_len[args.split])))
     gpu_free = [True] * len(gpus)
     gpu_proc = [None] * len(gpus)
-    gpu_route = [-1] * len(gpus)
 
     # routes left or gpus busy
     worker_procs = list()
     while len(routes) > 0 or not all(gpu_free):
 
-        for i, (free, proc, route) in enumerate(zip(gpu_free, gpu_proc, gpu_route)):
+        for i, (free, proc) in enumerate(zip(gpu_free, gpu_proc)):
             if proc and proc.poll() is not None:
                 gpu_free[i] = True
                 gpu_proc[i] = None
-                gpu_route[i] = None
-
 
         # sleep and goto next iter if busy
         if True not in gpu_free or len(routes) == 0:
