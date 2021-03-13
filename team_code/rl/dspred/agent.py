@@ -141,20 +141,20 @@ class DSPredAgent(MapAgent):
         target = target[None].cuda()
 
         # expectation points
-        points_exp, (vmap, hmap) = self.net.forward(topdown, target, debug=True) # world frame
+        points_exp, vmap, hmap = self.net.forward(topdown, target, debug=True) # world frame
         points_exp = points_exp.clone().cpu().squeeze().numpy()
         points_exp = (points_exp + 1) / 2 * 256 # (-1,1) to (0,256)
         points_exp = np.clip(points_exp, 0, 256)
 
         # dqn points
-        points_dqn, Q_all = self.net.get_dqn_actions(vmap, explore=self.burn_in) # (1,4,2), (1,4)
+        points_dqn, Q_all = self.net.get_dqn_actions(vmap, explore=self.burn_in) # (1,4,2), (1,4,1)
         points_dqn = np.clip(points_dqn.clone().cpu().squeeze().numpy(), 0, 256) # (4,2)
         tick_data['points_dqn'] = points_dqn
         tick_data['points_exp'] = points_exp
         tick_data['maps'] = (vmap, hmap)
 
         if self.aconfig.mode == 'dagger': # dagger and dqn
-            points_lbc, _ = self.expert.forward(topdown, target, debug=True)
+            points_lbc, _, _ = self.expert.forward(topdown, target, debug=True)
             points_lbc = points_lbc.clone().cpu().squeeze().numpy()
             points_lbc = (points_lbc + 1) / 2 * 256
             points_lbc = np.clip(points_lbc, 0, 256)
