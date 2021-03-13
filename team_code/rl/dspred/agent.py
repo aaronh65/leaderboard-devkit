@@ -28,19 +28,21 @@ def get_entry_point():
 class DSPredAgent(MapAgent):
     def setup(self, path_to_conf_file):
         super().setup(path_to_conf_file)
+        print(path_to_conf_file)
         self.converter = Converter()
 
-        project_root = self.config.project_root
         self.debug_path = None
         self.data_path = None
+        self.config.save_root = Path(self.config.save_root)
 
-        weights_path = self.aconfig.weights_path
-        self.net = MapModel.load_from_checkpoint(f'{project_root}/{weights_path}')
+        weights_path = Path(f'{self.config.project_root}/{self.aconfig.weights_path}')
+        self.net = MapModel.load_from_checkpoint(weights_path)
         self.net.cuda()
         self.net.eval()
 
         if self.aconfig.mode == 'dagger':
-            self.expert = MapModel.load_from_checkpoint(f'{project_root}/{weights_path}')
+            expert_path = weights_path.parent / 'map_model.ckpt'
+            self.expert = MapModel.load_from_checkpoint(expert_path)
             self.expert.cuda()
             self.expert.eval()
 
@@ -51,15 +53,16 @@ class DSPredAgent(MapAgent):
         self._turn_controller = PIDController(K_P=1.25, K_I=0.75, K_D=0.3, n=40)
         self._speed_controller = PIDController(K_P=5.0, K_I=0.5, K_D=1.0, n=40)
 
-    def reset(self, route_name, repetition):
-        self.initialized = False
-
         # make debug directories
-        save_root = self.config.save_root
-        self.save_path = Path(f'{save_root}/{route_name}/{repetition}')
-        self.save_path.mkdir(parents=True, exist_ok=True)
+        if self.config.save_debug or self.config.save_data:
 
-        print(self.save_path)
+            save_root = self.config.save_root
+            route_name = os.environ['ROUTE_NAME']
+            repetition = os.environ['REPETITION']
+            self.save_path = Path(f'{save_root}/data/{route_name}/{repetition}')
+            self.save_path.mkdir(parents=True, exist_ok=True)
+
+            print(self.save_path)
 
         if self.config.save_debug:
             (self.save_path / 'debug').mkdir()
@@ -69,6 +72,9 @@ class DSPredAgent(MapAgent):
             (self.save_path / 'points_dqn').mkdir()
             (self.save_path / 'measurements').mkdir()
 
+    def reset(self):
+        self.initialized = False
+        
     def save_data(self,  tick_data):
         sp = self.save_path
         frame = f'{self.step:06d}'
@@ -77,7 +83,6 @@ class DSPredAgent(MapAgent):
         with open(sp / 'points_dqn' / f'{frame}.npy', 'wb') as f:
             np.save(f, tick_data['points_dqn'])
         Image.fromarray(tick_data['topdown']).save(sp / 'topdown' / f'{frame}.png')
-
 
     # remove rgb cameras from base agent
     def sensors(self):
@@ -171,11 +176,11 @@ class DSPredAgent(MapAgent):
             points_map = points_exp
         else:
             points_map = points_dqn
-        tick_data['points_map'] = points_map
 
         # get aim and controls
         points_world = self.converter.map_to_world(torch.Tensor(points_map)).numpy()
         aim = (points_world[1] + points_world[0]) / 2.0
+        tick_data['aim'] = self.converter.world_to_map(torch.Tensor(aim)).numpy()
         desired_speed = np.linalg.norm(points_world[0] - points_world[1]) * 2.0
 
         angle = np.degrees(np.pi / 2 - np.arctan2(aim[1], aim[0])) / 90
@@ -195,8 +200,8 @@ class DSPredAgent(MapAgent):
         #print(timestamp) # GAMETIME
 
         condition = not self.burn_in and not self.aconfig.mode == 'forward' # not random
-        condition = condition and (HAS_DISPLAY or self.config.save_debug)
-        if condition:
+        condition = condition and (self.config.save_debug and self.step % 5 == 0)
+        if condition or HAS_DISPLAY:
             self.debug_display(tick_data, steer, throttle, brake, desired_speed)
 
         if self.config.save_data:
@@ -208,58 +213,58 @@ class DSPredAgent(MapAgent):
 
         # 
         text_color = (255,255,255)
-        points_color = (32,178,170) # purple
-        aim_color = (127,255,212) # cyan
-        route_colors = [(0,255,0), (255,255,255), (255,0,0), (255,0,0)] 
+        aim_color = (65,105,225) # dark blue
+        dqn_color = (60,179,113) # dark green
+        lbc_color = (178,34,34) # dark red
+        route_colors = [(255,255,255), (112,128,144), (47,79,79), (47,79,79)] 
         
-        vmap, hmap = tick_data['maps'] # (1, H, W)
-        hmap = hmap.clone().cpu().numpy().squeeze() # (H,W)
-        target_hmap = hmap / np.amax(hmap) * 256 # to grayscale
-        target_hmap = target_hmap.astype(np.uint8)
 
         # rgb image on left, topdown w/vmap image on right
         # plot Q points instead of LBC version (argmax instead of expectation)
-        points_map = tick_data['points_map']
-        points_cam = self.converter.map_to_cam(torch.Tensor(points_map)).numpy()
-        points_exp = tick_data['points_exp']
-
+        aim = tick_data['aim']
         route_map = tick_data['route_map']
-        route_cam = self.converter.map_to_cam(torch.Tensor(route_map)).numpy()
-
+        points_dqn = tick_data['points_dqn']
+        points_lbc = None if 'points_lbc' not in tick_data.keys() else tick_data['points_lbc']
+        
         # (H,W,3) right image
-        fused = fuse_vmaps(tick_data['topdown_pth'], vmap, temperature=10, alpha=1.0).squeeze()
+        topdown = tick_data['topdown_pth']
+        vmap, hmap = tick_data['maps'] # (1, H, W)
+        fused = fuse_vmaps(topdown, vmap, temperature=1, alpha=0.5).squeeze()
         fused = Image.fromarray(fused)
         draw = ImageDraw.Draw(fused)
-        for x, y in points_map[0:2]: # agent points
-            draw.ellipse((x-r, y-r, x+r, y+r), points_color)
-        x, y = np.mean(points_map[0:2], axis=0)
+        for x, y in points_dqn[0:2]:
+            draw.ellipse((x-r, y-r, x+r, y+r), dqn_color)
+        if points_lbc is not None:
+            for x, y in points_lbc:
+                draw.ellipse((x-r, y-r, x+r, y+r), lbc_color)
+        x, y = aim
         draw.ellipse((x-r, y-r, x+r, y+r), aim_color)
-        for x, y in points_exp:
-            draw.ellipse((x-r, y-r, x+r, y+r), (0,255,127))
         for i, (x,y) in enumerate(route_map[:3]):
-            #if x < 5 or x > 250 or y < 5 or y > 140: continue
-            #if y > 140: continue
             draw.ellipse((x-2*r, y-2*r, x+2*r, y+2*r), route_colors[i])
         fused = np.array(fused)
 
         # left image
+        aim_cam = self.converter.map_to_cam(torch.Tensor(aim)).numpy()
+        route_cam = self.converter.map_to_cam(torch.Tensor(route_map)).numpy()
+        points_dqn_cam = self.converter.map_to_cam(torch.Tensor(points_dqn)).numpy()
+
         rgb = Image.fromarray(tick_data['rgb'])
         draw = ImageDraw.Draw(rgb)
-        for x,y in points_cam[0:2]:
-            draw.ellipse((x-r, y-r, x+r, y+r), points_color)
-        x, y = np.mean(points_cam[0:1], axis=0)
+        for x,y in points_dqn_cam[0:2]:
+            draw.ellipse((x-r, y-r, x+r, y+r), dqn_color)
+        if points_lbc is not None:
+            points_lbc_cam = self.converter.map_to_cam(torch.Tensor(points_lbc)).numpy()
+            for x, y in points_lbc_cam:
+                draw.ellipse((x-r, y-r, x+r, y+r), lbc_color)
+        x, y = aim_cam
         draw.ellipse((x-r, y-r, x+r, y+r), aim_color)
-        points_exp = self.converter.map_to_cam(torch.Tensor(points_exp)).numpy()
-        for x, y in points_exp:
-            draw.ellipse((x-r, y-r, x+r, y+r), (0,255,127))
         for i, (x,y) in enumerate(route_cam[:4]):
             if i == 0: # maybe skip first route map waypoint 
                 xt, yt = route_map[0]
                 if xt < 5 or xt > 250 or yt < 5 or yt > 250: continue
-                #yt > 250: continue
             if x < 5 or x > 250 or y < 5 or y > 140: continue
-            draw.ellipse((x-r, y-r, x+r, y+r), route_colors[i])
-        rgb = Image.fromarray(np.array(rgb.resize((456, 256))))
+            draw.ellipse((x-2*r, y-2*r, x+2*r, y+2*r), route_colors[i])
+        rgb = Image.fromarray(np.array(rgb.resize((456, 256)))) # match height to map
         draw = ImageDraw.Draw(rgb)
 
         # draw debug text

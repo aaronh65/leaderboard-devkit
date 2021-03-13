@@ -44,7 +44,7 @@ def fuse_vmaps(topdown, vmap, temperature=10, alpha=0.75):
     vmap_show = np.repeat(vmap_show, repeats=3, axis=1).transpose((0,2,3,1)) # N,H,W,3
     fused = np.array(COLOR[topdown.argmax(1).cpu()]).astype(np.uint8) # N,H,W,3
     for i in range(fused.shape[0]):
-        cv2.addWeighted(vmap_show[i], 0.75, fused[i], 1, 0, fused[i])
+        cv2.addWeighted(vmap_show[i], alpha, fused[i], 1, 0, fused[i])
     fused = fused.astype(np.uint8) # (N,H,W,3)
     return fused
 
@@ -53,12 +53,9 @@ def fuse_vmaps(topdown, vmap, temperature=10, alpha=0.75):
 def visualize(batch, vmap, hmap, nvmap, nhmap, naction, meta, r=2):
 
     text_color = (255,255,255)
-    points_color = (32,178,170) # purple
-    aim_color = (65,105,225) # cyan
-    #dqn_color = (154,205,50)
-    dqn_color = (60,179,113)
-    lbc_color = (178,34,34)
-    textcolor = (255,255,255)
+    aim_color = (65,105,225) # dark blue
+    dqn_color = (60,179,113) # dark green
+    lbc_color = (178,34,34) # dark red
     #route_colors = [(0,255,0), (255,255,255), (255,0,0), (255,0,0)] 
 
     state, action, reward, next_state, done, info = batch

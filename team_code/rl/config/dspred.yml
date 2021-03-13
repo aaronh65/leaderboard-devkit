@@ -7,7 +7,6 @@ carla_root: /home/aaron/workspace/carla/CARLA_0.9.11
 save_root: /data/leaderboard/results/rl/dspred/debug/template
 save_data: False
 save_debug: False
-
 env:
   world_port: 2000
   trafficmanager_port: 8000
@@ -18,7 +17,7 @@ env:
   empty: false
   random: true
 agent:
-  mode: train
+  mode: dagger
   total_timesteps: 500000
   burn_timesteps: 2000
   train_frequency: 1
@@ -26,7 +25,8 @@ agent:
   target_update_interval: 1
   save_frequency: 5000
   log_frequency: 100
-  weights_path: team_code/rl/config/weights/map_model.ckpt
+  # weights_path team_code/rl/config/weights/map_model.ckpt
+  weights_path: team_code/rl/config/weights/offline.ckpt
   # dspred
   buffer_size: 50000
   batch_size: 32

@@ -1,19 +1,5 @@
 #!/bin/bash
 
-# running on my local machine vs CMU cluster
-source ~/anaconda3/etc/profile.d/conda.sh
-conda activate ${CONDA_ENV}
-
-# Python env variables so the subdirectories can find each other
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/anaconda3/lib
-export PYTHONPATH=$PYTHONPATH:$CARLA_EGG
-export PYTHONPATH=$PYTHONPATH:$CARLA_API
-
-export PYTHONPATH=$PYTHONPATH:$PROJECT_ROOT
-export PYTHONPATH=$PYTHONPATH:$PROJECT_ROOT/leaderboard
-export PYTHONPATH=$PYTHONPATH:$PROJECT_ROOT/scenario_runner
-export PYTHONPATH=$PYTHONPATH:$PROJECT_ROOT/team_code/
-
 export DEBUG_CHALLENGE=0 # DO NOT MODIFY
 
 # leaderboard and agent config
