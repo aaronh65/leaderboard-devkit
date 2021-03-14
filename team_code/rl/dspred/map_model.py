@@ -52,7 +52,7 @@ def fuse_vmaps(topdown, vmap, temperature=10, alpha=0.75):
 @torch.no_grad()
 def visualize(batch, vmap, hmap, nvmap, nhmap, naction, meta, r=2):
 
-    text_color = (255,255,255)
+    textcolor = (255,255,255)
     aim_color = (65,105,225) # dark blue
     dqn_color = (60,179,113) # dark green
     lbc_color = (178,34,34) # dark red

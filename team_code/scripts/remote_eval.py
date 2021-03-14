@@ -43,7 +43,7 @@ def get_open_port():
 # make save root + log dir
 project_root = os.environ['PROJECT_ROOT']
 suffix = f'debug/{args.id}' if args.debug else args.id
-save_root = Path(f'/data/leaderboard/results/{args.agent}/{suffix}')
+save_root = Path(f'/{args.data_root}/leaderboard/results/{args.agent}/{suffix}')
 save_root.mkdir(parents=True,exist_ok=True)
 (save_root / 'plots').mkdir(exist_ok=True)
 (save_root / 'logs').mkdir(exist_ok=True)
@@ -64,7 +64,7 @@ try:
         env["CUDA_VISIBLE_DEVICES"] = f'{gpu}'
         
         # CARLA command
-        cmd = f'bash {carla_root}/CarlaUE4.sh --world-port={wp} -opengl &> {save_root}/logs/CARLA_G{gpu}.txt'
+        cmd = f'bash {CARLA_ROOT}/CarlaUE4.sh --world-port={wp} -opengl &> {save_root}/logs/CARLA_G{gpu}.txt'
         carla_procs.append(subprocess.Popen(cmd, env=env, shell=True))
         print(f'running {cmd}')
 
@@ -107,7 +107,7 @@ try:
     while len(routes) > 0 or not all(gpu_free):
 
         # check for finished leaderboard runs
-        for i, (free, proc) in enumerate(zip(gpu_free, gpu_procs)):
+        for i, (free, proc) in enumerate(zip(gpu_free, gpu_proc)):
             # check if gpus has a valid process and if it's done
             if proc and proc.poll() is not None: 
                 gpu_free[i] = True
@@ -118,14 +118,11 @@ try:
             time.sleep(5)
             continue
         
-        # otherwise run a new leaderboard process on next route
-        route_idx = routes_done.index(False)
-        route_name = routes[route_idx]
-                        
         # make image + performance plot dirs
-        gpu = gpus_free.index(True)
+        gpu = gpu_free.index(True)
         wp, tp = port_map[gpu]
         routenum = routes.popleft()
+        route_name = f'route_{routenum:02d}'
 
         env = os.environ.copy()
         env["CUDA_VISIBLE_DEVICES"] = str(gpu)
@@ -135,7 +132,7 @@ try:
         env["TM_PORT"] = str(tp)
         env["AGENT"] = args.agent
         env["SPLIT"] = args.split
-        env["ROUTE_NAME"] = f'route_{routenum:02d}'
+        env["ROUTE_NAME"] = route_name
         env["REPETITIONS"] = str(args.repetitions)
         env["PRIVILEGED"] = str(int(privileged))
 
@@ -145,7 +142,7 @@ try:
         worker_procs.append(subprocess.Popen(cmd, env=env, shell=True))
 
         gpu_free[gpu] = False
-        gpu_proc[gpu] = lbc_procs[-1]
+        gpu_proc[gpu] = worker_procs[-1]
 
 except KeyboardInterrupt:
     print('detected keyboard interrupt')
@@ -154,7 +151,7 @@ except Exception as e:
     traceback.print_exc()
 
 print('shutting down processes...')
-for proc in carla_procs + lbc_procs:
+for proc in carla_procs + worker_procs:
     try:
         kill(proc.pid)
     except:

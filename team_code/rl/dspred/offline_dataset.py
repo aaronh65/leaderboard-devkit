@@ -80,6 +80,7 @@ def get_dataloader(hparams, is_train=False):
     print(f'batch_size: {hparams.batch_size}')
     print(f'epoch_len: {num_samples}')
 
+    num_samples=1000 if is_train else 100
     weights = torch.DoubleTensor(get_weights(data, key='none'))
     sampler = torch.utils.data.sampler.WeightedRandomSampler(weights, len(weights))
     #sampler = None
