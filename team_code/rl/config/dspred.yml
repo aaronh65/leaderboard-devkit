@@ -25,8 +25,9 @@ agent:
   target_update_interval: 1
   save_frequency: 5000
   log_frequency: 100
-  # weights_path team_code/rl/config/weights/map_model.ckpt
-  weights_path: team_code/rl/config/weights/offline.ckpt
+  # weights_path team_code/rl/config/weights/map_model.ckpt # change to expert.ckpt?
+  # weights_path: team_code/rl/config/weights/offline.ckpt
+  weights_path: team_code/rl/config/weights/training_offline.ckpt
   # dspred
   buffer_size: 50000
   batch_size: 32
