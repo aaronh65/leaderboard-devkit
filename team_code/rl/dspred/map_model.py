@@ -29,7 +29,7 @@ from rl.dspred.offline_dataset import get_dataloader
  
 HAS_DISPLAY = int(os.environ['HAS_DISPLAY'])
 PROJECT_ROOT = os.environ['PROJECT_ROOT']
-RESUME = f'{PROJECT_ROOT}/team_code/rl/config/weights/map_model.ckpt'
+RESUME = f'{PROJECT_ROOT}/team_code/rl/config/weights/lbc_expert.ckpt'
 
 # takes (N,3,H,W) topdown and (N,4,H,W) vmaps
 # averages t=0.5s,1.0s vmaps and overlays it on topdown
@@ -114,14 +114,15 @@ def visualize(batch, vmap, hmap, nvmap, nhmap, naction, meta, r=2):
         _ndraw.text((5, 20), f'nQ = {nQ[i].item():.2f}', textcolor)
         _ndraw.text((5, 30), f'discount = {discount[i].item():.2f}', textcolor)
         _ndraw.text((5, 40), f'td_loss = {td_loss[i].item():.2f}', textcolor)
-        _ndraw.text((5, 50), f'margin_loss = {margin_loss[i].item():.2f}', textcolor)
+        #_ndraw.text((5, 50), f'margin_loss = {margin_loss[i].item():.2f}', textcolor)
         #_ntopdown = cv2.cvtColor(np.array(_ntopdown), cv2.COLOR_BGR2RGB)
 
         _combined = np.hstack((np.array(_topdown), np.array(_ntopdown)))
         if HAS_DISPLAY:
             cv2.imshow(f'topdown{i}', cv2.cvtColor(_combined, cv2.COLOR_BGR2RGB))
         _combined = _combined.transpose(2,0,1)
-        images.append((td_loss[i].item() + margin_loss[i].item(), torch.ByteTensor(_combined)))
+        #images.append((td_loss[i].item() + margin_loss[i].item(), torch.ByteTensor(_combined)))
+        images.append((td_loss[i].item(), torch.ByteTensor(_combined)))
 
     if HAS_DISPLAY:
         cv2.waitKey(1)
@@ -270,7 +271,8 @@ class MapModel(pl.LightningModule):
         Q_expert = self.get_Q_values(vmap, info['points_lbc'])
         margin_loss = Q_margin - Q_expert # Nx4
         margin_loss = self.margin_weight*torch.mean(margin_loss, axis=1, keepdim=False) # Nx1
-        batch_loss = margin_loss + td_loss
+        #batch_loss = margin_loss + td_loss
+        batch_loss = td_loss
 
         loss = torch.mean(batch_loss, dim=0)
         
@@ -283,7 +285,8 @@ class MapModel(pl.LightningModule):
 
             meta = {
                     'Q': Q, 'nQ': nQ, 'hparams': self.hparams,
-                    'td_loss': td_loss, 'margin_loss': margin_loss,
+                    'td_loss': td_loss, 
+                    'margin_loss': margin_loss,
                     }
             images, result = visualize(batch, vmap, hmap, nvmap, nhmap, naction, meta)
             metrics['train_image'] = result
@@ -326,7 +329,8 @@ class MapModel(pl.LightningModule):
         Q_expert = self.get_Q_values(vmap, info['points_lbc'])
         margin_loss = Q_margin - Q_expert # Nx4x1
         margin_loss = self.margin_weight * torch.mean(margin_loss, axis=1, keepdim=False) # Nx1
-        batch_loss = margin_loss + td_loss
+        #batch_loss = margin_loss + td_loss
+        batch_loss = td_loss
         val_loss = torch.mean(batch_loss, axis=0)
 
                 
@@ -339,7 +343,8 @@ class MapModel(pl.LightningModule):
 
             meta = {
                     'Q': Q, 'nQ': nQ, 'hparams': self.hparams, 
-                    'td_loss': td_loss,'margin_loss': margin_loss,
+                    'td_loss': td_loss,
+                    'margin_loss': margin_loss,
                     }
             images, result = visualize(batch, vmap, hmap, nvmap, nhmap, naction, meta)
             metrics['val_image'] = result
@@ -466,7 +471,7 @@ if __name__ == '__main__':
         args.dataset_dir = '/data/leaderboard/data/rl/dspred/20210311_213726'
 
     suffix = f'debug/{args.id}' if args.debug else args.id
-    save_root = args.data_root / f'leaderboard/results/rl/dspred/{suffix}'
+    save_root = args.data_root / f'leaderboard/training/rl/dspred/{suffix}'
 
     args.save_dir = save_root
     args.save_dir.mkdir(parents=True, exist_ok=True)
