@@ -26,7 +26,7 @@ args = parser.parse_args()
 # make save root + log dir
 project_root = os.environ['PROJECT_ROOT']
 suffix = f'debug/{args.id}' if args.debug else args.id
-save_root = Path(f'/data/leaderboard/results/{args.agent}/{suffix}')
+save_root = Path(f'/data/leaderboard/benchmark/{args.agent}/{suffix}')
 save_root.mkdir(parents=True,exist_ok=True)
 (save_root / 'plots').mkdir(exist_ok=True)
 (save_root / 'logs').mkdir(exist_ok=True)

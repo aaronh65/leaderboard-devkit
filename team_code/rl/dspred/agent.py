@@ -41,7 +41,7 @@ class DSPredAgent(MapAgent):
         self.net.eval()
 
         if self.aconfig.mode == 'dagger':
-            expert_path = weights_path.parent / 'map_model.ckpt'
+            expert_path = weights_path.parent / 'lbc_expert.ckpt'
             self.expert = MapModel.load_from_checkpoint(expert_path)
             self.expert.cuda()
             self.expert.eval()

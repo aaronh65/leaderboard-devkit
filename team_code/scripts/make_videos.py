@@ -26,9 +26,9 @@ def main(args):
                 height, width, channels = im.shape
 
             if width % 2 == 1 or height % 2 == 1:
-                cmd = f'ffmpeg -y -r 2 -s {width}x{height} -f image2 -i {debug_path}/%06d.png -pix_fmt yuv420p -vf \"pad=ceil(iw/2)*2:ceil(ih/2)*2\" {save_path}'
+                cmd = f'ffmpeg -y -r 4 -s {width}x{height} -f image2 -i {debug_path}/%06d.png -pix_fmt yuv420p -vf \"pad=ceil(iw/2)*2:ceil(ih/2)*2\" {save_path}'
             else:
-                cmd = f'ffmpeg -y -r 2 -s {width}x{height} -f image2 -i {debug_path}/%06d.png -pix_fmt yuv420p {save_path}'
+                cmd = f'ffmpeg -y -r 4 -s {width}x{height} -f image2 -i {debug_path}/%06d.png -pix_fmt yuv420p {save_path}'
 
             # make video
             #cmd = f'ffmpeg -y -r 2 -s 1627x256 -f image2 -i {input_dir}/%06d.png -pix_fmt yuv420p -vf \"pad=ceil(iw/2)*2:ceil(ih/2)*2\" {save_path}'

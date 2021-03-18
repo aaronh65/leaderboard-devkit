@@ -43,7 +43,7 @@ def get_open_port():
 # make save root + log dir
 project_root = os.environ['PROJECT_ROOT']
 suffix = f'debug/{args.id}' if args.debug else args.id
-save_root = Path(f'/{args.data_root}/leaderboard/results/{args.agent}/{suffix}')
+save_root = Path(f'{args.data_root}/leaderboard/benchmark/{args.agent}/{suffix}')
 save_root.mkdir(parents=True,exist_ok=True)
 (save_root / 'plots').mkdir(exist_ok=True)
 (save_root / 'logs').mkdir(exist_ok=True)
