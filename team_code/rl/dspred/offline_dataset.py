@@ -24,6 +24,16 @@ GAP = 1
 STEPS = 4
 N_CLASSES = len(COLOR)
 
+def get_augmenter():
+    seq = iaa.Sequential([
+        iaa.Sometimes(0.05, iaa.GaussianBlur((0.0, 1.3))),
+        iaa.Sometimes(0.05, iaa.AdditiveGaussianNoise(scale=(0.0, 0.05 * 255))),
+        iaa.Sometimes(0.05, iaa.Dropout((0.0, 0.1))),
+        iaa.Sometimes(0.10, iaa.Add((-0.05 * 255, 0.05 * 255), True)),
+        iaa.Sometimes(0.20, iaa.Add((0.25, 2.5), True)),
+        iaa.Sometimes(0.05, iaa.contrast.LinearContrast((0.5, 1.5))),
+        iaa.Sometimes(0.05, iaa.MultiplySaturation((0.0, 1.0))),
+        ])
 
 def get_weights(data, key='speed', bins=4):
     if key == 'none':
@@ -61,7 +71,13 @@ def get_dataloader(hparams, is_train=False):
         for route in routes:
             episodes.extend(sorted(route.glob('*')))
 
+        # data augmentations
+        transform = transforms.Compose([
+            get_augmenter() if is_train else lambda x: x,
+            transforms.ToTensor()
+            ])
         # need at least 10 episode directories for split data = list()
+
         data = list()
         for i, _dataset_dir in enumerate(episodes): # 90-10 train/val
             add = False
@@ -69,7 +85,7 @@ def get_dataloader(hparams, is_train=False):
             add |= (not is_train and i % 10 >= 9)
 
             if add:
-                data.append(OfflineCarlaDataset(hparams, _dataset_dir))
+                data.append(OfflineCarlaDataset(hparams, _dataset_dir, transform))
 
     ## sum up the lengths of each dataset
 
@@ -166,8 +182,7 @@ class OfflineCarlaDataset(Dataset):
         imitation_reward = self.measurements.loc[i:ni-1, 'imitation_reward'].to_numpy()
         route_reward = self.measurements.loc[i:ni-1, 'route_reward'].to_numpy()
         discounts = self.discount[:len(penalty)]
-        #reward = penalty + imitation_reward
-        #reward = penalty
+
         reward = route_reward - penalty
         reward = np.dot(reward, discounts)
         reward = torch.FloatTensor(np.float32([reward]))
@@ -200,9 +215,7 @@ class OfflineCarlaDataset(Dataset):
 if __name__ == '__main__':
     import os, cv2, argparse
     from PIL import ImageDraw
-    from lbc.carla_project.src.utils.heatmap import ToHeatmap
     from rl.dspred.map_model import MapModel, visualize
-
     
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset_dir', type=Path)
@@ -233,16 +246,14 @@ if __name__ == '__main__':
 
     converter = Converter()
     criterion = torch.nn.MSELoss(reduction='none') # weights? prioritized replay?
-    to_heatmap = ToHeatmap(5)
     loader = get_dataloader(model.hparams, is_train=True)
+
     for batch in loader:
+
         state, action, reward, next_state, done, info = batch
-        #state = state.cuda()
         action = action.cuda()
         reward = reward.cuda()
         done = done.cuda()
-        #next_state = next_state.cuda()
-        #info = info.cuda()
 
         if True:
             
@@ -260,8 +271,8 @@ if __name__ == '__main__':
             naction, nQ_all = model.get_dqn_actions(nvmap)
             nQ = torch.mean(nQ_all[:, :2], axis=1, keepdim=True)
 
-
-            td_target = reward + info['discount'].cuda() * nQ.squeeze() * (1-done)
+            discount = info['discount'].cuda()
+            td_target = reward + discount * nQ.squeeze() * (1-done)
             td_target = td_target.unsqueeze(1)
             batch_loss = criterion(Q, td_target) # TD(n) error
             loss = batch_loss.mean()
@@ -269,30 +280,3 @@ if __name__ == '__main__':
             meta = {'Q': Q, 'nQ': nQ, 'batch_loss': batch_loss, 'hparams': model.hparams}
 
             visualize(batch, vmap, hmap, nvmap, nhmap, naction, meta)
-
-            #for i in range(action.shape[0]):
-            #    _topdown = COLOR[topdown[i].argmax(0).cpu()]
-            #    #heatmap = to_heatmap(target[None], topdown[None]).squeeze()
-            #    _topdown[hmap[i][0].cpu() > 0.1] = 255
-            #    _topdown = Image.fromarray(_topdown)
-
-            #    _draw = ImageDraw.Draw(_topdown)
-            #    x, y = action[i].cpu().squeeze().numpy().astype(np.uint8)
-            #    _draw.ellipse((x-2, y-2, x+2, y+2), (0,255,0))
-            #    for x, y in points[i].cpu().numpy():
-            #        _draw.ellipse((x-2, y-2, x+2, y+2), (0,255,0))
-            #    _draw.text((5, 10), f'reward = {reward[i].item():.5f}', (255,255,255))
-            #    _topdown = cv2.cvtColor(np.array(_topdown), cv2.COLOR_BGR2RGB)
-
-            #    # next state
-            #    _ntopdown = COLOR[ntopdown[i].argmax(0).cpu().numpy()]
-            #    nheatmap = to_heatmap(ntarget[i:i+1], ntopdown[i:i+1]).squeeze()
-            #    _ntopdown[nheatmap > 0.1] = 255
-            #    _ntopdown = cv2.cvtColor(_ntopdown, cv2.COLOR_BGR2RGB)
-
-            #    _combined = np.hstack((_topdown, _ntopdown))
-            #    cv2.imshow(f'topdown {i}', _combined)
-            #cv2.waitKey(0)
-        break
-
-

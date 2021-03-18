@@ -1,31 +1,25 @@
-import os, sys, traceback, yaml
-from datetime import datetime
-from tqdm import tqdm
-import pickle as pkl
-
+import os, yaml, copy
 import argparse
 import pathlib
+from datetime import datetime
+from tqdm import tqdm
 
-import numpy as np
 import cv2
 import wandb
-from PIL import Image, ImageDraw
-
-import torch
+import numpy as np
+import torch, torchvision
 import torch.nn.functional as F
 import pytorch_lightning as pl
-import torchvision
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
 from torch.utils.data import DataLoader
-
+from PIL import Image, ImageDraw
 
 from lbc.carla_project.src.models import SegmentationModel, RawController, SpatialSoftmax
 from lbc.carla_project.src.utils.heatmap import ToHeatmap, ToTemporalHeatmap
 from lbc.carla_project.src.common import COLOR
-
-#from rl.dspred.online_dataset import get_dataloader
 from rl.dspred.offline_dataset import get_dataloader
+#from rl.dspred.online_dataset import get_dataloader
  
 HAS_DISPLAY = int(os.environ['HAS_DISPLAY'])
 PROJECT_ROOT = os.environ['PROJECT_ROOT']
@@ -160,12 +154,6 @@ class MapModel(pl.LightningModule):
 
         print('populating...')
         self.populate(config.agent.burn_timesteps)
-
-        #with open('buffer.pkl', 'wb') as f:
-        #    pkl.dump(self.env.buffer, f)
-        #with open('burnt_buffer_new.pkl', 'rb') as f:
-        #    self.env.buffer = pkl.load(f)
-        
         self.env.reset()
 
     # burn in
@@ -260,20 +248,24 @@ class MapModel(pl.LightningModule):
         naction, nQ_all = self.get_dqn_actions(nvmap)
         nQ = torch.mean(nQ_all[:, :2], axis=1, keepdim=False)
 
-        #discount = info['discount'].unsqueeze(1)
+        # td loss
         discount = info['discount']
         td_target = reward + discount * nQ * (1-done)
         td_loss = self.td_criterion(Q, td_target) # TD(n) error Nx1
 
+        # expert margin loss
         expert_heatmap = self.expert_heatmap(info['points_lbc'], vmap)
         margin = vmap + (1 - expert_heatmap)
         _, Q_margin = self.get_dqn_actions(margin)
         Q_expert = self.get_Q_values(vmap, info['points_lbc'])
         margin_loss = Q_margin - Q_expert # Nx4
         margin_loss = self.margin_weight*torch.mean(margin_loss, axis=1, keepdim=False) # Nx1
-        #batch_loss = margin_loss + td_loss
-        batch_loss = td_loss
 
+        batch_loss = 0
+        if not self.hparams.no_margin:
+            batch_loss += margin_loss
+        if not self.hparams.no_td:
+            batch_loss += td_loss
         loss = torch.mean(batch_loss, dim=0)
         
 
@@ -318,19 +310,24 @@ class MapModel(pl.LightningModule):
         naction, nQ_all = self.get_dqn_actions(nvmap)
         nQ = torch.mean(nQ_all[:, :2], axis=1, keepdim=False)
 
-        #discount = info['discount'].unsqueeze(1)
+        # td loss
         discount = info['discount']
         td_target = reward + discount * nQ * (1-done)
-        td_loss = self.td_criterion(Q, td_target) # TD(n) error
+        td_loss = self.td_criterion(Q, td_target) # TD(n) error Nx1
 
+        # expert margin loss
         expert_heatmap = self.expert_heatmap(info['points_lbc'], vmap)
         margin = vmap + (1 - expert_heatmap)
         _, Q_margin = self.get_dqn_actions(margin)
         Q_expert = self.get_Q_values(vmap, info['points_lbc'])
-        margin_loss = Q_margin - Q_expert # Nx4x1
-        margin_loss = self.margin_weight * torch.mean(margin_loss, axis=1, keepdim=False) # Nx1
-        #batch_loss = margin_loss + td_loss
-        batch_loss = td_loss
+        margin_loss = Q_margin - Q_expert # Nx4
+        margin_loss = self.margin_weight*torch.mean(margin_loss, axis=1, keepdim=False) # Nx1
+
+        batch_loss = 0
+        if not self.hparams.no_margin:
+            batch_loss += margin_loss
+        if not self.hparams.no_td:
+            batch_loss += td_loss
         val_loss = torch.mean(batch_loss, axis=0)
 
                 
@@ -402,32 +399,29 @@ def main(args):
     model.hparams.n = args.n
     model.hparams.gamma = args.gamma
     model.hparams.num_workers = args.num_workers
+    model.hparams.no_margin = args.no_margin
+    model.hparams.no_td = args.no_td
     model.hparams.data_mode = 'offline'
 
     with open(args.save_dir / 'config.yml', 'w') as f:
-        yaml.dump(model.hparams, f, default_flow_style=False, sort_keys=False)
+        hparams_copy = copy.copy(vars(model.hparams))
+        hparams_copy['save_dir'] = str(model.hparams.save_dir)
+        del hparams_copy['id']
+        yaml.dump(hparams_copy, f, default_flow_style=False, sort_keys=False)
 
     # offline trainer can use all gpus
     # when resuming, the network starts at epoch 36
-    if args.gpus == 0:
-        trainer = pl.Trainer(
-            gpus=0, max_epochs=args.max_epochs,
-            resume_from_checkpoint=RESUME,
-            logger=logger,
-            checkpoint_callback=checkpoint_callback,)
-    else:
-        trainer = pl.Trainer(
-            gpus=args.gpus, max_epochs=args.max_epochs,
-            resume_from_checkpoint=RESUME,
-            logger=logger,
-            checkpoint_callback=checkpoint_callback,
-            distributed_backend='dp',
-            )
-
+    trainer = pl.Trainer(
+        gpus=args.gpus, max_epochs=args.max_epochs,
+        resume_from_checkpoint=RESUME,
+        logger=logger,
+        checkpoint_callback=checkpoint_callback,
+        distributed_backend='dp',)
 
     trainer.fit(model)
 
-    #wandb.save(str(args.save_dir / '*.ckpt'))
+    if args.log:
+        wandb.save(str(args.save_dir / '*.ckpt'))
 
 
 
@@ -440,7 +434,7 @@ if __name__ == '__main__':
     # Trainer args
     parser.add_argument('--max_epochs', type=int, default=50)
     parser.add_argument('--num_workers', type=int, default=4)
-    parser.add_argument('-G', '--gpus', type=int, default=0)
+    parser.add_argument('-G', '--gpus', type=int, default=-1)
     
     parser.add_argument('--save_dir', type=pathlib.Path)
     parser.add_argument('--data_root', type=pathlib.Path, default='/data')
@@ -459,6 +453,8 @@ if __name__ == '__main__':
     parser.add_argument('--sample_by', type=str, 
             choices=['none', 'even', 'speed', 'steer'], default='none')
     parser.add_argument('--gamma', type=float, default=0.99)
+    parser.add_argument('--no_margin', action='store_true')
+    parser.add_argument('--no_td', action='store_true')
 
     # Program args
     parser.add_argument('--dataset_dir', type=pathlib.Path)
@@ -466,6 +462,8 @@ if __name__ == '__main__':
 
     
     args = parser.parse_args()
+    assert not (args.no_margin and args.no_td), 'no loss provided for training'
+
     if args.dataset_dir is None: # local
         #args.dataset_dir = '/data/leaderboard/data/rl/dspred/debug/20210311_143718'
         args.dataset_dir = '/data/leaderboard/data/rl/dspred/20210311_213726'
