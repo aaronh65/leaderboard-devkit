@@ -134,16 +134,23 @@ class OfflineCarlaDataset(Dataset):
     def __len__(self):
         return len(self.frames)
 
-    # topdown (N,C,H,W) 
-    # points (N,K,4,2) where K is # of point sets e.g. points_lbc, points_dqn
+    # topdown (C,H,W) 
+    # points (K,4,2) where K is # of point sets e.g. points_lbc, points_dqn
     def _augment(self, topdown, points, pixel_offset=0, cx=256//2, cy=256):
         dx = np.random.randint(-self.pixel_jitter, self.pixel_jitter+1)
         dy = np.random.randint(0, self.pixel_jitter+1) - pixel_offset
         dr = np.random.randint(-self.angle_jitter, self.angle_jitter+1)
 
-        rotation = cv2.getRotationMatrix2D((cx,cy), dr, 1)
-        print(rotation)
+        points_dqn, points_lbc = points
+        points_dqn = np.hstack((points_dqn, np.ones((4,1)))) # 4x3
+        points_lbc = np.hstack((points_lbc, np.ones((4,1)))) # 4x3
+        rotation = cv2.getRotationMatrix2D((cx,cy), dr, 1) # 2x3
+        points_dqn = np.matmul(rotation, points_dqn.T).T # 4x2
+        points_lbc = np.matmul(rotation, points_lbc.T).T # 4x2
 
+        topdown = cv2.warpAffine(topdown, rotation, topdown.shape[1::-1], flags=cv2.INTER_NEAREST)
+
+        return topdown, (points_dqn, points_lbc)
 
     def __getitem__(self, i):
         path = self.dataset_dir
@@ -153,19 +160,23 @@ class OfflineCarlaDataset(Dataset):
         if 'debug' in list(path.glob('*')):
             debug_path = path / 'debug' / ('%s.png' % frame)
 
-        #print(path / 'topdown' / ('%s.png' % frame))
-        topdown = Image.open(path / 'topdown' / ('%s.png' % frame))
-        topdown = topdown.crop((128, 0, 128 + 256, 256))
-        topdown = preprocess_semantic(np.array(topdown))
-        tick_data = self.measurements.iloc[i]
-        target = torch.FloatTensor(np.float32((tick_data['x_tgt'], tick_data['y_tgt'])))
-        #action = torch.FloatTensor(np.float32((tick_data['x_aim'], tick_data['y_aim'])))
-
         with open(path / 'points_dqn' / f'{frame}.npy', 'rb') as f:
             points_dqn = np.load(f)
         with open(path / 'points_lbc' / f'{frame}.npy', 'rb') as f:
             points_lbc = np.load(f)
 
+        #print(path / 'topdown' / ('%s.png' % frame))
+        topdown = Image.open(path / 'topdown' / ('%s.png' % frame))
+        topdown = topdown.crop((128, 0, 128 + 256, 256))
+
+        topdown, (points_dqn, points_lbc) = self._augment(np.array(topdown), (points_dqn, points_lbc))
+
+        topdown = preprocess_semantic(np.array(topdown))
+        tick_data = self.measurements.iloc[i]
+        target = torch.FloatTensor(np.float32((tick_data['x_tgt'], tick_data['y_tgt'])))
+        #action = torch.FloatTensor(np.float32((tick_data['x_aim'], tick_data['y_aim'])))
+
+        
         ni = i + self.hparams.n + 1 # index of the next state
         ni = min(ni, len(self.frames)-1)
 
@@ -187,11 +198,6 @@ class OfflineCarlaDataset(Dataset):
         reward = route_reward - penalty
         reward = np.dot(reward, discounts)
         reward = torch.FloatTensor(np.float32([reward]))
-
-        #print(route_reward)
-        #reward = self.measurements.loc[i:ni-1, 'reward'].to_numpy()
-        #reward = np.multiply(reward, self.discount[:len(reward)]).sum()
-        #reward = torch.FloatTensor([reward])
 
         ntick_data = self.measurements.iloc[ni]
         nframe = self.frames[ni]
@@ -267,14 +273,12 @@ if __name__ == '__main__':
                 points, vmap, hmap = model.forward(topdown.cuda(), target.cuda(), debug=True)
             Q_all = model.get_Q_values(vmap, action)
             Q = torch.mean(Q_all[:, :2], axis=1, keepdim=False)
-            #points = (points + 1) / 2 * 256
 
             ntopdown, ntarget = next_state
             with torch.no_grad():
                 npoints, nvmap, nhmap = model.forward(ntopdown.cuda(), ntarget.cuda(), debug=True)
             naction, nQ_all = model.get_dqn_actions(nvmap)
             nQ = torch.mean(nQ_all[:,:2], axis=1, keepdim=False)
-
 
             # td loss
             discount = info['discount'].cuda()
