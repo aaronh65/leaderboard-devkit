@@ -24,17 +24,6 @@ GAP = 1
 STEPS = 4
 N_CLASSES = len(COLOR)
 
-def get_augmenter():
-    seq = iaa.Sequential([
-        iaa.Sometimes(0.05, iaa.GaussianBlur((0.0, 1.3))),
-        iaa.Sometimes(0.05, iaa.AdditiveGaussianNoise(scale=(0.0, 0.05 * 255))),
-        iaa.Sometimes(0.05, iaa.Dropout((0.0, 0.1))),
-        iaa.Sometimes(0.10, iaa.Add((-0.05 * 255, 0.05 * 255), True)),
-        iaa.Sometimes(0.20, iaa.Add((0.25, 2.5), True)),
-        iaa.Sometimes(0.05, iaa.contrast.LinearContrast((0.5, 1.5))),
-        iaa.Sometimes(0.05, iaa.MultiplySaturation((0.0, 1.0))),
-        ])
-
 def get_weights(data, key='speed', bins=4):
     if key == 'none':
         return [1 for _ in range(sum(len(x) for x in data))]
@@ -72,10 +61,10 @@ def get_dataloader(hparams, is_train=False):
             episodes.extend(sorted(route.glob('*')))
 
         # data augmentations
-        transform = transforms.Compose([
-            get_augmenter() if is_train else lambda x: x,
-            transforms.ToTensor()
-            ])
+        #transform = transforms.Compose([
+        #    torchvision.transforms.RandomAffine(degrees=) if is_train else lambda x: x,
+        #    transforms.ToTensor()
+        #    ])
         # need at least 10 episode directories for split data = list()
 
         data = list()
@@ -85,7 +74,7 @@ def get_dataloader(hparams, is_train=False):
             add |= (not is_train and i % 10 >= 9)
 
             if add:
-                data.append(OfflineCarlaDataset(hparams, _dataset_dir, transform))
+                data.append(OfflineCarlaDataset(hparams, _dataset_dir))
 
     ## sum up the lengths of each dataset
 
@@ -125,6 +114,9 @@ class OfflineCarlaDataset(Dataset):
         self.dataset_dir = dataset_dir
         self.measurements = pd.DataFrame([eval(x.read_text()) for x in measurements])
 
+        self.pixel_jitter = self.hparams.pixel_jitter
+        self.angle_jitter = self.hparams.angle_jitter
+
         # n-step returns
         self.discount = [self.hparams.gamma**i for i in range(hparams.n+1)]
 
@@ -132,8 +124,6 @@ class OfflineCarlaDataset(Dataset):
         for image_path in sorted((dataset_dir / 'topdown').glob('*.png')):
             frame = str(image_path.stem)
 
-            #assert (dataset_dir / 'rgb_left' / ('%s.png' % frame)).exists()
-            #assert (dataset_dir / 'rgb_right' / ('%s.png' % frame)).exists()
             assert (dataset_dir / 'topdown' / ('%s.png' % frame)).exists()
             assert int(frame) < len(self.measurements)
 
@@ -143,6 +133,17 @@ class OfflineCarlaDataset(Dataset):
 
     def __len__(self):
         return len(self.frames)
+
+    # topdown (N,C,H,W) 
+    # points (N,K,4,2) where K is # of point sets e.g. points_lbc, points_dqn
+    def _augment(self, topdown, points, pixel_offset=0, cx=256//2, cy=256):
+        dx = np.random.randint(-self.pixel_jitter, self.pixel_jitter+1)
+        dy = np.random.randint(0, self.pixel_jitter+1) - pixel_offset
+        dr = np.random.randint(-self.angle_jitter, self.angle_jitter+1)
+
+        rotation = cv2.getRotationMatrix2D((cx,cy), dr, 1)
+        print(rotation)
+
 
     def __getitem__(self, i):
         path = self.dataset_dir
@@ -225,13 +226,15 @@ if __name__ == '__main__':
     parser.add_argument('--num_workers', type=int, default=4)
     parser.add_argument('--mode', type=str, default='offline', 
             choices=['offline', 'online', 'hybrid'])
+    parser.add_argument('--angle_jitter', type=float, default=15)
+    parser.add_argument('--pixel_jitter', type=int, default=15)
     args = parser.parse_args()
 
     if args.dataset_dir is None: # local
         args.dataset_dir = '/data/leaderboard/data/rl/dspred/debug/20210311_143718'
 
     project_root = os.environ['PROJECT_ROOT']
-    RESUME = f'{project_root}/team_code/rl/config/weights/map_model.ckpt'
+    RESUME = f'{project_root}/team_code/rl/config/weights/lbc_expert.ckpt'
     model = MapModel.load_from_checkpoint(RESUME)
     model.cuda()
     model.eval()
@@ -243,9 +246,10 @@ if __name__ == '__main__':
     model.hparams.data_mode = args.mode
     model.hparams.gamma = args.gamma
     model.hparams.num_workers = args.num_workers
+    model.hparams.angle_jitter = args.angle_jitter
+    model.hparams.pixel_jitter = args.pixel_jitter
 
     converter = Converter()
-    criterion = torch.nn.MSELoss(reduction='none') # weights? prioritized replay?
     loader = get_dataloader(model.hparams, is_train=True)
 
     for batch in loader:
@@ -260,23 +264,38 @@ if __name__ == '__main__':
             # this state
             topdown, target = state
             with torch.no_grad():
-                points, (vmap, hmap) = model.forward(topdown.cuda(), target.cuda(), debug=True)
+                points, vmap, hmap = model.forward(topdown.cuda(), target.cuda(), debug=True)
             Q_all = model.get_Q_values(vmap, action)
-            Q = torch.mean(Q_all[:, :2], axis=1, keepdim=True)
+            Q = torch.mean(Q_all[:, :2], axis=1, keepdim=False)
             #points = (points + 1) / 2 * 256
 
             ntopdown, ntarget = next_state
             with torch.no_grad():
-                npoints, (nvmap, nhmap) = model.forward(ntopdown.cuda(), ntarget.cuda(), debug=True)
+                npoints, nvmap, nhmap = model.forward(ntopdown.cuda(), ntarget.cuda(), debug=True)
             naction, nQ_all = model.get_dqn_actions(nvmap)
-            nQ = torch.mean(nQ_all[:, :2], axis=1, keepdim=True)
+            nQ = torch.mean(nQ_all[:,:2], axis=1, keepdim=False)
 
+
+            # td loss
             discount = info['discount'].cuda()
-            td_target = reward + discount * nQ.squeeze() * (1-done)
-            td_target = td_target.unsqueeze(1)
-            batch_loss = criterion(Q, td_target) # TD(n) error
-            loss = batch_loss.mean()
+            td_target = reward + discount * nQ * (1-done)
+            td_loss = model.td_criterion(Q, td_target) # TD(n) error Nx1
 
-            meta = {'Q': Q, 'nQ': nQ, 'batch_loss': batch_loss, 'hparams': model.hparams}
+            # expert margin loss
+            expert_heatmap = model.expert_heatmap(info['points_lbc'], vmap)
+            margin = vmap + (1 - expert_heatmap)
+            _, Q_margin = model.get_dqn_actions(margin)
+            Q_expert = model.get_Q_values(vmap, info['points_lbc'].cuda())
+            margin_loss = Q_margin - Q_expert # Nx4
+            margin_loss = model.margin_weight*torch.mean(margin_loss, axis=1, keepdim=False) # Nx1
+
+            meta = {
+                    'Q': Q, 'nQ': nQ, 'hparams': model.hparams,
+                    'td_loss': td_loss, 
+                    'margin_loss': margin_loss,
+                    }
+
 
             visualize(batch, vmap, hmap, nvmap, nhmap, naction, meta)
+        cv2.waitKey(0)
+        break
