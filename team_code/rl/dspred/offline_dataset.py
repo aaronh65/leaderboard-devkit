@@ -245,7 +245,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_workers', type=int, default=4)
     parser.add_argument('--mode', type=str, default='offline', 
             choices=['offline', 'online', 'hybrid'])
-    parser.add_argument('--angle_jitter', type=float, default=30)
+    parser.add_argument('--angle_jitter', type=float, default=45)
     parser.add_argument('--pixel_jitter', type=int, default=15)
     args = parser.parse_args()
 

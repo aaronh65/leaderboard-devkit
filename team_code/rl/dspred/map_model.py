@@ -47,8 +47,8 @@ def fuse_vmaps(topdown, vmap, temperature=10, alpha=0.75):
 def visualize(batch, vmap, hmap, nvmap, nhmap, naction, meta, r=2):
 
     textcolor = (255,255,255)
-    aim_color = (65,105,225) # dark blue
-    dqn_color = (60,179,113) # dark green
+    dqn_color = (65,105,225) # dark blue
+    aim_color = (60,179,113) # dark green
     lbc_color = (178,34,34) # dark red
     #route_colors = [(0,255,0), (255,255,255), (255,0,0), (255,0,0)] 
 
@@ -73,8 +73,6 @@ def visualize(batch, vmap, hmap, nvmap, nhmap, naction, meta, r=2):
         _topdown = Image.fromarray(_topdown)
         _draw = ImageDraw.Draw(_topdown)
         _action = action[i].cpu().numpy().astype(np.uint8) # (4,2)
-        #for x, y in _action[0:2]:
-        #    _draw.ellipse((x-r, y-r, x+r, y+r), points_color)
         if 'points_lbc' in info.keys():
             points_lbc = info['points_lbc']
             for x, y in points_lbc[i]:
@@ -99,8 +97,6 @@ def visualize(batch, vmap, hmap, nvmap, nhmap, naction, meta, r=2):
         _naction = naction[i].cpu().numpy().astype(np.uint8) # (4,2)
         for x, y in _naction[0:2]:
             _ndraw.ellipse((x-r, y-r, x+r, y+r), dqn_color)
-        #for x, y in npoints_lbc[i]:
-        #    _ndraw.ellipse((x-r, y-r, x+r, y+r), (0,255,127))
         x, y = np.mean(_naction[0:2], axis=0)
         _ndraw.ellipse((x-r, y-r, x+r, y+r), aim_color)
 
@@ -108,15 +104,14 @@ def visualize(batch, vmap, hmap, nvmap, nhmap, naction, meta, r=2):
         _ndraw.text((5, 20), f'nQ = {nQ[i].item():.2f}', textcolor)
         _ndraw.text((5, 30), f'discount = {discount[i].item():.2f}', textcolor)
         _ndraw.text((5, 40), f'td_loss = {td_loss[i].item():.2f}', textcolor)
-        #_ndraw.text((5, 50), f'margin_loss = {margin_loss[i].item():.2f}', textcolor)
-        #_ntopdown = cv2.cvtColor(np.array(_ntopdown), cv2.COLOR_BGR2RGB)
+        _ndraw.text((5, 50), f'margin_loss = {margin_loss[i].item():.2f}', textcolor)
 
         _combined = np.hstack((np.array(_topdown), np.array(_ntopdown)))
         if HAS_DISPLAY:
             cv2.imshow(f'topdown{i}', cv2.cvtColor(_combined, cv2.COLOR_BGR2RGB))
         _combined = _combined.transpose(2,0,1)
-        #images.append((td_loss[i].item() + margin_loss[i].item(), torch.ByteTensor(_combined)))
-        images.append((td_loss[i].item(), torch.ByteTensor(_combined)))
+        images.append((td_loss[i].item() + margin_loss[i].item(), torch.ByteTensor(_combined)))
+        #images.append((td_loss[i].item(), torch.ByteTensor(_combined)))
 
     if HAS_DISPLAY:
         cv2.waitKey(1)
