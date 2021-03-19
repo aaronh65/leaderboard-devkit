@@ -136,49 +136,60 @@ class OfflineCarlaDataset(Dataset):
 
     # topdown (C,H,W) 
     # points (K,4,2) where K is # of point sets e.g. points_lbc, points_dqn
-    def _augment(self, topdown, points, pixel_offset=0, cx=256//2, cy=256):
-        dx = np.random.randint(-self.pixel_jitter, self.pixel_jitter+1)
-        dy = np.random.randint(0, self.pixel_jitter+1) - pixel_offset
+    def augment_and_crop(self, topdown, ntopdown, points):
         dr = np.random.randint(-self.angle_jitter, self.angle_jitter+1)
 
+        pixel_rotation = cv2.getRotationMatrix2D((256//2,256), dr, 1) # 2x3
         points_dqn, points_lbc = points
         points_dqn = np.hstack((points_dqn, np.ones((4,1)))) # 4x3
+        points_dqn = np.matmul(pixel_rotation, points_dqn.T).T # 4x2
         points_lbc = np.hstack((points_lbc, np.ones((4,1)))) # 4x3
-        rotation = cv2.getRotationMatrix2D((cx,cy), dr, 1) # 2x3
-        points_dqn = np.matmul(rotation, points_dqn.T).T # 4x2
-        points_lbc = np.matmul(rotation, points_lbc.T).T # 4x2
+        points_lbc = np.matmul(pixel_rotation, points_lbc.T).T # 4x2
 
-        topdown = cv2.warpAffine(topdown, rotation, topdown.shape[1::-1], flags=cv2.INTER_NEAREST)
 
-        return topdown, (points_dqn, points_lbc)
+        image_rotation = cv2.getRotationMatrix2D((256,256), dr, 1) # 2x3
+
+        topdown = np.array(topdown)
+        topdown = cv2.warpAffine(topdown, image_rotation, 
+                topdown.shape[1::-1], 
+                flags=cv2.INTER_NEAREST)
+        topdown = Image.fromarray(topdown)
+        topdown = topdown.crop((128,0,128+256,256))
+        topdown = preprocess_semantic(np.array(topdown))
+
+        ntopdown = np.array(ntopdown)
+        ntopdown = cv2.warpAffine(ntopdown, image_rotation, 
+                ntopdown.shape[1::-1], 
+                flags=cv2.INTER_NEAREST)
+        ntopdown = Image.fromarray(ntopdown)
+        ntopdown = ntopdown.crop((128,0,128+256,256))
+        ntopdown = preprocess_semantic(np.array(ntopdown))
+
+
+        #dx = np.random.randint(-self.pixel_jitter, self.pixel_jitter+1)
+        #dy = np.random.randint(0, self.pixel_jitter+1) - pixel_offset
+
+        return topdown, ntopdown, (points_dqn, points_lbc)
 
     def __getitem__(self, i):
         path = self.dataset_dir
         frame = self.frames[i]
-
-        debug_path = 'none'
-        if 'debug' in list(path.glob('*')):
-            debug_path = path / 'debug' / ('%s.png' % frame)
+        ni = i + self.hparams.n + 1 # index of the next state
+        ni = min(ni, len(self.frames)-1)
+        nframe = self.frames[ni]
 
         with open(path / 'points_dqn' / f'{frame}.npy', 'rb') as f:
             points_dqn = np.load(f)
         with open(path / 'points_lbc' / f'{frame}.npy', 'rb') as f:
             points_lbc = np.load(f)
 
-        #print(path / 'topdown' / ('%s.png' % frame))
         topdown = Image.open(path / 'topdown' / ('%s.png' % frame))
-        topdown = topdown.crop((128, 0, 128 + 256, 256))
+        ntopdown = Image.open(path / 'topdown' / ('%s.png' % nframe))
+        topdown, ntopdown, (points_dqn, points_lbc) = self.augment_and_crop(
+                topdown, ntopdown, (points_dqn, points_lbc))
 
-        topdown, (points_dqn, points_lbc) = self._augment(np.array(topdown), (points_dqn, points_lbc))
-
-        topdown = preprocess_semantic(np.array(topdown))
         tick_data = self.measurements.iloc[i]
         target = torch.FloatTensor(np.float32((tick_data['x_tgt'], tick_data['y_tgt'])))
-        #action = torch.FloatTensor(np.float32((tick_data['x_aim'], tick_data['y_aim'])))
-
-        
-        ni = i + self.hparams.n + 1 # index of the next state
-        ni = min(ni, len(self.frames)-1)
 
         # panda df slicing is end index inclusive
         done = self.measurements.loc[i:ni-1, 'done'].to_numpy()
@@ -200,19 +211,17 @@ class OfflineCarlaDataset(Dataset):
         reward = torch.FloatTensor(np.float32([reward]))
 
         ntick_data = self.measurements.iloc[ni]
-        nframe = self.frames[ni]
-        ntopdown = Image.open(path / 'topdown' / ('%s.png' % nframe))
-        ntopdown = ntopdown.crop((128, 0, 128 + 256, 256))
-        ntopdown = preprocess_semantic(np.array(ntopdown))
         ntarget = torch.FloatTensor(np.float32((ntick_data['x_tgt'], ntick_data['y_tgt'])))
-        
+
+                
         # last discount
         discount = torch.FloatTensor(np.float32([self.discount[ni-i-1]]))
 
         info = {'discount': discount, 
                 'points_dqn': points_dqn, 
                 'points_lbc': points_lbc,
-                'debug_path': debug_path}
+                #'debug_path': debug_path
+                }
 
         # state, action, reward, next_state, done, info
         return (topdown, target), points_lbc, reward, (ntopdown, ntarget), done, info
@@ -237,6 +246,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if args.dataset_dir is None: # local
+        #args.dataset_dir = '/data/leaderboard/data/rl/dspred/20210311_213726'
         args.dataset_dir = '/data/leaderboard/data/rl/dspred/debug/20210311_143718'
 
     project_root = os.environ['PROJECT_ROOT']
