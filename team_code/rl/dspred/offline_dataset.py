@@ -137,96 +137,100 @@ class OfflineCarlaDataset(Dataset):
     # topdown (C,H,W) 
     # points (K,4,2) where K is # of point sets e.g. points_lbc, points_dqn
     def augment_and_crop(self, topdown, ntopdown, points):
+        
         dr = np.random.randint(-self.angle_jitter, self.angle_jitter+1)
+        dx = np.random.randint(-self.pixel_jitter, self.pixel_jitter+1)
+        dy = np.random.randint(0, self.pixel_jitter+1)
 
-        pixel_rotation = cv2.getRotationMatrix2D((256//2,256), dr, 1) # 2x3
         points_dqn, points_lbc = points
+        offset = np.ones(points_dqn.shape)
+        offset.T[0] = dx
+        offset.T[1] = dy
+        pixel_rotation = cv2.getRotationMatrix2D((256//2,256), dr, 1) # 2x3
+
         points_dqn = np.hstack((points_dqn, np.ones((4,1)))) # 4x3
         points_dqn = np.matmul(pixel_rotation, points_dqn.T).T # 4x2
+        points_dqn = np.clip(points_dqn - offset, 0, 255)
         points_lbc = np.hstack((points_lbc, np.ones((4,1)))) # 4x3
         points_lbc = np.matmul(pixel_rotation, points_lbc.T).T # 4x2
-
-
+        points_lbc = np.clip(points_lbc - offset, 0, 255)
+        
         image_rotation = cv2.getRotationMatrix2D((256,256), dr, 1) # 2x3
 
         topdown = np.array(topdown)
         topdown = cv2.warpAffine(topdown, image_rotation, 
-                topdown.shape[1::-1], 
-                flags=cv2.INTER_NEAREST)
+                topdown.shape[1::-1], flags=cv2.INTER_NEAREST)
         topdown = Image.fromarray(topdown)
-        topdown = topdown.crop((128,0,128+256,256))
+        topdown = topdown.crop((128+dx,0+dy,128+256+dx,256+dy))
         topdown = preprocess_semantic(np.array(topdown))
 
         ntopdown = np.array(ntopdown)
         ntopdown = cv2.warpAffine(ntopdown, image_rotation, 
-                ntopdown.shape[1::-1], 
-                flags=cv2.INTER_NEAREST)
+                ntopdown.shape[1::-1], flags=cv2.INTER_NEAREST)
         ntopdown = Image.fromarray(ntopdown)
-        ntopdown = ntopdown.crop((128,0,128+256,256))
+        ntopdown = ntopdown.crop((128+dx,0+dy,128+256+dx,256+dy))
         ntopdown = preprocess_semantic(np.array(ntopdown))
 
-
-        #dx = np.random.randint(-self.pixel_jitter, self.pixel_jitter+1)
-        #dy = np.random.randint(0, self.pixel_jitter+1) - pixel_offset
-
+        
         return topdown, ntopdown, (points_dqn, points_lbc)
 
     def __getitem__(self, i):
         path = self.dataset_dir
-        frame = self.frames[i]
-        ni = i + self.hparams.n + 1 # index of the next state
+        
+        # check if we're done in the next n steps
+        ni = i + self.hparams.n + 1 # index of the next state in DQN
         ni = min(ni, len(self.frames)-1)
-        nframe = self.frames[ni]
-
-        with open(path / 'points_dqn' / f'{frame}.npy', 'rb') as f:
-            points_dqn = np.load(f)
-        with open(path / 'points_lbc' / f'{frame}.npy', 'rb') as f:
-            points_lbc = np.load(f)
-
-        topdown = Image.open(path / 'topdown' / ('%s.png' % frame))
-        ntopdown = Image.open(path / 'topdown' / ('%s.png' % nframe))
-        topdown, ntopdown, (points_dqn, points_lbc) = self.augment_and_crop(
-                topdown, ntopdown, (points_dqn, points_lbc))
-
-        tick_data = self.measurements.iloc[i]
-        target = torch.FloatTensor(np.float32((tick_data['x_tgt'], tick_data['y_tgt'])))
 
         # panda df slicing is end index inclusive
-        done = self.measurements.loc[i:ni-1, 'done'].to_numpy()
-        if 1 in done:
-            ni = i + done.index(1) + 1
-            done = 1
-        else:
-            done = 0
+        done_list = self.measurements.loc[i:ni-1, 'done'].to_numpy()
+        done = int(1 in done_list)
+        if done:
+            ni = i + done_list.index(1) + 1
         done = torch.FloatTensor(np.float32([done]))
 
+        
         # reward
         penalty = self.measurements.loc[i:ni-1, 'penalty'].to_numpy()
         imitation_reward = self.measurements.loc[i:ni-1, 'imitation_reward'].to_numpy()
         route_reward = self.measurements.loc[i:ni-1, 'route_reward'].to_numpy()
         discounts = self.discount[:len(penalty)]
+        discount = torch.FloatTensor(np.float32([self.discount[ni-1-i]])) # for Q(ns)
 
         reward = route_reward - penalty
         reward = np.dot(reward, discounts)
         reward = torch.FloatTensor(np.float32([reward]))
 
+        # topdown, target, points
+        frame = self.frames[i]
+        topdown = Image.open(path / 'topdown' / ('%s.png' % frame))
+        tick_data = self.measurements.iloc[i]
+        target = torch.FloatTensor(np.float32((tick_data['x_tgt'], tick_data['y_tgt'])))
+        with open(path / 'points_dqn' / f'{frame}.npy', 'rb') as f:
+            points_dqn = np.load(f)
+        with open(path / 'points_lbc' / f'{frame}.npy', 'rb') as f:
+            points_lbc = np.load(f)
+
+        # next state, next target
+        nframe = self.frames[ni]
+        ntopdown = Image.open(path / 'topdown' / ('%s.png' % nframe))
         ntick_data = self.measurements.iloc[ni]
         ntarget = torch.FloatTensor(np.float32((ntick_data['x_tgt'], ntick_data['y_tgt'])))
 
-                
-        # last discount
-        discount = torch.FloatTensor(np.float32([self.discount[ni-i-1]]))
+        # LBC data augs
+        topdown, ntopdown, (points_dqn, points_lbc) = self.augment_and_crop(
+                topdown, ntopdown, (points_dqn, points_lbc))
 
         info = {'discount': discount, 
                 'points_dqn': points_dqn, 
                 'points_lbc': points_lbc,
                 #'debug_path': debug_path
+                #'weight' from td error?
                 }
 
+        
         # state, action, reward, next_state, done, info
         return (topdown, target), points_lbc, reward, (ntopdown, ntarget), done, info
         
-
 
 if __name__ == '__main__':
     import os, cv2, argparse
@@ -241,7 +245,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_workers', type=int, default=4)
     parser.add_argument('--mode', type=str, default='offline', 
             choices=['offline', 'online', 'hybrid'])
-    parser.add_argument('--angle_jitter', type=float, default=15)
+    parser.add_argument('--angle_jitter', type=float, default=30)
     parser.add_argument('--pixel_jitter', type=int, default=15)
     args = parser.parse_args()
 
@@ -311,5 +315,6 @@ if __name__ == '__main__':
 
 
             visualize(batch, vmap, hmap, nvmap, nhmap, naction, meta)
-        cv2.waitKey(0)
-        break
+        #if 1 in done:
+        #    cv2.waitKey(0)
+        #break
