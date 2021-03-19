@@ -393,6 +393,7 @@ def main(args):
 
     # resume and add a couple arguments
     model = MapModel.load_from_checkpoint(RESUME)
+    model.hparams.max_epochs = args.max_epochs
     model.hparams.dataset_dir = args.dataset_dir
     model.hparams.batch_size = args.batch_size
     model.hparams.save_dir = args.save_dir
