@@ -401,6 +401,7 @@ def main(args):
 
     with open(args.save_dir / 'config.yml', 'w') as f:
         hparams_copy = copy.copy(vars(model.hparams))
+        hparams_copy['dataset_dir'] = str(model.dataset_dir)
         hparams_copy['save_dir'] = str(model.hparams.save_dir)
         del hparams_copy['id']
         yaml.dump(hparams_copy, f, default_flow_style=False, sort_keys=False)
