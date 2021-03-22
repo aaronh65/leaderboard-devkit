@@ -43,7 +43,7 @@ project_root = os.environ['PROJECT_ROOT']
 # save root
 tokens = args.agent.split('.')[0].split('/')
 appr, algo = tokens[0], tokens[-1]
-prefix = '/data/leaderboard/data' if args.save_data else '/data/leaderboard/benchmark'
+prefix = f'{args.data_root}/leaderboard/data' if args.save_data else f'{args.data_root}/leaderboard/benchmark'
 suffix = f'debug/{args.id}' if args.debug else args.id
 save_root = Path(f'{prefix}/{appr}/{algo}/{suffix}')
 save_root.mkdir(parents=True,exist_ok=True)
@@ -82,7 +82,6 @@ try:
     time.sleep(timeout)
 
     # agent-specific configurations
-    appr, algo = args.agent.split('/')
     config_path = f'{project_root}/team_code/{appr}/config/{algo}.yml'
     with open(config_path, 'r') as f:
         config = yaml.load(f, Loader=yaml.Loader)
