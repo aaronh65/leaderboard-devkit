@@ -12,15 +12,13 @@ parser = argparse.ArgumentParser()
 
 parser.add_argument('-D', '--debug', action='store_true')
 parser.add_argument('-G', '--gpus', type=int, default=1)
-parser.add_argument('--agent', type=str, default='lbc/privileged', 
-        choices=['lbc/image', 'lbc/autopilot', 'lbc/privileged', 'common/forward', 'rl/dspred'])
+parser.add_argument('--agent', type=str, default='dqn/src/agents/auto_pilot.py')
 parser.add_argument('--split', type=str, default='devtest', 
         choices=['devtest','testing','training','debug'])
 parser.add_argument('--repetitions', type=int, default=1)
 
 parser.add_argument('--data_root', type=str, default='/data')
 parser.add_argument('--id', type=str, default=datetime.now().strftime("%Y%m%d_%H%M%S"))
-parser.add_argument('--save_debug', action='store_true')
 parser.add_argument('--save_data', action='store_true')
 args = parser.parse_args()
 
@@ -40,14 +38,23 @@ def get_open_port():
     s.close()
     return port
 
-# make save root + log dir
 project_root = os.environ['PROJECT_ROOT']
+
+# save root
+tokens = args.agent.split('.')[0].split('/')
+appr, algo = tokens[0], tokens[-1]
+prefix = '/data/leaderboard/data' if args.save_data else '/data/leaderboard/benchmark'
 suffix = f'debug/{args.id}' if args.debug else args.id
-save_root = Path(f'{args.data_root}/leaderboard/benchmark/{args.agent}/{suffix}')
+save_root = Path(f'{prefix}/{appr}/{algo}/{suffix}')
 save_root.mkdir(parents=True,exist_ok=True)
 (save_root / 'plots').mkdir(exist_ok=True)
 (save_root / 'logs').mkdir(exist_ok=True)
 
+# agent-specific config
+config_path = f'{project_root}/team_code/{appr}/config/{algo}.yml'
+print(config_path)
+with open(config_path, 'r') as f:
+    config = yaml.load(f, Loader=yaml.Loader)
 
 try:
     CARLA_ROOT = os.environ['CARLA_ROOT']
@@ -82,16 +89,16 @@ try:
 
     config['project_root'] = project_root
     config['save_root'] = str(save_root)
-    config['save_debug'] = args.save_debug
     config['save_data'] = args.save_data
     config['split'] = args.split
+    config['repetitions'] = args.repetitions
 
-    track = 'SENSORS' if algo is not 'xodrmap' else 'MAP'
+    track = 'SENSORS'
     privileged = algo in ['autopilot', 'privileged']
 
     config_path = f'{save_root}/config.yml'
     with open(config_path, 'w') as f:
-        yaml.dump(config, f, default_flow_style=False)
+        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
     
     # route paths
     route_dir = f'{project_root}/leaderboard/data/routes_{args.split}'

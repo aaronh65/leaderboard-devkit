@@ -8,7 +8,6 @@ from datetime import datetime
 from pathlib import Path
 
 
-project_root = os.environ['PROJECT_ROOT']
 
 parser = argparse.ArgumentParser()
 parser.add_argument('-D', '--debug', action='store_true')
@@ -22,6 +21,8 @@ parser.add_argument('--id', type=str, default=datetime.now().strftime("%Y%m%d_%H
 parser.add_argument('--save_data', action='store_true')
 args = parser.parse_args()
 
+project_root = os.environ['PROJECT_ROOT']
+
 # make save root + log dir
 tokens = args.agent.split('.')[0].split('/')
 appr, algo = tokens[0], tokens[-1]
@@ -32,8 +33,7 @@ save_root.mkdir(parents=True,exist_ok=True)
 (save_root / 'plots').mkdir(exist_ok=True)
 (save_root / 'logs').mkdir(exist_ok=True)
 
-
-# agent-specific configurations
+# agent-specific config
 config_path = f'{project_root}/team_code/{appr}/config/{algo}.yml'
 print(config_path)
 with open(config_path, 'r') as f:
