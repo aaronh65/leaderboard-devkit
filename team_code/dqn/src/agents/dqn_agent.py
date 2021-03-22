@@ -279,9 +279,9 @@ class DSPredAgent(MapAgent):
         _combined = cv2.cvtColor(np.hstack((rgb, fused)), cv2.COLOR_BGR2RGB)
         self.debug_img = _combined
 
-        if self.config.save_debug and self.step % 5 == 0:
+        if self.config.save_debug and self.step % 4 == 0:
 
-            frame_number = self.step // 5
+            frame_number = self.step // 4
             save_path = self.save_path / 'debug' / f'{frame_number:06d}.png'
             cv2.imwrite(str(save_path), _combined)
 
