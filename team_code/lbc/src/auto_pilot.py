@@ -10,6 +10,7 @@ import torch
 
 from PIL import Image, ImageDraw
 
+from common.utils import *
 from lbc.carla_project.src.common import CONVERTER, COLOR
 from lbc.carla_project.src.converter import Converter
 from lbc.common.map_agent import MapAgent
@@ -81,20 +82,29 @@ def get_collision(p1, v1, p2, v2):
 class AutoPilot(MapAgent):
     def setup(self, path_to_conf_file):
         super().setup(path_to_conf_file)
-
+        
         self.save_path = None
         self.converter = Converter()
-        self.save_images_path = pathlib.Path(f'{self.config.save_root}/images/{ROUTE_NAME}')
-
+        
         # if block is untested
-        if self.config.save_data:
-            now = datetime.datetime.now()
-            string = pathlib.Path(os.environ['ROUTES']).stem + '_'
-            string += '_'.join(map(lambda x: '%02d' % x, (now.month, now.day, now.hour, now.minute, now.second)))
+       
+    def sensors(self):
+        result = super().sensors()
+        result = result[0] + result[3:]
+        return result
 
-            print(string)
+    def _init(self):
+        super()._init()
 
-            self.save_path = pathlib.Path(self.config.save_root) / 'data'
+        self._turn_controller = PIDController(K_P=1.25, K_I=0.75, K_D=0.3, n=40)
+        self._speed_controller = PIDController(K_P=5.0, K_I=0.5, K_D=1.0, n=40)
+
+         if self.config.save_data:
+
+            route_name = os.environ['ROUTE_NAME']
+            repetition = os.environ['REPETITION']
+            self.save_path = Path(f'{save_root}/data/{route_name}/{repetition}')
+
             self.save_path.mkdir(exist_ok=False)
 
             (self.save_path / 'rgb').mkdir()
@@ -103,11 +113,6 @@ class AutoPilot(MapAgent):
             (self.save_path / 'topdown').mkdir()
             (self.save_path / 'measurements').mkdir()
 
-    def _init(self):
-        super()._init()
-
-        self._turn_controller = PIDController(K_P=1.25, K_I=0.75, K_D=0.3, n=40)
-        self._speed_controller = PIDController(K_P=5.0, K_I=0.5, K_D=1.0, n=40)
 
     def _get_angle_to(self, pos, theta, target):
         R = np.array([

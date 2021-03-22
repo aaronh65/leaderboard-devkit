@@ -1,24 +1,21 @@
 import os
-import carla
 import cv2
 import numpy as np
 import torch
-import torch.nn.functional as F
-import torchvision
 
 from PIL import Image, ImageDraw
-from pathlib import Path
+from carla import VehicleControl
 
 #from lbc.carla_project.src.map_model import MapModel
-from rl.dspred.map_model import MapModel, fuse_vmaps
+from common.utils import *
+from map_model import MapModel, fuse_vmaps
 from lbc.carla_project.src.dataset import preprocess_semantic
 from lbc.carla_project.src.converter import Converter
 from lbc.carla_project.src.common import CONVERTER, COLOR
-from lbc.common.map_agent import MapAgent
-from lbc.common.pid_controller import PIDController
+from map_agent import MapAgent
+from pid_controller import PIDController
 
 from leaderboard.envs.sensor_interface import SensorInterface
-from srunner.scenariomanager.carla_data_provider import CarlaDataProvider
 
 HAS_DISPLAY = int(os.environ.get('HAS_DISPLAY', 0))
 
@@ -28,12 +25,12 @@ def get_entry_point():
 class DSPredAgent(MapAgent):
     def setup(self, path_to_conf_file):
         super().setup(path_to_conf_file)
-        print(path_to_conf_file)
-        self.converter = Converter()
 
-        self.debug_path = None
-        self.data_path = None
+        self.config.env = dict_to_sns(self.config.env)
+        self.config.agent = dict_to_sns(self.config.agent)
         self.config.save_root = Path(self.config.save_root)
+
+        self.converter = Converter()
 
         weights_path = Path(f'{self.config.project_root}/{self.aconfig.weights_path}')
         self.net = MapModel.load_from_checkpoint(weights_path)

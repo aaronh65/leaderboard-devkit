@@ -1,14 +1,12 @@
 from pathlib import Path
 
 import numpy as np
-import torch
-import imgaug.augmenters as iaa
 import pandas as pd
+import torch
 
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 from PIL import Image
-from numpy import nan
 
 from lbc.carla_project.src.converter import Converter, PIXELS_PER_WORLD
 from lbc.carla_project.src.dataset_wrapper import Wrap
@@ -20,8 +18,6 @@ from lbc.carla_project.src.common import *
 #torch.manual_seed(0)
 
 # Data has frame skip of 5.
-GAP = 1
-STEPS = 4
 N_CLASSES = len(COLOR)
 
 def get_weights(data, key='speed', bins=4):
@@ -60,13 +56,6 @@ def get_dataloader(hparams, is_train=False):
         for route in routes:
             episodes.extend(sorted(route.glob('*')))
 
-        # data augmentations
-        #transform = transforms.Compose([
-        #    torchvision.transforms.RandomAffine(degrees=) if is_train else lambda x: x,
-        #    transforms.ToTensor()
-        #    ])
-        # need at least 10 episode directories for split data = list()
-
         data = list()
         for i, _dataset_dir in enumerate(episodes): # 90-10 train/val
             add = False
@@ -85,7 +74,7 @@ def get_dataloader(hparams, is_train=False):
     print(f'batch_size: {hparams.batch_size}')
     print(f'epoch_len: {num_samples}')
 
-    num_samples=1000 if is_train else 100
+    num_samples = 1000 if is_train else 100
     weights = torch.DoubleTensor(get_weights(data, key='none'))
     sampler = torch.utils.data.sampler.WeightedRandomSampler(weights, len(weights))
     #sampler = None
@@ -187,9 +176,8 @@ class OfflineCarlaDataset(Dataset):
         if done:
             ni = i + done_list.index(1) + 1
         done = torch.FloatTensor(np.float32([done]))
-
         
-        # reward
+        # reward calculations
         penalty = self.measurements.loc[i:ni-1, 'penalty'].to_numpy()
         imitation_reward = self.measurements.loc[i:ni-1, 'imitation_reward'].to_numpy()
         route_reward = self.measurements.loc[i:ni-1, 'route_reward'].to_numpy()
@@ -197,6 +185,7 @@ class OfflineCarlaDataset(Dataset):
         discount = torch.FloatTensor(np.float32([self.discount[ni-1-i]])) # for Q(ns)
 
         reward = route_reward - penalty
+        #reward = imitation_reward + route_reward - penalty
         reward = np.dot(reward, discounts)
         reward = torch.FloatTensor(np.float32([reward]))
 
@@ -234,7 +223,6 @@ class OfflineCarlaDataset(Dataset):
 
 if __name__ == '__main__':
     import os, cv2, argparse
-    from PIL import ImageDraw
     from rl.dspred.map_model import MapModel, visualize
     
     parser = argparse.ArgumentParser()
@@ -246,7 +234,7 @@ if __name__ == '__main__':
     parser.add_argument('--mode', type=str, default='offline', 
             choices=['offline', 'online', 'hybrid'])
     parser.add_argument('--angle_jitter', type=float, default=45)
-    parser.add_argument('--pixel_jitter', type=int, default=15)
+    parser.add_argument('--pixel_jitter', type=int, default=16.5) # 3 meters
     args = parser.parse_args()
 
     if args.dataset_dir is None: # local
@@ -270,7 +258,7 @@ if __name__ == '__main__':
     model.hparams.pixel_jitter = args.pixel_jitter
 
     converter = Converter()
-    loader = get_dataloader(model.hparams, is_train=True)
+    loader = get_dataloader(model.hparams, is_train=False)
 
     for batch in loader:
 
@@ -313,8 +301,8 @@ if __name__ == '__main__':
                     'margin_loss': margin_loss,
                     }
 
-
             visualize(batch, vmap, hmap, nvmap, nhmap, naction, meta)
+
         #if 1 in done:
         #    cv2.waitKey(0)
         #break

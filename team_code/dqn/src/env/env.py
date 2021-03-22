@@ -4,7 +4,7 @@ import numpy as np
 from collections import deque
 from itertools import islice
 
-from rl.common.env_utils import *
+#from rl.common.env_utils import *
 from rl.common.base_env import BaseEnv
 #from rl.dspred.replay_buffer import ReplayBuffer
 from rl.dspred.global_buffer import ReplayBuffer

@@ -2,7 +2,7 @@ import numpy as np
 
 
 CONVERTER = np.uint8([
-    9,    # unlabeled
+    0,    # unlabeled
     0,    # building
     0,    # fence
     0,    # other
@@ -41,5 +41,4 @@ COLOR = np.uint8([
         (255,   0,   0),    # red light
         (255, 255,   0),    # yellow light
         (  0, 255,   0),    # green light
-        (255, 255, 255),    # debug?
         ])

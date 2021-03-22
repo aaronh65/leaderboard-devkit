@@ -4,7 +4,7 @@ export DEBUG_CHALLENGE=0 # DO NOT MODIFY
 
 # leaderboard and agent config
 TEAM_CONFIG=$SAVE_ROOT/config.yml
-TEAM_AGENT=$PROJECT_ROOT/team_code/$AGENT/agent.py
+TEAM_AGENT=$PROJECT_ROOT/team_code/$AGENT
 ROUTE_PATH=$PROJECT_ROOT/leaderboard/data/routes_$SPLIT/$ROUTE_NAME.xml
 SCENARIOS=$PROJECT_ROOT/leaderboard/data/all_towns_traffic_scenarios_public.json
 

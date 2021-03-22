@@ -4,7 +4,7 @@ import cv2
 import carla
 
 from leaderboard.autoagents import autonomous_agent
-from lbc.common.planner import RoutePlanner
+from planner import RoutePlanner
 from common.utils import *
 
 
@@ -17,9 +17,9 @@ class BaseAgent(autonomous_agent.AutonomousAgent):
             with open(self.config_path, 'r') as f:
                 config = yaml.load(f, Loader=yaml.Loader)
             self.config = dict_to_sns(config)
-            self.config.env = dict_to_sns(config['env'])
-            self.config.agent = dict_to_sns(config['agent'])
-            self.aconfig = self.config.agent
+            #self.config.env = dict_to_sns(config['env'])
+            #self.config.agent = dict_to_sns(config['agent'])
+            #self.aconfig = self.config.agent
         else:
             self.config = path_to_conf_file
             self.aconfig = self.config.agent
