@@ -32,7 +32,11 @@ def visualize(batch, out, between, out_cmd, loss_point, loss_cmd, target_heatmap
         _out_cmd = out_cmd[i]
         _between = between[i]
 
+        #rgb, topdown, points, target, actions, meta = [x[i] for x in batch]
         rgb, topdown, points, target, actions, meta = [x[i] for x in batch]
+        meta = meta.cpu().numpy().astype(int)
+        meta = ''.join(chr(c) for c in meta)
+        #meta = 'test'
 
         _rgb = np.uint8(rgb.detach().cpu().numpy().transpose(1, 2, 0) * 255)
         _target_heatmap = np.uint8(target_heatmap[i].detach().squeeze().cpu().numpy() * 255)
@@ -149,18 +153,20 @@ class MapModel(pl.LightningModule):
                 'val_image': visualize(batch, out, between, out_cmd, loss_point, loss_cmd, target_heatmap)
                 }, self.global_step)
 
-        return {
-                'val_loss': loss.item(),
-                'val_point_loss': loss_point.mean().item(),
+        result = {
+                'val_loss': loss,
+                'val_point_loss': loss_point.mean(),
 
-                'val_cmd_loss': loss_cmd_raw.mean(1).mean().item(),
-                'val_steer_loss': loss_cmd_raw[:, 0].mean().item(),
-                'val_speed_loss': loss_cmd_raw[:, 1].mean().item(),
+                'val_cmd_loss': loss_cmd_raw.mean(1).mean(),
+                'val_steer_loss': loss_cmd_raw[:, 0].mean(),
+                'val_speed_loss': loss_cmd_raw[:, 1].mean(),
 
-                'val_cmd_pred_loss': loss_cmd_pred_raw.mean(1).mean().item(),
-                'val_steer_pred_loss': loss_cmd_pred_raw[:, 0].mean().item(),
-                'val_speed_pred_loss': loss_cmd_pred_raw[:, 1].mean().item(),
+                'val_cmd_pred_loss': loss_cmd_pred_raw.mean(1).mean(),
+                'val_steer_pred_loss': loss_cmd_pred_raw[:, 0].mean(),
+                'val_speed_pred_loss': loss_cmd_pred_raw[:, 1].mean(),
                 }
+
+        return result
 
     def validation_epoch_end(self, batch_metrics):
         results = dict()
@@ -169,8 +175,7 @@ class MapModel(pl.LightningModule):
             for key in metrics:
                 if key not in results:
                     results[key] = list()
-
-                results[key].append(metrics[key])
+                results[key].append(metrics[key].mean().item())
 
         summary = {key: np.mean(val) for key, val in results.items()}
         if self.logger != None:

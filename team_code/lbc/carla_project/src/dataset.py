@@ -165,8 +165,9 @@ class CarlaDataset(Dataset):
 
     def __getitem__(self, i):
         path = self.dataset_dir
+        route, rep = path.parts[-2:]
         frame = self.frames[i]
-        meta = '%s %s' % (path.stem, frame)
+        meta = '%s %s %s' % (route, rep, frame)
 
         rgb = Image.open(path / 'rgb' / ('%s.png' % frame))
         rgb = transforms.functional.to_tensor(rgb)
@@ -228,8 +229,9 @@ class CarlaDataset(Dataset):
         actions = np.float32(self.measurements.iloc[i][['steer', 'target_speed']])
         actions[np.isnan(actions)] = 0.0
         actions = torch.FloatTensor(actions)
+        meta = torch.FloatTensor([ord(c) for c in meta])
+
         return rgb, topdown, points, target, actions, meta
-        #return torch.cat((rgb, rgb_left, rgb_right)), topdown, points, target, actions, meta
 
     def _augment_and_preprocess(self, topdown, points, target):
         
