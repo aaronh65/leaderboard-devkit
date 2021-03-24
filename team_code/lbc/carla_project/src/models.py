@@ -1,4 +1,5 @@
 import cv2
+import numpy as np
 import torch
 import torch.nn.functional as F
 
@@ -36,6 +37,8 @@ class SpatialSoftmax(torch.nn.Module):
 
         return torch.stack((x, y), -1)
 
+# argmax isn't usually differentiable but we can hack together 
+# an implementation that is
 class SpatialArgmax(torch.nn.Module):
     def forward(self, logit, temperature):
         """
@@ -43,12 +46,15 @@ class SpatialArgmax(torch.nn.Module):
         """
         n,c,h,w = logit.shape
         flat = logit.view((n,c,h*w)) # (N,C,H*W)
-        Q_all, action_flat = torch.max(flat, -1, keepdim=True) # (N,C,1)
-        # x,y coordinates
-        action = torch.cat((action_flat % w, action_flat // w), axis=2).type_as(logit) # (N,C,2)
-        action = (action / 255 - 1/2) * 2
-        #return action, Q_all # (N,4,2), (N,4,1)
-        return action # (N,4,2)
+        Q_all, _ = torch.max(flat, -1, keepdim=True) # (N,C,1)
+
+        # create mask
+        flat[flat < Q_all] = 0
+        #flat = flat / Q_all # norm to 1
+        masked = flat.view((n,c,h,w))
+        out = SpatialSoftmax()(masked, temperature=1.0)
+
+        return out
 
 class SegmentationModel(torch.nn.Module):
     def __init__(self, input_channels=3, n_steps=4, mode='expectation', batch_norm=True, hack=False, temperature=1.0):
