@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import cv2
 import numpy as np
 import torch
 import imgaug.augmenters as iaa
@@ -44,7 +45,7 @@ def get_weights(data, key='speed', bins=4):
     return class_weights[classes]
 
 
-def get_dataset(dataset_dir, is_train=True, batch_size=128, num_workers=4, sample_by='none', **kwargs):
+def get_dataset(hparams, is_train=True, batch_size=128, num_workers=4, sample_by='none', **kwargs):
     data = list()
     transform = transforms.Compose([
         get_augmenter() if is_train else lambda x: x,
@@ -53,7 +54,8 @@ def get_dataset(dataset_dir, is_train=True, batch_size=128, num_workers=4, sampl
 
 
     episodes = list()
-    routes = Path(dataset_dir).glob('*')
+    dataset_dir = hparams.dataset_dir / 'data'
+    routes = dataset_dir.glob('*')
     routes = sorted([path for path in routes if path.is_dir() and 'logs' not in str(path)])
     for route in routes:
         episodes.extend(sorted(route.glob('*')))
@@ -65,7 +67,7 @@ def get_dataset(dataset_dir, is_train=True, batch_size=128, num_workers=4, sampl
         add |= (not is_train and i % 10 >= 9)
 
         if add:
-            data.append(CarlaDataset(_dataset_dir))
+            data.append(CarlaDataset(_dataset_dir, hparams))
     
     print('%d frames.' % sum(map(len, data)))
 
@@ -145,7 +147,6 @@ class CarlaDataset(Dataset):
 
         self.hparams = hparams
 
-        print(dataset_dir)
 
         for image_path in sorted((dataset_dir / 'rgb').glob('*.png')):
             frame = str(image_path.stem)
@@ -264,7 +265,6 @@ class CarlaDataset(Dataset):
 
 if __name__ == '__main__':
     import sys
-    import cv2
     import argparse
     from PIL import ImageDraw
     from lbc.carla_project.src.utils.heatmap import ToHeatmap

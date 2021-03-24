@@ -1,4 +1,4 @@
-import copy
+import copy,shutil
 import argparse
 import pathlib
 
@@ -189,10 +189,10 @@ class MapModel(pl.LightningModule):
         return [optim], [scheduler]
 
     def train_dataloader(self):
-        return get_dataset(self.hparams.dataset_dir, True, self.hparams.batch_size, sample_by=self.hparams.sample_by)
+        return get_dataset(self.hparams, True, self.hparams.batch_size, sample_by=self.hparams.sample_by)
 
     def val_dataloader(self):
-        return get_dataset(self.hparams.dataset_dir, False, self.hparams.batch_size, sample_by=self.hparams.sample_by)
+        return get_dataset(self.hparams, False, self.hparams.batch_size, sample_by=self.hparams.sample_by)
 
 
 def main(hparams):
@@ -208,9 +208,10 @@ def main(hparams):
         resume_from_checkpoint = None
 
     trainer = pl.Trainer(
-            gpus=-1, max_epochs=hparams.max_epochs,
+            gpus=hparams.gpus, max_epochs=hparams.max_epochs,
             resume_from_checkpoint=resume_from_checkpoint,
-            logger=logger, checkpoint_callback=checkpoint_callback)
+            logger=logger, checkpoint_callback=checkpoint_callback,
+            distributed_backend='dp',)
 
 
     with open(hparams.save_dir / 'config.yml', 'w') as f:
@@ -219,6 +220,8 @@ def main(hparams):
         hparams_copy['save_dir'] = str(hparams.save_dir)
         del hparams_copy['data_root']
         yaml.dump(hparams_copy, f, default_flow_style=False, sort_keys=False)
+
+    shutil.copyfile(hparams.dataset_dir / 'config.yml', hparams.save_dir / 'data_config.yml')
 
     trainer.fit(model)
 
@@ -241,7 +244,10 @@ if __name__ == '__main__':
     parser.add_argument('--sample_by', type=str, choices=['none', 'even', 'speed', 'steer'], default='even')
     parser.add_argument('--command_coefficient', type=float, default=0.1)
     parser.add_argument('--temperature', type=float, default=10.0)
-    parser.add_argument('--hack', action='store_true', default=False)
+    parser.add_argument('--hack', action='store_true', default=True)
+    parser.add_argument('--angle_jitter', type=float, default=5)
+    parser.add_argument('--pixel_jitter', type=int, default=5.5) # 3 meters
+
 
     # Data args.
     parser.add_argument('--dataset_dir', type=pathlib.Path, required=True)
