@@ -10,11 +10,11 @@ import torch
 
 from PIL import Image, ImageDraw
 
-from common.utils import *
 from lbc.carla_project.src.common import CONVERTER, COLOR
 from lbc.carla_project.src.converter import Converter
-from lbc.common.map_agent import MapAgent
-from lbc.common.pid_controller import PIDController
+from lbc.src.map_agent import MapAgent
+from lbc.src.pid_controller import PIDController
+from pathlib import Path
 
 
 #HAS_DISPLAY = True
@@ -90,7 +90,7 @@ class AutoPilot(MapAgent):
        
     def sensors(self):
         result = super().sensors()
-        result = result[0] + result[3:]
+        result = result[0:1] + result[3:]
         return result
 
     def _init(self):
@@ -99,14 +99,15 @@ class AutoPilot(MapAgent):
         self._turn_controller = PIDController(K_P=1.25, K_I=0.75, K_D=0.3, n=40)
         self._speed_controller = PIDController(K_P=5.0, K_I=0.5, K_D=1.0, n=40)
 
-         if self.config.save_data:
+        if self.config.save_data:
 
             route_name = os.environ['ROUTE_NAME']
             repetition = os.environ['REPETITION']
-            self.save_path = Path(f'{save_root}/data/{route_name}/{repetition}')
+            self.save_path = Path(f'{self.config.save_root}/data/{route_name}/{repetition}')
 
-            self.save_path.mkdir(exist_ok=False)
+            self.save_path.mkdir(parents=True, exist_ok=False)
 
+            (self.save_path / 'debug').mkdir()
             (self.save_path / 'rgb').mkdir()
             (self.save_path / 'rgb_left').mkdir()
             (self.save_path / 'rgb_right').mkdir()
@@ -177,93 +178,19 @@ class AutoPilot(MapAgent):
         near_node, near_command = wpt_route[1]
         far_node, far_command = cmd_route[1]
         steer, throttle, brake, target_speed = self._get_control(near_node, far_node, data)
-        
-        topdown = data['topdown']
-        _topdown = Image.fromarray(COLOR[CONVERTER[topdown]])
-        _topdown_draw = ImageDraw.Draw(_topdown)
-        _rgb = Image.fromarray(data['rgb'])
-        _rgb_draw = ImageDraw.Draw(_rgb)
-
-        if (self.config.save_images or HAS_DISPLAY):
-            r = 2
-            theta = data['compass']
-            theta = 0.0 if np.isnan(theta) else theta
-            theta = theta + np.pi / 2
-            R = np.array([
-                [np.cos(theta), -np.sin(theta)],
-                [np.sin(theta),  np.cos(theta)]])
-            
-            nodes = cmd_nodes - gps
-            nodes = R.T.dot(nodes.T).T
-            nodes = nodes * 5.5
-            nodes_bev = nodes.copy() + [256, 256]
-            nodes_bev = nodes_bev[:3]
-            for i, (x,y) in enumerate(nodes_bev):
-                if i == 0:
-                    color = (0, 255, 0)
-                elif i == 1: # target
-                    color = (255, 0, 0)
-                elif i == 2:
-                    color = (139, 0, 139)
-                _topdown_draw.ellipse((x-2*r, y-2*r, x+2*r, y+2*r), color)
-
-            nodes_cam = nodes.copy()[:3].squeeze()
-            nodes_cam = nodes_cam + [128, 256]
-            nodes_cam = np.clip(nodes_cam, 0, 256)
-            nodes_cam = self.converter.map_to_cam(torch.Tensor(nodes_cam)).numpy()
-            for i, (x,y) in enumerate(nodes_cam[:3]):
-                if i == 0:
-                    if not (0 < y < 143 and 0 < x < 255):
-                        continue
-                    color = (0, 255, 0)
-                elif i == 1: # target
-                    color = (255, 0, 0)
-                elif i == 2:
-                    color = (139, 0, 139)
-                _rgb_draw.ellipse((x-r, y-r, x+r, y+r), color)
-
-
-        #rgb = np.hstack((data['rgb_left'], data['rgb'], data['rgb_right']))
-        _rgb = Image.fromarray(np.hstack((data['rgb_left'], _rgb, data['rgb_right'])))
-        _draw = ImageDraw.Draw(_rgb)
-        text_color = (139, 0, 139) #darkmagenta
-        _draw.text((5, 10), 'Steer: %.3f' % steer, text_color)
-        _draw.text((5, 30), 'Throttle: %.3f' % throttle, text_color)
-        _draw.text((5, 50), 'Brake: %s' % brake, text_color)
-        _draw.text((5, 70), 'Speed: %.3f' % data['speed'], text_color)
-        _draw.text((5, 90), 'Target: %.3f' % target_speed, text_color)
-        cur_command, next_command = cmd_cmds[:2]
-        _draw.text((5, 110), f'Current: {cur_command}', text_color)
-        _draw.text((5, 130), f'Next: {next_command}', text_color)
-        
-
-        # (256, 144) -> (256/144*256, 256)
-        _rgb = _rgb.resize((int(256 / _rgb.size[1] * _rgb.size[0]), 256))
-        _topdown = _topdown.resize((256,256))
-        _combined = Image.fromarray(np.hstack((_rgb, _topdown)))
-
-        if self.step % 10 == 0 and self.config.save_images:
-            _save_img = cv2.cvtColor(np.array(_combined), cv2.COLOR_BGR2RGB)
-            frame_number = self.step//10
-            rep_number = int(os.environ.get('REP', 0))
-            save_path = self.save_images_path / f'repetition_{rep_number:02d}' / f'{frame_number:06d}.png'
-            cv2.imwrite(str(save_path), _save_img)
-
 
         control = carla.VehicleControl()
         control.steer = steer + 1e-2 * np.random.randn()
         control.throttle = throttle
         control.brake = float(brake)
 
-        if self.step % 10 == 0 and self.save_path:
+        if HAS_DISPLAY or self.config.save_data:
+            self.debug_display(data, steer, throttle, brake, target_speed, cmd_cmds, cmd_nodes, gps)
+                
+        if self.step % 10 == 0 and self.config.save_data:
             self.save(far_node, near_command, steer, throttle, brake, target_speed, data)
 
-                    
-        if HAS_DISPLAY:
-            cv2.imshow('map', cv2.cvtColor(np.array(_combined), cv2.COLOR_BGR2RGB))
-            cv2.waitKey(1)
-
-
+        
         return control
 
     def save(self, far_node, near_command, steer, throttle, brake, target_speed, tick_data):
@@ -289,10 +216,79 @@ class AutoPilot(MapAgent):
 
         (self.save_path / 'measurements' / ('%04d.json' % frame)).write_text(str(data))
 
-        Image.fromarray(tick_data['rgb']).save(self.save_path / 'rgb' / ('%04d.png' % frame))
-        Image.fromarray(tick_data['rgb_left']).save(self.save_path / 'rgb_left' / ('%04d.png' % frame))
-        Image.fromarray(tick_data['rgb_right']).save(self.save_path / 'rgb_right' / ('%04d.png' % frame))
-        Image.fromarray(tick_data['topdown']).save(self.save_path / 'topdown' / ('%04d.png' % frame))
+        Image.fromarray(tick_data['rgb']).save(self.save_path / 'rgb' / ('%06d.png' % frame))
+        #Image.fromarray(tick_data['rgb_left']).save(self.save_path / 'rgb_left' / ('%06d.png' % frame))
+        #Image.fromarray(tick_data['rgb_right']).save(self.save_path / 'rgb_right' / ('%06d.png' % frame))
+        Image.fromarray(tick_data['topdown']).save(self.save_path / 'topdown' / ('%06d.png' % frame))
+
+    def debug_display(self, data, steer, throttle, brake, target_speed, cmd_cmds, cmd_nodes, gps, r=2):
+        route_colors = [(255,255,255), (112,128,144), (47,79,79), (47,79,79)] 
+
+        topdown = data['topdown']
+        _topdown = Image.fromarray(COLOR[CONVERTER[topdown]])
+        _topdown_draw = ImageDraw.Draw(_topdown)
+        _rgb = Image.fromarray(data['rgb'])
+        _rgb_draw = ImageDraw.Draw(_rgb)
+
+        theta = data['compass']
+        theta = 0.0 if np.isnan(theta) else theta
+        theta = theta + np.pi / 2
+        R = np.array([
+            [np.cos(theta), -np.sin(theta)],
+            [np.sin(theta),  np.cos(theta)]])
+        
+        # route waypoints in map view
+        route = cmd_nodes - gps
+        route = R.T.dot(route.T).T
+        route = route * 5.5
+        route_map = route.copy() + [256, 256]
+        route_map = route_map[:3]
+        for i, (x,y) in enumerate(route_map):
+            _topdown_draw.ellipse((x-2*r, y-2*r, x+2*r, y+2*r), route_colors[i])
+
+        # route waypoints in cam view
+        route_cam = route.copy()[:3].squeeze()
+        route_cam = route_cam + [128, 256]
+        route_cam = np.clip(route_cam, 0, 256)
+        route_cam = self.converter.map_to_cam(torch.Tensor(route_cam)).numpy()
+        for i, (x,y) in enumerate(route_cam[:3]):
+            if i == 0:
+                xt, yt = route_map[0]
+                if xt < 128 or xt > 128+256 or yt < 5 or yt > 250: 
+                    continue
+            if x < 5 or x > 250 or y < 5 or y > 140: 
+                continue
+            _rgb_draw.ellipse((x-r, y-r, x+r, y+r), route_colors[i])
+
+        #rgb = np.hstack((data['rgb_left'], data['rgb'], data['rgb_right']))
+        #_rgb = Image.fromarray(np.hstack((data['rgb_left'], _rgb, data['rgb_right'])))
+
+        _rgb = _rgb.resize((int(256 / _rgb.size[1] * _rgb.size[0]), 256))
+        _draw = ImageDraw.Draw(_rgb)
+        text_color = (255,255,255)
+        _draw.text((5, 10), 'Steer: %.3f' % steer, text_color)
+        _draw.text((5, 30), 'Throttle: %.3f' % throttle, text_color)
+        _draw.text((5, 50), 'Brake: %s' % brake, text_color)
+        _draw.text((5, 70), 'Speed: %.3f' % data['speed'], text_color)
+        _draw.text((5, 90), 'Target: %.3f' % target_speed, text_color)
+        cur_command, next_command = cmd_cmds[:2]
+        _draw.text((5, 110), f'Current: {cur_command}', text_color)
+        _draw.text((5, 130), f'Next: {next_command}', text_color)
+        
+
+        # (256, 144) -> (256/144*256, 256)
+        _topdown = _topdown.resize((256,256))
+        _combined = Image.fromarray(np.hstack((_rgb, _topdown)))
+
+        #if self.step % 4 == 0 and self.config.save_data:
+        #    _save_img = cv2.cvtColor(np.array(_combined), cv2.COLOR_BGR2RGB)
+        #    frame_number = self.step // 4
+        #    cv2.imwrite(str(self.save_path / 'debug' / f'{frame_number:06d}.png'), _save_img)
+
+        if HAS_DISPLAY:
+            cv2.imshow('map', cv2.cvtColor(np.array(_combined), cv2.COLOR_BGR2RGB))
+            cv2.waitKey(1)
+
 
     def _should_brake(self):
         actors = self._world.get_actors()

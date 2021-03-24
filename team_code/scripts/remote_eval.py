@@ -12,7 +12,7 @@ parser = argparse.ArgumentParser()
 
 parser.add_argument('-D', '--debug', action='store_true')
 parser.add_argument('-G', '--gpus', type=int, default=1)
-parser.add_argument('--agent', type=str, default='dqn/src/agents/auto_pilot.py')
+parser.add_argument('--agent', type=str, default='lbc/src/auto_pilot.py')
 parser.add_argument('--split', type=str, default='devtest', 
         choices=['devtest','testing','training','debug'])
 parser.add_argument('--repetitions', type=int, default=1)

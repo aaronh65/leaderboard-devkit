@@ -13,8 +13,8 @@ from lbc.carla_project.src.map_model import MapModel
 from lbc.carla_project.src.dataset import preprocess_semantic
 from lbc.carla_project.src.converter import Converter
 from lbc.carla_project.src.common import CONVERTER, COLOR
-from lbc.common.map_agent import MapAgent
-from lbc.common.pid_controller import PIDController
+from lbc.src.map_agent import MapAgent
+from lbc.src.pid_controller import PIDController
 
 from srunner.scenariomanager.carla_data_provider import CarlaDataProvider
 
