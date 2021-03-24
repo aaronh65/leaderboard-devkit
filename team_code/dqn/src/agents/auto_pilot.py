@@ -90,7 +90,7 @@ class AutoPilot(MapAgent):
        
     def sensors(self):
         result = super().sensors()
-        #result = result[0:1] + result[3:]
+        result = result[0:1] + result[3:]
         return result
 
     def _init(self):
@@ -175,8 +175,8 @@ class AutoPilot(MapAgent):
         cmd_nodes = np.array([node for node, _ in cmd_route])
         cmd_cmds = [cmd for _, cmd in cmd_route]
 
-        near_node, near_command = wpt_route[0]
-        far_node, far_command = cmd_route[0]
+        near_node, near_command = wpt_route[1]
+        far_node, far_command = cmd_route[1]
         steer, throttle, brake, target_speed = self._get_control(near_node, far_node, data)
 
         control = carla.VehicleControl()
@@ -217,8 +217,8 @@ class AutoPilot(MapAgent):
         (self.save_path / 'measurements' / ('%04d.json' % frame)).write_text(str(data))
 
         Image.fromarray(tick_data['rgb']).save(self.save_path / 'rgb' / ('%06d.png' % frame))
-        Image.fromarray(tick_data['rgb_left']).save(self.save_path / 'rgb_left' / ('%06d.png' % frame))
-        Image.fromarray(tick_data['rgb_right']).save(self.save_path / 'rgb_right' / ('%06d.png' % frame))
+        #Image.fromarray(tick_data['rgb_left']).save(self.save_path / 'rgb_left' / ('%06d.png' % frame))
+        #Image.fromarray(tick_data['rgb_right']).save(self.save_path / 'rgb_right' / ('%06d.png' % frame))
         Image.fromarray(tick_data['topdown']).save(self.save_path / 'topdown' / ('%06d.png' % frame))
 
     def debug_display(self, data, steer, throttle, brake, target_speed, cmd_cmds, cmd_nodes, gps, r=2):

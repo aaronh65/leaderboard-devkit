@@ -10,9 +10,9 @@ from torchvision import transforms
 from PIL import Image
 from numpy import nan
 
-from .converter import Converter, PIXELS_PER_WORLD
-from .dataset_wrapper import Wrap
-from . import common
+from lbc.carla_project.src.converter import Converter, PIXELS_PER_WORLD
+from lbc.carla_project.src.dataset_wrapper import Wrap
+from lbc.carla_project.src import common
 
 
 # Reproducibility.
@@ -51,16 +51,22 @@ def get_dataset(dataset_dir, is_train=True, batch_size=128, num_workers=4, sampl
         transforms.ToTensor()
         ])
 
-    episodes = list(sorted(Path(dataset_dir).glob('*')))
 
-    for i, _dataset_dir in enumerate(episodes):
+    episodes = list()
+    routes = Path(dataset_dir).glob('*')
+    routes = sorted([path for path in routes if path.is_dir() and 'logs' not in str(path)])
+    for route in routes:
+        episodes.extend(sorted(route.glob('*')))
+
+    data = list()
+    for i, _dataset_dir in enumerate(episodes): # 90-10 train/val
         add = False
         add |= (is_train and i % 10 < 9)
         add |= (not is_train and i % 10 >= 9)
 
         if add:
-            data.append(CarlaDataset(_dataset_dir, transform, **kwargs))
-
+            data.append(CarlaDataset(_dataset_dir))
+    
     print('%d frames.' % sum(map(len, data)))
 
     weights = torch.DoubleTensor(get_weights(data, key=sample_by))
@@ -127,7 +133,7 @@ def preprocess_semantic(semantic_np):
 
 
 class CarlaDataset(Dataset):
-    def __init__(self, dataset_dir, transform=transforms.ToTensor()):
+    def __init__(self, dataset_dir, hparams, transform=transforms.ToTensor()):
         dataset_dir = Path(dataset_dir)
         measurements = list(sorted((dataset_dir / 'measurements').glob('*.json')))
 
@@ -137,13 +143,15 @@ class CarlaDataset(Dataset):
         self.measurements = pd.DataFrame([eval(x.read_text()) for x in measurements])
         self.converter = Converter()
 
+        self.hparams = hparams
+
         print(dataset_dir)
 
         for image_path in sorted((dataset_dir / 'rgb').glob('*.png')):
             frame = str(image_path.stem)
 
-            assert (dataset_dir / 'rgb_left' / ('%s.png' % frame)).exists()
-            assert (dataset_dir / 'rgb_right' / ('%s.png' % frame)).exists()
+            #assert (dataset_dir / 'rgb_left' / ('%s.png' % frame)).exists()
+            #assert (dataset_dir / 'rgb_right' / ('%s.png' % frame)).exists()
             assert (dataset_dir / 'topdown' / ('%s.png' % frame)).exists()
             assert int(frame) < len(self.measurements)
 
@@ -162,16 +170,16 @@ class CarlaDataset(Dataset):
         rgb = Image.open(path / 'rgb' / ('%s.png' % frame))
         rgb = transforms.functional.to_tensor(rgb)
 
-        rgb_left = Image.open(path / 'rgb_left' / ('%s.png' % frame))
-        rgb_left = transforms.functional.to_tensor(rgb_left)
+        #rgb_left = Image.open(path / 'rgb_left' / ('%s.png' % frame))
+        #rgb_left = transforms.functional.to_tensor(rgb_left)
 
-        rgb_right = Image.open(path / 'rgb_right' / ('%s.png' % frame))
-        rgb_right = transforms.functional.to_tensor(rgb_right)
+        #rgb_right = Image.open(path / 'rgb_right' / ('%s.png' % frame))
+        #rgb_right = transforms.functional.to_tensor(rgb_right)
 
         topdown = Image.open(path / 'topdown' / ('%s.png' % frame))
-        topdown = topdown.crop((128, 0, 128 + 256, 256))
-        topdown = np.array(topdown)
-        topdown = preprocess_semantic(topdown)
+        #topdown = topdown.crop((128, 0, 128 + 256, 256))
+        #topdown = np.array(topdown)
+        #topdown = preprocess_semantic(topdown)
 
         u = np.float32(self.measurements.iloc[i][['x', 'y']])
         theta = self.measurements.iloc[i]['theta']
@@ -197,13 +205,16 @@ class CarlaDataset(Dataset):
 
         points = torch.FloatTensor(points)
         points = torch.clamp(points, 0, 256)
-        points = (points / 256) * 2 - 1
 
         target = np.float32(self.measurements.iloc[i][['x_command', 'y_command']])
         target = R.T.dot(target - u)
         target *= PIXELS_PER_WORLD
         target += [128, 256]
         target = np.clip(target, 0, 256)
+
+        topdown, points, target = self._augment_and_preprocess(topdown, points, target)
+        points = (points / 256) * 2 - 1
+        points = torch.FloatTensor(points)
         target = torch.FloatTensor(target)
 
         # heatmap = make_heatmap((256, 256), target)
@@ -216,15 +227,47 @@ class CarlaDataset(Dataset):
         actions = np.float32(self.measurements.iloc[i][['steer', 'target_speed']])
         actions[np.isnan(actions)] = 0.0
         actions = torch.FloatTensor(actions)
+        return rgb, topdown, points, target, actions, meta
+        #return torch.cat((rgb, rgb_left, rgb_right)), topdown, points, target, actions, meta
 
-        return torch.cat((rgb, rgb_left, rgb_right)), topdown, points, target, actions, meta
+    def _augment_and_preprocess(self, topdown, points, target):
+        
+        dr = np.random.randint(-self.hparams.angle_jitter, self.hparams.angle_jitter+1)
+        dx = np.random.randint(-self.hparams.pixel_jitter, self.hparams.pixel_jitter+1)
+        dy = np.random.randint(0, self.hparams.pixel_jitter+1)
+
+        offset = np.ones(points.shape)
+        offset.T[0] = dx
+        offset.T[1] = dy
+        pixel_rotation = cv2.getRotationMatrix2D((256//2,256), dr, 1) # 2x3
+
+        points = np.hstack((points, np.ones((4,1)))) # 4x3
+        points = np.matmul(pixel_rotation, points.T).T # 4x2
+        points = np.clip(points - offset, 0, 255)
+
+        target = np.array((target[0], target[1], 1)) # 1x3
+        target = np.matmul(pixel_rotation, target.T).T # 1x2
+        target = target.squeeze() # 2
+        
+        image_rotation = cv2.getRotationMatrix2D((256,256), dr, 1) # 2x3
+
+        topdown = np.array(topdown)
+        topdown = cv2.warpAffine(topdown, image_rotation, 
+                topdown.shape[1::-1], flags=cv2.INTER_NEAREST)
+        topdown = Image.fromarray(topdown)
+        topdown = topdown.crop((128+dx,0+dy,128+256+dx,256+dy))
+        topdown = preprocess_semantic(np.array(topdown))
+
+        return topdown, points, target
+
 
 
 if __name__ == '__main__':
     import sys
     import cv2
+    import argparse
     from PIL import ImageDraw
-    from .utils.heatmap import ToHeatmap
+    from lbc.carla_project.src.utils.heatmap import ToHeatmap
 
     # for path in sorted(Path('/home/bradyzhou/data/carla/carla_challenge_curated').glob('*')):
         # data = CarlaDataset(path)
@@ -232,7 +275,13 @@ if __name__ == '__main__':
         # for i in range(len(data)):
             # data[i]
 
-    data = CarlaDataset(sys.argv[1])
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--dataset_dir', type=str, required=True)
+    parser.add_argument('--angle_jitter', type=float, default=5)
+    parser.add_argument('--pixel_jitter', type=int, default=5.5) # 3 meters
+    hparams = parser.parse_args()
+
+    data = CarlaDataset(hparams.dataset_dir, hparams)
     converter = Converter()
     to_heatmap = ToHeatmap()
 

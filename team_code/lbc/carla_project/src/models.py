@@ -36,17 +36,32 @@ class SpatialSoftmax(torch.nn.Module):
 
         return torch.stack((x, y), -1)
 
+class SpatialArgmax(torch.nn.Module):
+    def forward(self, logit, temperature):
+        """
+        Assumes logits is size (n, c, h, w)
+        """
+        n,c,h,w = logit.shape
+        flat = logit.view((n,c,h*w)) # (N,C,H*W)
+        Q_all, action_flat = torch.max(flat, -1, keepdim=True) # (N,C,1)
+        # x,y coordinates
+        action = torch.cat((action_flat % w, action_flat // w), axis=2).type_as(logit) # (N,C,2)
+        action = (action / 255 - 1/2) * 2
+        #return action, Q_all # (N,4,2), (N,4,1)
+        return action # (N,4,2)
 
 class SegmentationModel(torch.nn.Module):
-    def __init__(self, input_channels=3, n_steps=4, batch_norm=True, hack=False, temperature=1.0):
+    def __init__(self, input_channels=3, n_steps=4, mode='expectation', batch_norm=True, hack=False, temperature=1.0):
         super().__init__()
+
+        assert mode in ['expectation', 'argmax'], 'invalid mode'
 
         self.temperature = temperature
         self.hack = hack
 
         self.norm = torch.nn.BatchNorm2d(input_channels) if batch_norm else lambda x: x
         self.network = deeplabv3_resnet50(pretrained=False, num_classes=n_steps)
-        self.extract = SpatialSoftmax()
+        self.extract = SpatialSoftmax() if mode is 'expectation' else SpatialArgmax()
 
         old = self.network.backbone.conv1
         self.network.backbone.conv1 = torch.nn.Conv2d(

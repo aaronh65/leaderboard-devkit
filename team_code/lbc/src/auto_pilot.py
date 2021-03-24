@@ -174,8 +174,8 @@ class AutoPilot(MapAgent):
         cmd_nodes = np.array([node for node, _ in cmd_route])
         cmd_cmds = [cmd for _, cmd in cmd_route]
 
-        near_node, near_command = wpt_route[0]
-        far_node, far_command = cmd_route[0]
+        near_node, near_command = wpt_route[1]
+        far_node, far_command = cmd_route[1]
         steer, throttle, brake, target_speed = self._get_control(near_node, far_node, data)
         
         topdown = data['topdown']
