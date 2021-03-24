@@ -18,6 +18,7 @@ from PIL import Image, ImageDraw
 from lbc.carla_project.src.models import SegmentationModel, RawController
 from lbc.carla_project.src.utils.heatmap import ToHeatmap
 from lbc.carla_project.src.dataset import get_dataset
+#from lbc.carla_project.src.prioritized_dataset import get_dataset
 from lbc.carla_project.src import common
 
 
@@ -115,7 +116,8 @@ class MapModel(pl.LightningModule):
         loss_cmd_raw = torch.nn.functional.l1_loss(out_cmd, actions, reduction='none')
 
         loss_cmd = loss_cmd_raw.mean(1)
-        loss = (loss_point + self.hparams.command_coefficient * loss_cmd).mean()
+        #loss = (loss_point + self.hparams.command_coefficient * loss_cmd).mean()
+        loss = loss_point.mean()
 
         metrics = {
                 'point_loss': loss_point.mean().item(),
@@ -146,7 +148,8 @@ class MapModel(pl.LightningModule):
         loss_cmd_pred_raw = torch.nn.functional.l1_loss(out_cmd_pred, actions, reduction='none')
 
         loss_cmd = loss_cmd_raw.mean(1)
-        loss = (loss_point + self.hparams.command_coefficient * loss_cmd).mean()
+        #loss = (loss_point + self.hparams.command_coefficient * loss_cmd).mean()
+        loss = loss_point.mean()
 
         if batch_nb == 0 and self.logger != None:
             self.logger.log_metrics({
@@ -204,7 +207,7 @@ def main(hparams):
     model = MapModel(hparams)
     logger = False
     if hparams.log:
-        logger = WandbLogger(id=hparams.id, save_dir=str(hparams.save_dir), project=f'lbc')
+        logger = WandbLogger(id=hparams.id, save_dir=str(hparams.save_dir), project='lbc')
     checkpoint_callback = ModelCheckpoint(hparams.save_dir, save_top_k=1)
 
     try:
