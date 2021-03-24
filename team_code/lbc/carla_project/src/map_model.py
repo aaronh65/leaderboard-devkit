@@ -204,7 +204,7 @@ def main(hparams):
     model = MapModel(hparams)
     logger = False
     if hparams.log:
-        logger = WandbLogger(id=hparams.id, save_dir=str(hparams.save_dir), project=f'lbc_{hparams.waypoint_mode}')
+        logger = WandbLogger(id=hparams.id, save_dir=str(hparams.save_dir), project=f'lbc')
     checkpoint_callback = ModelCheckpoint(hparams.save_dir, save_top_k=1)
 
     try:
