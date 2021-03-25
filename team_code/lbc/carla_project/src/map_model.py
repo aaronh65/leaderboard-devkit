@@ -17,8 +17,8 @@ from PIL import Image, ImageDraw
 
 from lbc.carla_project.src.models import SegmentationModel, RawController
 from lbc.carla_project.src.utils.heatmap import ToHeatmap
-from lbc.carla_project.src.dataset import get_dataset
-#from lbc.carla_project.src.prioritized_dataset import get_dataset
+#from lbc.carla_project.src.dataset import get_dataset
+from lbc.carla_project.src.prioritized_dataset import get_dataset
 from lbc.carla_project.src import common
 
 @torch.no_grad()
@@ -278,6 +278,7 @@ if __name__ == '__main__':
     parser.add_argument('--pixel_jitter', type=int, default=5.5) # 3 meters
     parser.add_argument('--temperature_decay_interval', type=int, default=-1)
     parser.add_argument('--temperature_decay_factor', type=float, default=2)
+    parser.add_argument('--steps_per_epoch', type=int, default=1000)
 
 
     # Data args.
