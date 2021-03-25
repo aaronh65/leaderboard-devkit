@@ -44,25 +44,26 @@ class SpatialArgmax(torch.nn.Module):
         """
         Assumes logits is size (n, c, h, w)
         """
-        n,c,h,w = logit.shape
-        flat = logit.view((n,c,h*w)) # (N,C,H*W)
-        Q_all, _ = torch.max(flat, -1, keepdim=True) # (N,C,1)
+        #n,c,h,w = logit.shape
+        #flat = logit.view((n,c,h*w)) # (N,C,H*W)
+        #Q_all, _ = torch.max(flat, -1, keepdim=True) # (N,C,1)
 
         # create mask
-        flat[flat < Q_all] = 0
-        #flat = flat / Q_all # norm to 1
-        masked = flat.view((n,c,h,w))
-        out = SpatialSoftmax()(masked, temperature=1.0)
+        #flat = flat / Q_all
+        #flat[flat < 1] = flat[flat < 1] * 1e-4
+        #flat[flat < Q_all] = flat[flat < Q_all] / Q_all / 1e-4
+        #flat[flat == Q_all] = flat[flat == Q_all] / Q_all 
+        #masked = flat.view((n,c,h,w))
+        out = SpatialSoftmax()(logit, temperature)
 
         return out
 
 class SegmentationModel(torch.nn.Module):
-    def __init__(self, input_channels=3, n_steps=4, mode='expectation', batch_norm=True, hack=False, temperature=1.0):
+    def __init__(self, input_channels=3, n_steps=4, mode='expectation', batch_norm=True, hack=False):
         super().__init__()
 
         assert mode in ['expectation', 'argmax'], 'invalid mode'
 
-        self.temperature = temperature
         self.hack = hack
 
         self.norm = torch.nn.BatchNorm2d(input_channels) if batch_norm else lambda x: x
@@ -75,7 +76,7 @@ class SegmentationModel(torch.nn.Module):
                 kernel_size=old.kernel_size, stride=old.stride,
                 padding=old.padding, bias=old.bias)
 
-    def forward(self, input, heatmap=False):
+    def forward(self, input, heatmap=False, temperature=10):
         if self.hack:
             input = torch.nn.functional.interpolate(input, scale_factor=0.5, mode='bilinear')
 
@@ -84,7 +85,7 @@ class SegmentationModel(torch.nn.Module):
 
         if self.hack:
             x = torch.nn.functional.interpolate(x, scale_factor=2.0, mode='bilinear')
-        y = self.extract(x, self.temperature)
+        y = self.extract(x, temperature)
 
         if heatmap:
             return y, x

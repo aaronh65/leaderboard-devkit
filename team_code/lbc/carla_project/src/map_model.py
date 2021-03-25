@@ -21,6 +21,21 @@ from lbc.carla_project.src.dataset import get_dataset
 #from lbc.carla_project.src.prioritized_dataset import get_dataset
 from lbc.carla_project.src import common
 
+@torch.no_grad()
+def fuse_vmaps(topdown, vmap, temperature=10, alpha=0.75):
+
+    vmap_mean = torch.mean(vmap[:,0:2,:,:], dim=1, keepdim=True) # N,1,H,W
+    vmap_flat = vmap_mean.view(vmap_mean.shape[:-2] + (-1,)) # N,1,H*W
+    vmap_prob = F.softmax(vmap_flat/temperature, dim=-1) # to prob
+    vmap_norm = vmap_prob / torch.max(vmap_prob, dim=-1, keepdim=True)[0] # to [0,1]
+    vmap_show = (vmap_norm * 256).view_as(vmap_mean).cpu().numpy().astype(np.uint8) # N,1,H,W
+    vmap_show = np.repeat(vmap_show, repeats=3, axis=1).transpose((0,2,3,1)) # N,H,W,3
+    fused = np.array(COLOR[topdown.argmax(1).cpu()]).astype(np.uint8) # N,H,W,3
+    for i in range(fused.shape[0]):
+        cv2.addWeighted(vmap_show[i], alpha, fused[i], 1, 0, fused[i])
+    fused = fused.astype(np.uint8) # (N,H,W,3)
+    return fused
+
 
 @torch.no_grad()
 def visualize(batch, out, between, out_cmd, loss_point, loss_cmd, target_heatmap):
@@ -91,12 +106,17 @@ class MapModel(pl.LightningModule):
         self.hparams = hparams
 
         self.to_heatmap = ToHeatmap(hparams.heatmap_radius)
-        self.net = SegmentationModel(10, 4, hparams.waypoint_mode, hack=hparams.hack, temperature=hparams.temperature)
+        self.net = SegmentationModel(10, 4, hparams.waypoint_mode, hack=hparams.hack)
         self.controller = RawController(4)
+        self.temperature = hparams.temperature
+        self.factor = hparams.temperature_decay_factor
+        self.interval = hparams.temperature_decay_interval
 
     def forward(self, topdown, target, debug=False):
         target_heatmap = self.to_heatmap(target, topdown)[:, None]
-        out = self.net(torch.cat((topdown, target_heatmap), 1), heatmap=debug)
+        temperature = self.temperature / self.factor**(self.global_step // self.interval)
+        temperature = max(temperature, 1e-7)
+        out = self.net(torch.cat((topdown, target_heatmap), 1), heatmap=debug, temperature=temperature)
 
         if not debug:
             return out
@@ -118,13 +138,14 @@ class MapModel(pl.LightningModule):
         loss_cmd = loss_cmd_raw.mean(1)
         #loss = (loss_point + self.hparams.command_coefficient * loss_cmd).mean()
         loss = loss_point.mean()
-
+        temperature = self.temperature / self.factor**(self.global_step // self.interval)
+        temperature = max(temperature, 1e-7)
         metrics = {
                 'point_loss': loss_point.mean().item(),
-                'cmd_loss': loss_cmd.mean().item(),
-                'loss_steer': loss_cmd_raw[:, 0].mean().item(),
-                'loss_speed': loss_cmd_raw[:, 1].mean().item()
-                }
+                #'cmd_loss': loss_cmd.mean().item(),
+                #'loss_steer': loss_cmd_raw[:, 0].mean().item(),
+                #'loss_speed': loss_cmd_raw[:, 1].mean().item(),
+                'temperature': temperature}
 
         if batch_nb % 250 == 0:
             metrics['train_image'] = visualize(batch, out, between, out_cmd, loss_point, loss_cmd, target_heatmap)
@@ -158,15 +179,15 @@ class MapModel(pl.LightningModule):
 
         result = {
                 'val_loss': loss,
-                'val_point_loss': loss_point.mean(),
+                #'val_point_loss': loss_point.mean(),
 
-                'val_cmd_loss': loss_cmd_raw.mean(1).mean(),
-                'val_steer_loss': loss_cmd_raw[:, 0].mean(),
-                'val_speed_loss': loss_cmd_raw[:, 1].mean(),
+                #'val_cmd_loss': loss_cmd_raw.mean(1).mean(),
+                #'val_steer_loss': loss_cmd_raw[:, 0].mean(),
+                #'val_speed_loss': loss_cmd_raw[:, 1].mean(),
 
-                'val_cmd_pred_loss': loss_cmd_pred_raw.mean(1).mean(),
-                'val_steer_pred_loss': loss_cmd_pred_raw[:, 0].mean(),
-                'val_speed_pred_loss': loss_cmd_pred_raw[:, 1].mean(),
+                #'val_cmd_pred_loss': loss_cmd_pred_raw.mean(1).mean(),
+                #'val_steer_pred_loss': loss_cmd_pred_raw[:, 0].mean(),
+                #'val_speed_pred_loss': loss_cmd_pred_raw[:, 1].mean(),
                 }
 
         return result
@@ -191,7 +212,7 @@ class MapModel(pl.LightningModule):
                 list(self.net.parameters()) + list(self.controller.parameters()),
                 lr=self.hparams.lr, weight_decay=self.hparams.weight_decay)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-                optim, mode='min', factor=0.5, patience=5, min_lr=1e-6,
+                optim, mode='min', factor=0.5, patience=2, min_lr=1e-6,
                 verbose=True)
 
         return [optim], [scheduler]
@@ -208,7 +229,7 @@ def main(hparams):
     logger = False
     if hparams.log:
         logger = WandbLogger(id=hparams.id, save_dir=str(hparams.save_dir), project='lbc')
-    checkpoint_callback = ModelCheckpoint(hparams.save_dir, save_top_k=1)
+    checkpoint_callback = ModelCheckpoint(hparams.save_dir, save_top_k=-1)
 
     try:
         resume_from_checkpoint = sorted(hparams.save_dir.glob('*.ckpt'))[-1]
@@ -255,6 +276,8 @@ if __name__ == '__main__':
     parser.add_argument('--hack', action='store_true', default=True)
     parser.add_argument('--angle_jitter', type=float, default=5)
     parser.add_argument('--pixel_jitter', type=int, default=5.5) # 3 meters
+    parser.add_argument('--temperature_decay_interval', type=int, default=-1)
+    parser.add_argument('--temperature_decay_factor', type=float, default=2)
 
 
     # Data args.
