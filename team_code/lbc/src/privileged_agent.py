@@ -39,9 +39,23 @@ class PrivilegedAgent(MapAgent):
 
         self._turn_controller = PIDController(K_P=1.25, K_I=0.75, K_D=0.3, n=40)
         self._speed_controller = PIDController(K_P=5.0, K_I=0.5, K_D=1.0, n=40)
-        self.save_images_path = Path(f'{self.config.save_root}/images/{ROUTE_NAME}')
-        self.save_image_dim=(1371,256)
 
+        if self.config.save_data or self.config.save_debug:
+
+            route_name = os.environ['ROUTE_NAME']
+            repetition = os.environ['REPETITION']
+            self.save_path = Path(f'{self.config.save_root}/data/{route_name}/{repetition}')
+            self.save_path.mkdir(parents=True, exist_ok=False)
+
+        if self.config.save_debug:
+            (self.save_path / 'debug').mkdir()
+
+        if self.config.save_data:
+            (self.save_path / 'rgb').mkdir()
+            (self.save_path / 'rgb_left').mkdir()
+            (self.save_path / 'rgb_right').mkdir()
+            (self.save_path / 'topdown').mkdir()
+            (self.save_path / 'measurements').mkdir()
 
     def tick(self, input_data):
         result = super().tick(input_data)
@@ -144,7 +158,7 @@ class PrivilegedAgent(MapAgent):
 
         #points, (target_cam, _) = self.net.forward(topdown, target)
         #points = self.net.forward(topdown, target) # world frame
-        points, hmap = self.net.forward(topdown, target, debug=True) # world frame
+        points, hmap = self.net.forward(topdown, target, debug=True, temperature=self.config.temperature) # world frame
         #hmap = hmap[0].clone().cpu().squeeze().numpy()
         #cv2.imshow('hmap', hmap)
         #cv2.waitKey(1)
@@ -185,7 +199,7 @@ class PrivilegedAgent(MapAgent):
         control.brake = float(brake)
         #print(timestamp) # GAMETIME
 
-        if DEBUG or self.config.save_images:
+        if DEBUG or self.config.save_debug:
 
             # transform image model cam points to overhead BEV image (spectator frame?)
             self.debug_display(
@@ -236,7 +250,7 @@ class PrivilegedAgent(MapAgent):
             #y = (y + 1)/2 * 144
             _draw_rgb.ellipse((x-2, y-2, x+2, y+2), (0, 191, 255))
 
-        # transform aim from world to cam
+        #[ord(c) for c in meta] transform aim from world to cam
         aim_cam = self.converter.world_to_cam(torch.Tensor(aim_world)).numpy()
         x, y = aim_cam
         _draw_rgb.ellipse((x-2, y-2, x+2, y+2), (255, 105, 147))
@@ -277,10 +291,9 @@ class PrivilegedAgent(MapAgent):
         _topdown = _topdown.resize((256, 256))
         _save_img = Image.fromarray(np.hstack([_rgb_img, _topdown]))
         _save_img = cv2.cvtColor(np.array(_save_img), cv2.COLOR_BGR2RGB)
-        if self.step % 10 == 0 and self.config.save_images:
+        if self.step % 10 == 0 and self.config.save_debug:
             frame_number = self.step // 10
-            rep_number = int(os.environ.get('REP',0))
-            save_path = self.save_images_path / f'repetition_{rep_number:02d}' / f'{frame_number:06d}.png'
+            save_path = self.save_path / 'debug' / f'{frame_number:06d}.png'
             cv2.imwrite(str(save_path), _save_img)
         if DEBUG:
             cv2.imshow('debug', _save_img)

@@ -3,6 +3,7 @@ import argparse
 import pathlib
 
 import numpy as np
+import cv2
 import torch
 import pytorch_lightning as pl
 import torchvision
@@ -21,6 +22,8 @@ from lbc.carla_project.src.dataset import get_dataset
 #from lbc.carla_project.src.prioritized_dataset import get_dataset
 from lbc.carla_project.src import common
 from misc.utils import *
+
+
 
 @torch.no_grad()
 def fuse_vmaps(topdown, vmap, temperature=10, alpha=0.75):
@@ -113,10 +116,13 @@ class MapModel(pl.LightningModule):
         self.factor = hparams.temperature_decay_factor
         self.interval = hparams.temperature_decay_interval
 
-    def forward(self, topdown, target, debug=False):
+    def forward(self, topdown, target, debug=False, temperature=None):
         target_heatmap = self.to_heatmap(target, topdown)[:, None]
-        temperature = self.temperature / self.factor**(max(self.global_step // self.interval, 0))
-        temperature = max(temperature, 1e-7)
+        if temperature is None:
+            temperature = self.temperature / self.factor**(max(self.global_step // self.interval, 0))
+        #temperature = 1e-7
+        #temperature = 10
+        self.hparams.temperature = temperature
         out = self.net(torch.cat((topdown, target_heatmap), 1), heatmap=debug, temperature=temperature)
 
         if not debug:

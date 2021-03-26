@@ -19,6 +19,7 @@ parser.add_argument('--repetitions', type=int, default=1)
 
 parser.add_argument('--id', type=str, default=datetime.now().strftime("%Y%m%d_%H%M%S"))
 parser.add_argument('--save_data', action='store_true')
+parser.add_argument('--save_debug', action='store_true')
 args = parser.parse_args()
 
 project_root = os.environ['PROJECT_ROOT']
@@ -42,6 +43,7 @@ with open(config_path, 'r') as f:
 config['project_root'] = project_root
 config['save_root'] = str(save_root)
 config['save_data'] = args.save_data
+config['save_debug'] = args.save_debug
 config['split'] = args.split
 config['repetitions'] = args.repetitions
 

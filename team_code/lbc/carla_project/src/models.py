@@ -1,10 +1,23 @@
-import cv2
+import os, cv2
 import numpy as np
 import torch
 import torch.nn.functional as F
 
 from torchvision.models.segmentation import deeplabv3_resnet50
 
+HAS_DISPLAY = int(os.environ.get('HAS_DISPLAY', 0))
+SHOW_HEATMAPS = False
+# n,c,h,w heatmaps
+@torch.no_grad()
+def make_heatmap_probs(heatmaps, temperature):
+    heatmaps = heatmaps.clone().detach().cpu()/temperature # 4, H, W
+    flat = heatmaps.view(heatmaps.shape[:-2] + (-1, ))
+    softmax = F.softmax(flat, dim=-1)
+    softmax = softmax.view_as(heatmaps).numpy()
+    softmax_max = np.amax(softmax, axis=(-1,-2), keepdims=True)
+    softmax_min = np.amin(softmax, axis=(-1,-2), keepdims=True)
+    softmax = (softmax - softmax_min) / (softmax_max - softmax_min)
+    return softmax
 
 class RawController(torch.nn.Module):
     def __init__(self, n_input=4, k=32):
@@ -85,6 +98,13 @@ class SegmentationModel(torch.nn.Module):
 
         if self.hack:
             x = torch.nn.functional.interpolate(x, scale_factor=2.0, mode='bilinear')
+
+        if HAS_DISPLAY and SHOW_HEATMAPS:
+            heatmap_probs = make_heatmap_probs(x, temperature)
+            hmap_show = np.concatenate([hmap for hmap in heatmap_probs[0]], axis=1)
+            cv2.imshow('hmap', hmap_show)
+            cv2.waitKey(1)
+
         y = self.extract(x, temperature)
 
         if heatmap:
