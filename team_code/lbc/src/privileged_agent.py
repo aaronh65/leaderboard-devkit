@@ -273,7 +273,8 @@ class PrivilegedAgent(MapAgent):
                 continue
             _draw_rgb.ellipse((x-2, y-2, x+2, y+2), color)
 
-        _combined = Image.fromarray(np.hstack([tick_data['rgb_left'], _rgb, tick_data['rgb_right']]))
+        #_combined = Image.fromarray(np.hstack([tick_data['rgb_left'], _rgb, tick_data['rgb_right']]))
+        _combined = Image.fromarray(_rgb)
         _draw = ImageDraw.Draw(_combined)
 
         # draw debug text

@@ -99,21 +99,22 @@ class AutoPilot(MapAgent):
         self._turn_controller = PIDController(K_P=1.25, K_I=0.75, K_D=0.3, n=40)
         self._speed_controller = PIDController(K_P=5.0, K_I=0.5, K_D=1.0, n=40)
 
-        if self.config.save_data:
+        if self.config.save_data or self.config.save_debug:
 
             route_name = os.environ['ROUTE_NAME']
             repetition = os.environ['REPETITION']
             self.save_path = Path(f'{self.config.save_root}/data/{route_name}/{repetition}')
-
             self.save_path.mkdir(parents=True, exist_ok=False)
 
+        if self.config.save_debug:
             (self.save_path / 'debug').mkdir()
+
+        if self.config.save_data:
             (self.save_path / 'rgb').mkdir()
             (self.save_path / 'rgb_left').mkdir()
             (self.save_path / 'rgb_right').mkdir()
             (self.save_path / 'topdown').mkdir()
             (self.save_path / 'measurements').mkdir()
-
 
     def _get_angle_to(self, pos, theta, target):
         R = np.array([
