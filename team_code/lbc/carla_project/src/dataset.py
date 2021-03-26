@@ -229,7 +229,7 @@ class CarlaDataset(Dataset):
         actions = np.float32(self.measurements.iloc[i][['steer', 'target_speed']])
         actions[np.isnan(actions)] = 0.0
         actions = torch.FloatTensor(actions)
-        meta = torch.FloatTensor([ord(c) for c in meta])
+        meta = torch.FloatTensor(encode_str(meta))
 
         return rgb, topdown, points, target, actions, meta
 
