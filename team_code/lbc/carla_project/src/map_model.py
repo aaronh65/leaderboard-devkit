@@ -20,6 +20,7 @@ from lbc.carla_project.src.utils.heatmap import ToHeatmap
 from lbc.carla_project.src.dataset import get_dataset
 #from lbc.carla_project.src.prioritized_dataset import get_dataset
 from lbc.carla_project.src import common
+from misc.utils import *
 
 @torch.no_grad()
 def fuse_vmaps(topdown, vmap, temperature=10, alpha=0.75):
@@ -51,7 +52,7 @@ def visualize(batch, out, between, out_cmd, loss_point, loss_cmd, target_heatmap
         #rgb, topdown, points, target, actions, meta = [x[i] for x in batch]
         rgb, topdown, points, target, actions, meta = [x[i] for x in batch]
         meta = meta.cpu().numpy().astype(int)
-        meta = ''.join(chr(c) for c in meta)
+        meta = decode_str(meta)
         #meta = 'test'
 
         _rgb = np.uint8(rgb.detach().cpu().numpy().transpose(1, 2, 0) * 255)

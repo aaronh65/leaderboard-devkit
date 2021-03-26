@@ -1,6 +1,13 @@
 import os
 from types import SimpleNamespace
 
+def encode_str(string):
+    return [ord(c) for c in string]
+
+def decode_str(string):
+    return ''.join(chr(c) for c in string)
+
+
 def mkdir_if_not_exists(path, verbose=False):
     if not os.path.exists(path):
         if verbose:
