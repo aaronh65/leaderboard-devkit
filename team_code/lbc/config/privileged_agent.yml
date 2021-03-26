@@ -2,8 +2,7 @@ project_root: /home/aaron/workspace/carla/leaderboard-devkit
 save_root: /data/leaderboard/results/lbc/privileged/debug/template
 save_images: False
 split: devtest
-weights_path: team_code/lbc/weights/devtest_argmax.ckpt
-temperature: 0.0000001 # 1e-7
-#weights_path: team_code/lbc/weights/expectation_retrained.ckpt
-#temperature: 10 # 1e-7
-
+#weights_path: team_code/lbc/weights/argmax_training.ckpt
+#temperature: 0.0000001 # 1e-7
+weights_path: team_code/lbc/weights/expectation_retrained.ckpt
+temperature: 10 

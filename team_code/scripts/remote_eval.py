@@ -89,8 +89,8 @@ try:
 
     config['project_root'] = project_root
     config['save_root'] = str(save_root)
-    config['save_data'] = hparams.save_data
-    config['save_debug'] = hparams.save_debug
+    config['save_data'] = args.save_data
+    config['save_debug'] = args.save_debug
     config['split'] = args.split
     config['repetitions'] = args.repetitions
 
