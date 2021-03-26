@@ -17,8 +17,8 @@ from PIL import Image, ImageDraw
 
 from lbc.carla_project.src.models import SegmentationModel, RawController
 from lbc.carla_project.src.utils.heatmap import ToHeatmap
-#from lbc.carla_project.src.dataset import get_dataset
-from lbc.carla_project.src.prioritized_dataset import get_dataset
+from lbc.carla_project.src.dataset import get_dataset
+#from lbc.carla_project.src.prioritized_dataset import get_dataset
 from lbc.carla_project.src import common
 
 @torch.no_grad()
@@ -114,7 +114,7 @@ class MapModel(pl.LightningModule):
 
     def forward(self, topdown, target, debug=False):
         target_heatmap = self.to_heatmap(target, topdown)[:, None]
-        temperature = self.temperature / self.factor**(self.global_step // self.interval)
+        temperature = self.temperature / self.factor**(max(self.global_step // self.interval, 0))
         temperature = max(temperature, 1e-7)
         out = self.net(torch.cat((topdown, target_heatmap), 1), heatmap=debug, temperature=temperature)
 
@@ -138,7 +138,7 @@ class MapModel(pl.LightningModule):
         loss_cmd = loss_cmd_raw.mean(1)
         #loss = (loss_point + self.hparams.command_coefficient * loss_cmd).mean()
         loss = loss_point.mean()
-        temperature = self.temperature / self.factor**(self.global_step // self.interval)
+        temperature = self.temperature / self.factor**(max(self.global_step // self.interval, 0))
         temperature = max(temperature, 1e-7)
         metrics = {
                 'point_loss': loss_point.mean().item(),

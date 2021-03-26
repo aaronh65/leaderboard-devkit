@@ -65,7 +65,6 @@ def get_dataset(hparams, is_train=True, batch_size=128, num_workers=4, sample_by
         add = False
         add |= (is_train and i % 10 < 9)
         add |= (not is_train and i % 10 >= 9)
-
         if add:
             data.append(CarlaDataset(_dataset_dir, hparams))
     
@@ -137,17 +136,18 @@ def preprocess_semantic(semantic_np):
 class CarlaDataset(Dataset):
     def __init__(self, dataset_dir, hparams, transform=transforms.ToTensor()):
         dataset_dir = Path(dataset_dir)
+        self.dataset_dir = dataset_dir
+
         measurements = list(sorted((dataset_dir / 'measurements').glob('*.json')))
+        self.measurements = pd.DataFrame([eval(x.read_text()) for x in measurements])
 
         self.transform = transform
-        self.dataset_dir = dataset_dir
-        self.frames = list()
-        self.measurements = pd.DataFrame([eval(x.read_text()) for x in measurements])
         self.converter = Converter()
 
         self.hparams = hparams
 
 
+        self.frames = list()
         for image_path in sorted((dataset_dir / 'rgb').glob('*.png')):
             frame = str(image_path.stem)
 
