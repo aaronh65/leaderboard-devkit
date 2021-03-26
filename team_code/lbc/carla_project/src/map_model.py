@@ -112,28 +112,25 @@ class MapModel(pl.LightningModule):
         self.to_heatmap = ToHeatmap(hparams.heatmap_radius)
         self.net = SegmentationModel(10, 4, hparams.waypoint_mode, hack=hparams.hack)
         self.controller = RawController(4)
-        self.temperature = hparams.temperature
         self.factor = hparams.temperature_decay_factor
         self.interval = hparams.temperature_decay_interval
+        self.register_buffer('temperature', torch.Tensor([self.hparams.temperature]))
+        #self.temperature = [self.hparams.temperature]
 
-    def forward(self, topdown, target, debug=False, temperature=None):
+    def forward(self, topdown, target): # save global step?
+        # decay temperature if necessary
+        if self.hparams.waypoint_mode != 'expectation' and self.global_step % self.interval == 0 and self.global_step != 0:
+            self.temperature[0] /= self.factor
+
         target_heatmap = self.to_heatmap(target, topdown)[:, None]
-        if temperature is None:
-            temperature = self.temperature / self.factor**(max(self.global_step // self.interval, 0))
-        #temperature = 1e-7
-        #temperature = 10
-        self.hparams.temperature = temperature
-        out = self.net(torch.cat((topdown, target_heatmap), 1), heatmap=debug, temperature=temperature)
-
-        if not debug:
-            return out
-
-        points, heatmap = out
-        return points, (heatmap, target_heatmap)
+        input = torch.cat((topdown, target_heatmap), 1)
+        points, weights = self.net(input, temperature=self.temperature.item(), get_weights=True)
+        #points, weights = self.net(input, temperature=self.temperature[0], get_weights=True)
+        return points, weights, target_heatmap
 
     def training_step(self, batch, batch_nb):
         img, topdown, points, target, actions, meta = batch
-        out, (heatmap, target_heatmap,) = self.forward(topdown, target, debug=True)
+        out, weights, target_heatmap = self.forward(topdown, target)
 
         alpha = torch.rand(out.shape).type_as(out)
         between = alpha * out + (1-alpha) * points
@@ -145,14 +142,14 @@ class MapModel(pl.LightningModule):
         loss_cmd = loss_cmd_raw.mean(1)
         #loss = (loss_point + self.hparams.command_coefficient * loss_cmd).mean()
         loss = loss_point.mean()
-        temperature = self.temperature / self.factor**(max(self.global_step // self.interval, 0))
-        temperature = max(temperature, 1e-7)
+        #temperature = self.temperature / self.factor**(max(self.global_step // self.interval, 0))
+        #temperature = max(temperature, 1e-7)
         metrics = {
                 'point_loss': loss_point.mean().item(),
                 #'cmd_loss': loss_cmd.mean().item(),
                 #'loss_steer': loss_cmd_raw[:, 0].mean().item(),
                 #'loss_speed': loss_cmd_raw[:, 1].mean().item(),
-                'temperature': temperature}
+                'temperature': self.temperature.item()}
 
         if batch_nb % 250 == 0:
             metrics['train_image'] = visualize(batch, out, between, out_cmd, loss_point, loss_cmd, target_heatmap)
@@ -164,7 +161,7 @@ class MapModel(pl.LightningModule):
 
     def validation_step(self, batch, batch_nb):
         img, topdown, points, target, actions, meta = batch
-        out, (heatmap, target_heatmap) = self.forward(topdown, target, debug=True)
+        out, weights, target_heatmap = self.forward(topdown, target)
 
         alpha = 0.0
         between = alpha * out + (1-alpha) * points
@@ -278,12 +275,12 @@ if __name__ == '__main__':
     parser.add_argument('--waypoint_mode', type=str, default='expectation', choices=['expectation', 'argmax'])
     parser.add_argument('--heatmap_radius', type=int, default=5)
     parser.add_argument('--sample_by', type=str, choices=['none', 'even', 'speed', 'steer'], default='even')
-    parser.add_argument('--command_coefficient', type=float, default=0.1)
+    parser.add_argument('--command_coefficient', type=float, default=0.0)
     parser.add_argument('--temperature', type=float, default=10.0)
     parser.add_argument('--hack', action='store_true', default=True)
     parser.add_argument('--angle_jitter', type=float, default=5)
     parser.add_argument('--pixel_jitter', type=int, default=5.5) # 3 meters
-    parser.add_argument('--temperature_decay_interval', type=int, default=-1)
+    parser.add_argument('--temperature_decay_interval', type=int, default=500)
     parser.add_argument('--temperature_decay_factor', type=float, default=2)
     parser.add_argument('--steps_per_epoch', type=int, default=1000)
 

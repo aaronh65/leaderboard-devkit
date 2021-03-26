@@ -46,11 +46,11 @@ def fuse_vmaps(topdown, vmap, temperature=10, alpha=0.75):
 @torch.no_grad()
 def visualize(batch, vmap, hmap, nvmap, nhmap, naction, meta, r=2):
 
-    textcolor = (255,255,255)
+    text_color = (255,255,255)
     dqn_color = (65,105,225) # dark blue
     aim_color = (60,179,113) # dark green
     lbc_color = (178,34,34) # dark red
-    #route_colors = [(0,255,0), (255,255,255), (255,0,0), (255,0,0)] 
+    route_colors = [(255,255,255), (112,128,144), (47,79,79), (47,79,79)] 
 
     state, action, reward, next_state, done, info = batch
     hparams, td_loss, margin_loss = meta['hparams'], meta['td_loss'], meta['margin_loss']
@@ -84,10 +84,10 @@ def visualize(batch, vmap, hmap, nvmap, nhmap, naction, meta, r=2):
         x, y = np.mean(_action[0:2], axis=0)
         _draw.ellipse((x-r, y-r, x+r, y+r), aim_color)
 
-        _draw.text((5, 10), f'action = ({x},{y})', textcolor)
-        _draw.text((5, 20), f'Q = {Q[i].item():.2f}', textcolor)
-        _draw.text((5, 30), f'reward = {reward[i].item():.3f}', textcolor)
-        _draw.text((5, 40), f'done = {bool(done[i])}', textcolor)
+        _draw.text((5, 10), f'action = ({x},{y})', text_color)
+        _draw.text((5, 20), f'Q = {Q[i].item():.2f}', text_color)
+        _draw.text((5, 30), f'reward = {reward[i].item():.3f}', text_color)
+        _draw.text((5, 40), f'done = {bool(done[i])}', text_color)
 
         # next state
         _ntopdown = nfused[i]
@@ -100,11 +100,11 @@ def visualize(batch, vmap, hmap, nvmap, nhmap, naction, meta, r=2):
         x, y = np.mean(_naction[0:2], axis=0)
         _ndraw.ellipse((x-r, y-r, x+r, y+r), aim_color)
 
-        _ndraw.text((5, 10), f'action = ({x},{y})', textcolor)
-        _ndraw.text((5, 20), f'nQ = {nQ[i].item():.2f}', textcolor)
-        _ndraw.text((5, 30), f'discount = {discount[i].item():.2f}', textcolor)
-        _ndraw.text((5, 40), f'td_loss = {td_loss[i].item():.2f}', textcolor)
-        _ndraw.text((5, 50), f'margin_loss = {margin_loss[i].item():.2f}', textcolor)
+        _ndraw.text((5, 10), f'action = ({x},{y})', text_color)
+        _ndraw.text((5, 20), f'nQ = {nQ[i].item():.2f}', text_color)
+        _ndraw.text((5, 30), f'discount = {discount[i].item():.2f}', text_color)
+        _ndraw.text((5, 40), f'td_loss = {td_loss[i].item():.2f}', text_color)
+        _ndraw.text((5, 50), f'margin_loss = {margin_loss[i].item():.2f}', text_color)
 
         _combined = np.hstack((np.array(_topdown), np.array(_ntopdown)))
         if HAS_DISPLAY:

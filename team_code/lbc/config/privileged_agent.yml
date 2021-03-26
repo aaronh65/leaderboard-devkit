@@ -4,5 +4,4 @@ save_images: False
 split: devtest
 #weights_path: team_code/lbc/weights/argmax_training.ckpt
 #temperature: 0.0000001 # 1e-7
-weights_path: team_code/lbc/weights/expectation_retrained.ckpt
-temperature: 10 
+weights_path: team_code/lbc/weights/test_temp_restore.ckpt

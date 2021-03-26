@@ -85,7 +85,7 @@ class DSPredAgent(MapAgent):
     def sensors(self):
         sensors = super().sensors() 
         
-        # get rid of old rgb cameras
+        # get rid of rgb cameras
         rgb, _, _, imu, gps, speed, topdown = sensors
         sensors = [rgb, imu, gps, speed, topdown]
         return sensors

@@ -52,16 +52,26 @@ class PrivilegedAgent(MapAgent):
 
         if self.config.save_data:
             (self.save_path / 'rgb').mkdir()
-            (self.save_path / 'rgb_left').mkdir()
-            (self.save_path / 'rgb_right').mkdir()
+            #(self.save_path / 'rgb_left').mkdir()
+            #(self.save_path / 'rgb_right').mkdir()
             (self.save_path / 'topdown').mkdir()
             (self.save_path / 'measurements').mkdir()
 
+    def sensors(self):
+
+        sensors = super().sensors() 
+        
+        # get rid of rgb left/right cameras for faster runs
+        rgb, _, _, imu, gps, speed, topdown = sensors
+        sensors = [rgb, imu, gps, speed, topdown]
+        return sensors
+
     def tick(self, input_data):
         result = super().tick(input_data)
-        result['image'] = np.concatenate(tuple(result[x] for x in ['rgb', 'rgb_left', 'rgb_right']), -1)
+        #result['image'] = np.concatenate(tuple(result[x] for x in ['rgb', 'rgb_left', 'rgb_right']), -1)
+        result['image'] = result['rgb']
 
-        theta = result['compass']
+        theta = result['compass'] # heading angle from forward axis
         theta = 0.0 if np.isnan(theta) else theta
         theta = theta + np.pi / 2
         result['theta'] = theta
@@ -72,7 +82,6 @@ class PrivilegedAgent(MapAgent):
             ])
         result['R'] = R
         gps = self._get_position(result) # method returns position in meters
-
         
         # transform route waypoints to overhead map view
         route = self._command_planner.run_step(gps) # oriented in world frame
@@ -156,25 +165,15 @@ class PrivilegedAgent(MapAgent):
         target = torch.from_numpy(tick_data['target'])
         target = target[None].cuda()
 
-        #points, (target_cam, _) = self.net.forward(topdown, target)
-        #points = self.net.forward(topdown, target) # world frame
-        points, hmap = self.net.forward(topdown, target, debug=True, temperature=self.config.temperature) # world frame
-        #hmap = hmap[0].clone().cpu().squeeze().numpy()
-        #cv2.imshow('hmap', hmap)
-        #cv2.waitKey(1)
+        points, weights, target_heatmap = self.net.forward(topdown, target) # world frame
+
         points_map = points.clone().cpu().squeeze()
-        # what's this conversion for?
-        # was this originally normalized for training stability or something?
         points_map = points_map + 1
         points_map = points_map / 2 * 256
         points_map = np.clip(points_map, 0, 256)
-        points_cam = self.converter.map_to_cam(points_map).numpy()
         points_world = self.converter.map_to_world(points_map).numpy()
-        points_map = points_map.numpy()
 
         tick_data['points_map'] = points_map
-        tick_data['points_cam'] = points_cam
-        tick_data['points_world'] = points_world
 
         #img = tick_data['image']
 
@@ -210,75 +209,65 @@ class PrivilegedAgent(MapAgent):
 
     def debug_display(self, tick_data, steer, throttle, brake, desired_speed, r=2):
 
+
+        text_color = (255,255,255)
+        aim_color = (60,179,113) # dark green
+        lbc_color = (178,34,34) # dark red
+        route_colors = [(255,255,255), (112,128,144), (47,79,79), (47,79,79)] 
+
         topdown = tick_data['topdown']
         _topdown = Image.fromarray(COLOR[CONVERTER[topdown]])
         _topdown_draw = ImageDraw.Draw(_topdown)
 
         # model points
         points_map = tick_data['points_map']
-        points_td = points_map + [128, 0]
+        points_td = points_map.numpy() + [128, 0] # map view to full topdown view
         for i, (x,y) in enumerate(points_td):
-            _topdown_draw.ellipse((x-2*r, y-2*r, x+2*r, y+2*r), (0,191,255))
-        route_map = tick_data['route_map']
-        route_td = route_map + [128, 0]
-
+            _topdown_draw.ellipse((x-2*r, y-2*r, x+2*r, y+2*r), lbc_color)
+        
         # control point
         aim_world = np.array(tick_data['aim_world'])
         aim_map = self.converter.world_to_map(torch.Tensor(aim_world)).numpy()
         aim_map = aim_map + [128,0]
         x, y = aim_map
-        _topdown_draw.ellipse((x-2, y-2, x+2, y+2), (255, 105, 147))
+        _topdown_draw.ellipse((x-2, y-2, x+2, y+2), aim_color)
 
         # route waypoints
+        route_map = tick_data['route_map']
+        route_td = route_map + [128, 0]
         for i, (x, y) in enumerate(route_td[:3]):
-            if i == 0:
-                color = (0, 255, 0)
-            elif i == 1:
-                color = (255, 0, 0)
-            elif i == 2:
-                color = (139, 0, 139)
-            _topdown_draw.ellipse((x-2*r, y-2*r, x+2*r, y+2*r), color)
-
+            _topdown_draw.ellipse((x-2*r, y-2*r, x+2*r, y+2*r), route_colors[i])
 
         # make RGB images
 
         # draw center RGB image
         _rgb = Image.fromarray(tick_data['rgb'])
         _draw_rgb = ImageDraw.Draw(_rgb)
-        for x, y in tick_data['points_cam']: # image model waypoints
-            #x = (x + 1)/2 * 256
-            #y = (y + 1)/2 * 144
-            _draw_rgb.ellipse((x-2, y-2, x+2, y+2), (0, 191, 255))
+        points_cam = self.converter.map_to_cam(points_map).cpu()
+        for x, y in points_cam: # image model waypoints
+            _draw_rgb.ellipse((x-2, y-2, x+2, y+2), lbc_color)
 
         #[ord(c) for c in meta] transform aim from world to cam
         aim_cam = self.converter.world_to_cam(torch.Tensor(aim_world)).numpy()
         x, y = aim_cam
-        _draw_rgb.ellipse((x-2, y-2, x+2, y+2), (255, 105, 147))
+        _draw_rgb.ellipse((x-2, y-2, x+2, y+2), aim_color)
 
         # draw route waypoints in RGB image
-        route_map = np.array(tick_data['route_map'])
-        route_map = np.clip(route_map, 0, 256)
-        route_map = route_map[:3].squeeze() # just the next couple
         route_cam = self.converter.map_to_cam(torch.Tensor(route_map)).numpy()
-        for i, (x, y) in enumerate(route_cam):
+        for i, (x, y) in enumerate(route_cam[:3]):
             if i == 0: # waypoint we just passed
-                if not (0 < y < 143 and 0 < x < 255):
-                    continue
-                color = (0, 255, 0) # green 
-            elif i == 1: # target
-                color = (255, 0, 0) # red
-            elif i == 2: # beyond target
-                color = (139, 0, 139) # darkmagenta
-            else:
-                continue
-            _draw_rgb.ellipse((x-2, y-2, x+2, y+2), color)
+                xt, yt = route_map[0]
+                if xt < 5 or xt > 250 or yt < 5 or yt > 250: continue
+            if x < 5 or x > 250 or y < 5 or y > 140: continue
+            _draw_rgb.ellipse((x-2*r, y-2*r, x+2*r, y+2*r), route_colors[i])
 
         #_combined = Image.fromarray(np.hstack([tick_data['rgb_left'], _rgb, tick_data['rgb_right']]))
-        _combined = Image.fromarray(_rgb)
+        #_combined = Image.fromarray(_rgb)
+        _combined = _rgb
+        _combined = _combined.resize((int(256/ _combined.size[1] * _combined.size[0]), 256))
         _draw = ImageDraw.Draw(_combined)
 
         # draw debug text
-        text_color = (139, 0, 139) #darkmagenta
         _draw.text((5, 10), 'Steer: %.3f' % steer, text_color)
         _draw.text((5, 30), 'Throttle: %.3f' % throttle, text_color)
         _draw.text((5, 50), 'Brake: %s' % brake, text_color)
@@ -288,9 +277,8 @@ class PrivilegedAgent(MapAgent):
         _draw.text((5, 110), f'Current: {cur_command}', text_color)
         _draw.text((5, 130), f'Next: {next_command}', text_color)
 
-        _rgb_img = _combined.resize((int(256/ _combined.size[1] * _combined.size[0]), 256))
         _topdown = _topdown.resize((256, 256))
-        _save_img = Image.fromarray(np.hstack([_rgb_img, _topdown]))
+        _save_img = Image.fromarray(np.hstack([_combined, _topdown]))
         _save_img = cv2.cvtColor(np.array(_save_img), cv2.COLOR_BGR2RGB)
         if self.step % 10 == 0 and self.config.save_debug:
             frame_number = self.step // 10

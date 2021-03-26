@@ -8,10 +8,9 @@ class ToTemporalHeatmap(torch.nn.Module):
         y, x = torch.meshgrid(bounds, bounds)
         kernel = (-(x ** 2 + y ** 2) / (2 * radius ** 2)).exp()
         kernel = (kernel - kernel.min()) / (kernel.max() - kernel.min())
-        self.kernel = kernel
 
         self.r = radius
-        #self.register_buffer('kernel', kernel)
+        self.register_buffer('kernel', kernel)
 
     def forward(self, points, img):
         n, c, h, w = img.shape
