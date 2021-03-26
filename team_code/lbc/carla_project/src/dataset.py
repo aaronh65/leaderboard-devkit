@@ -14,6 +14,7 @@ from numpy import nan
 from lbc.carla_project.src.converter import Converter, PIXELS_PER_WORLD
 from lbc.carla_project.src.dataset_wrapper import Wrap
 from lbc.carla_project.src import common
+from misc.utils import *
 
 
 # Reproducibility.
@@ -62,6 +63,10 @@ def get_dataset(hparams, is_train=True, batch_size=128, num_workers=4, sample_by
 
     data = list()
     for i, _dataset_dir in enumerate(episodes): # 90-10 train/val
+        dataset_len = len(list((Path(_dataset_dir) / 'rgb').glob('*')))
+        if dataset_len <= GAP*STEPS:
+            print(f'{_dataset_dir} invalid, skipping...')
+            continue
         add = False
         add |= (is_train and i % 10 < 9)
         add |= (not is_train and i % 10 >= 9)

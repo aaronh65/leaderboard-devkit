@@ -230,7 +230,7 @@ def main(hparams):
     logger = False
     if hparams.log:
         logger = WandbLogger(id=hparams.id, save_dir=str(hparams.save_dir), project='lbc')
-    checkpoint_callback = ModelCheckpoint(hparams.save_dir, save_top_k=-1)
+    checkpoint_callback = ModelCheckpoint(hparams.save_dir, save_top_k=1)
 
     try:
         resume_from_checkpoint = sorted(hparams.save_dir.glob('*.ckpt'))[-1]
