@@ -23,8 +23,8 @@ SHOW_HEATMAPS = False
 def spatial_norm(tensor):
     n,c,h,w = tensor.shape
     flat = tensor.clone().detach().view((n,c,h*w))
-    norm_max = torch.max(flat, dim=-1, keepdim=True)
-    norm_min = torch.min(flat, dim=-1, keepdim=True)
+    norm_max, _ = torch.max(flat, dim=-1, keepdim=True)
+    norm_min, _ = torch.min(flat, dim=-1, keepdim=True)
     flat = (flat - norm_min) / (norm_max - norm_min)
     out = flat.view_as(tensor)
     return out # n,c,h,w

@@ -16,11 +16,11 @@ from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
 from PIL import Image, ImageDraw
 
-from lbc.carla_project.src.models import SegmentationModel, RawController
+from lbc.carla_project.src.models import SegmentationModel, RawController, spatial_norm
 from lbc.carla_project.src.utils.heatmap import ToHeatmap
 from lbc.carla_project.src.dataset import get_dataset
 #from lbc.carla_project.src.prioritized_dataset import get_dataset
-from lbc.carla_project.src import common
+from lbc.carla_project.src.common import COLOR, CONVERTER
 from misc.utils import *
 
 
@@ -40,9 +40,53 @@ def fuse_vmaps(topdown, vmap, temperature=10, alpha=0.75):
     fused = fused.astype(np.uint8) # (N,H,W,3)
     return fused
 
+@torch.no_grad()
+# N,C,H,W
+def plot_weights(topdown, target, points, weights, loss_point=None, alpha=0.25, use_wandb=False):
+    n,c,_ = points.shape
+    points = points.clone().detach().cpu().numpy() # N,C,2
+    points = (points + 1) / 2 * 256
+    points = np.clip(points, 0, 256)
+    target = target.clone().cpu().numpy()
+
+    if loss_point is None:
+        loss_point = np.zeros(n)
+
+    # process topdown
+    topdown = COLOR[topdown.argmax(1).clone().detach().cpu().numpy()] #N,H,W,3
+    weights = spatial_norm(weights)*255
+    weights = weights.cpu().numpy().astype(np.uint8) #N,4,H,W
+
+    images = list()
+    for i in range(min(n, 4)):
+        _topdown = Image.fromarray(topdown[i]) # H,W,3
+        img_stack = list()
+        _tx, _ty = target[i]
+        for _x, _y in points[i]:
+            _td = _topdown.copy()
+            _draw = ImageDraw.Draw(_td)
+            _draw.ellipse((_x-2, _y-2, _x+2, _y+2), (255,0,0))
+            _draw.ellipse((_tx-2, _ty-2, _tx+2, _ty+2), (255,255,255))
+            img_stack.append(np.array(_td))
+        _topdown_tiled = np.hstack(img_stack)
+        _wgts = np.hstack([wgt for wgt in weights[i]]) #H,W*4
+        _wgts = np.expand_dims(_wgts, 2) #H,W*4,1
+        _wgts_tiled = np.tile(_wgts, (1,1,3))#H,W*4,3
+
+        out = cv2.addWeighted(_wgts_tiled, alpha, _topdown_tiled, 1-alpha, 0)
+        out = cv2.cvtColor(out, cv2.COLOR_BGR2RGB)
+        out = np.array(out)
+        images.append((loss_point[i], out))
+
+    images.sort(key=lambda x: x[0], reverse=True)
+    images = [x[1] for x in images]
+    if use_wandb:
+        images = torchvision.utils.make_grid([torch.ByteTensor(x.transpose(2,0,1)) for x in images], nrow=1)
+        images = wandb.Image(images.numpy().transpose(1, 2, 0))
+    return images
 
 @torch.no_grad()
-def visualize(batch, out, between, out_cmd, loss_point, loss_cmd, target_heatmap):
+def visualize(batch, out, between, out_cmd, loss_point, loss_cmd):
     images = list()
 
     for i in range(out.shape[0]):
@@ -59,10 +103,10 @@ def visualize(batch, out, between, out_cmd, loss_point, loss_cmd, target_heatmap
         #meta = 'test'
 
         _rgb = np.uint8(rgb.detach().cpu().numpy().transpose(1, 2, 0) * 255)
-        _target_heatmap = np.uint8(target_heatmap[i].detach().squeeze().cpu().numpy() * 255)
-        _target_heatmap = np.stack(3 * [_target_heatmap], 2)
-        _target_heatmap = Image.fromarray(_target_heatmap)
-        _topdown = Image.fromarray(common.COLOR[topdown.argmax(0).detach().cpu().numpy()])
+        #_target_heatmap = np.uint8(target_heatmap[i].detach().squeeze().cpu().numpy() * 255)
+        #_target_heatmap = np.stack(3 * [_target_heatmap], 2)
+        #_target_heatmap = Image.fromarray(_target_heatmap)
+        _topdown = Image.fromarray(COLOR[topdown.argmax(0).detach().cpu().numpy()])
         _draw = ImageDraw.Draw(_topdown)
 
         _draw.ellipse((target[0]-2, target[1]-2, target[0]+2, target[1]+2), (255, 255, 255))
@@ -97,7 +141,7 @@ def visualize(batch, out, between, out_cmd, loss_point, loss_cmd, target_heatmap
 
     images.sort(key=lambda x: x[0], reverse=True)
 
-    result = torchvision.utils.make_grid([x[1] for x in images], nrow=4)
+    result = torchvision.utils.make_grid([torch.ByteTensor(x[1]) for x in images], nrow=4)
     result = wandb.Image(result.numpy().transpose(1, 2, 0))
 
     return result
@@ -115,9 +159,9 @@ class MapModel(pl.LightningModule):
         self.factor = hparams.temperature_decay_factor
         self.interval = hparams.temperature_decay_interval
         self.register_buffer('temperature', torch.Tensor([self.hparams.temperature]))
-        #self.temperature = [self.hparams.temperature]
 
     def forward(self, topdown, target): # save global step?
+
         # decay temperature if necessary
         if self.hparams.waypoint_mode != 'expectation' and self.global_step % self.interval == 0 and self.global_step != 0:
             self.temperature[0] /= self.factor
@@ -130,13 +174,13 @@ class MapModel(pl.LightningModule):
 
     def training_step(self, batch, batch_nb):
         img, topdown, points, target, actions, meta = batch
-        out, weights, target_heatmap = self.forward(topdown, target)
+        points_lbc, weights, target_heatmap = self.forward(topdown, target)
 
-        alpha = torch.rand(out.shape).type_as(out)
-        between = alpha * out + (1-alpha) * points
+        alpha = torch.rand(points_lbc.shape).type_as(points_lbc)
+        between = alpha * points_lbc + (1-alpha) * points
         out_cmd = self.controller(between)
 
-        loss_point = torch.nn.functional.l1_loss(out, points, reduction='none').mean((1, 2))
+        loss_point = torch.nn.functional.l1_loss(points_lbc, points, reduction='none').mean((1, 2))
         loss_cmd_raw = torch.nn.functional.l1_loss(out_cmd, actions, reduction='none')
 
         loss_cmd = loss_cmd_raw.mean(1)
@@ -152,7 +196,9 @@ class MapModel(pl.LightningModule):
                 'temperature': self.temperature.item()}
 
         if batch_nb % 250 == 0:
-            metrics['train_image'] = visualize(batch, out, between, out_cmd, loss_point, loss_cmd, target_heatmap)
+            metrics['train_image'] = visualize(batch, points_lbc, between, out_cmd, loss_point, loss_cmd)
+
+            metrics['train_heatmap'] = plot_weights(topdown, target, points_lbc, weights, loss_point, use_wandb=True)
 
         if self.logger != None:
             self.logger.log_metrics(metrics, self.global_step)
@@ -161,14 +207,14 @@ class MapModel(pl.LightningModule):
 
     def validation_step(self, batch, batch_nb):
         img, topdown, points, target, actions, meta = batch
-        out, weights, target_heatmap = self.forward(topdown, target)
+        points_lbc, weights, target_heatmap = self.forward(topdown, target)
 
         alpha = 0.0
-        between = alpha * out + (1-alpha) * points
+        between = alpha * points_lbc + (1-alpha) * points
         out_cmd = self.controller(between)
-        out_cmd_pred = self.controller(out)
+        out_cmd_pred = self.controller(points_lbc)
 
-        loss_point = torch.nn.functional.l1_loss(out, points, reduction='none').mean((1, 2))
+        loss_point = torch.nn.functional.l1_loss(points_lbc, points, reduction='none').mean((1, 2))
         loss_cmd_raw = torch.nn.functional.l1_loss(out_cmd, actions, reduction='none')
         loss_cmd_pred_raw = torch.nn.functional.l1_loss(out_cmd_pred, actions, reduction='none')
 
@@ -178,7 +224,8 @@ class MapModel(pl.LightningModule):
 
         if batch_nb == 0 and self.logger != None:
             self.logger.log_metrics({
-                'val_image': visualize(batch, out, between, out_cmd, loss_point, loss_cmd, target_heatmap)
+                'val_image': visualize(batch, points_lbc, between, out_cmd, loss_point, loss_cmd),
+                'val_heatmap': plot_weights(topdown, target, points_lbc, weights, loss_point, use_wandb=True)
                 }, self.global_step)
 
         result = {

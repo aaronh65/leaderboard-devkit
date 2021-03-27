@@ -9,7 +9,7 @@ import carla
 from PIL import Image, ImageDraw
 from pathlib import Path
 
-from lbc.carla_project.src.map_model import MapModel
+from lbc.carla_project.src.map_model import MapModel, plot_weights
 from lbc.carla_project.src.dataset import preprocess_semantic
 from lbc.carla_project.src.converter import Converter
 from lbc.carla_project.src.common import CONVERTER, COLOR
@@ -167,6 +167,7 @@ class PrivilegedAgent(MapAgent):
 
         points, weights, target_heatmap = self.net.forward(topdown, target) # world frame
 
+
         points_map = points.clone().cpu().squeeze()
         points_map = points_map + 1
         points_map = points_map / 2 * 256
@@ -203,12 +204,12 @@ class PrivilegedAgent(MapAgent):
             # transform image model cam points to overhead BEV image (spectator frame?)
             self.debug_display(
                     tick_data, steer, throttle, brake, desired_speed)
-            
-
+        if DEBUG:    
+            images = plot_weights(topdown, target, points, weights)
+            cv2.imshow('heatmaps', images[0])
         return control
 
     def debug_display(self, tick_data, steer, throttle, brake, desired_speed, r=2):
-
 
         text_color = (255,255,255)
         aim_color = (60,179,113) # dark green
@@ -228,8 +229,7 @@ class PrivilegedAgent(MapAgent):
         # control point
         aim_world = np.array(tick_data['aim_world'])
         aim_map = self.converter.world_to_map(torch.Tensor(aim_world)).numpy()
-        aim_map = aim_map + [128,0]
-        x, y = aim_map
+        x,y = aim_map + [128,0]
         _topdown_draw.ellipse((x-2, y-2, x+2, y+2), aim_color)
 
         # route waypoints
@@ -247,9 +247,7 @@ class PrivilegedAgent(MapAgent):
         for x, y in points_cam: # image model waypoints
             _draw_rgb.ellipse((x-2, y-2, x+2, y+2), lbc_color)
 
-        #[ord(c) for c in meta] transform aim from world to cam
-        aim_cam = self.converter.world_to_cam(torch.Tensor(aim_world)).numpy()
-        x, y = aim_cam
+        x,y = self.converter.world_to_cam(torch.Tensor(aim_world)).numpy()
         _draw_rgb.ellipse((x-2, y-2, x+2, y+2), aim_color)
 
         # draw route waypoints in RGB image
