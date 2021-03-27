@@ -224,13 +224,13 @@ class PrivilegedAgent(MapAgent):
         points_map = tick_data['points_map']
         points_td = points_map.numpy() + [128, 0] # map view to full topdown view
         for i, (x,y) in enumerate(points_td):
-            _topdown_draw.ellipse((x-2*r, y-2*r, x+2*r, y+2*r), lbc_color)
+            _topdown_draw.ellipse((x-2*r, y-2*r, x+2*r, y+2*r), (255,0,0))
         
         # control point
         aim_world = np.array(tick_data['aim_world'])
         aim_map = self.converter.world_to_map(torch.Tensor(aim_world)).numpy()
         x,y = aim_map + [128,0]
-        _topdown_draw.ellipse((x-2, y-2, x+2, y+2), aim_color)
+        _topdown_draw.ellipse((x-2, y-2, x+2, y+2), (0,255,0))
 
         # route waypoints
         route_map = tick_data['route_map']

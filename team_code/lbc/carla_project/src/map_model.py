@@ -23,6 +23,10 @@ from lbc.carla_project.src.dataset import get_dataset
 from lbc.carla_project.src.common import COLOR, CONVERTER
 from misc.utils import *
 
+#text_color = (255,255,255)
+#aim_color = (60,179,113) # dark green
+#lbc_color = (178,34,34) # dark red
+route_colors = [(255,255,255), (112,128,144), (47,79,79), (47,79,79)] 
 
 
 @torch.no_grad()
@@ -62,11 +66,13 @@ def plot_weights(topdown, target, points, weights, loss_point=None, alpha=0.25, 
         _topdown = Image.fromarray(topdown[i]) # H,W,3
         img_stack = list()
         _tx, _ty = target[i]
+        _ax, _ay = np.mean(points[i,0:2], axis=0)
         for _x, _y in points[i]:
             _td = _topdown.copy()
             _draw = ImageDraw.Draw(_td)
             _draw.ellipse((_x-2, _y-2, _x+2, _y+2), (255,0,0))
-            _draw.ellipse((_tx-2, _ty-2, _tx+2, _ty+2), (255,255,255))
+            _draw.ellipse((_ax-2, _ay-2, _ax+2, _ay+2), (0,255,0))
+            _draw.ellipse((_tx-2, _ty-2, _tx+2, _ty+2), route_colors[1])
             img_stack.append(np.array(_td))
         _topdown_tiled = np.hstack(img_stack)
         _wgts = np.hstack([wgt for wgt in weights[i]]) #H,W*4
@@ -74,7 +80,6 @@ def plot_weights(topdown, target, points, weights, loss_point=None, alpha=0.25, 
         _wgts_tiled = np.tile(_wgts, (1,1,3))#H,W*4,3
 
         out = cv2.addWeighted(_wgts_tiled, alpha, _topdown_tiled, 1-alpha, 0)
-        out = cv2.cvtColor(out, cv2.COLOR_BGR2RGB)
         out = np.array(out)
         images.append((loss_point[i], out))
 
@@ -83,6 +88,8 @@ def plot_weights(topdown, target, points, weights, loss_point=None, alpha=0.25, 
     if use_wandb:
         images = torchvision.utils.make_grid([torch.ByteTensor(x.transpose(2,0,1)) for x in images], nrow=1)
         images = wandb.Image(images.numpy().transpose(1, 2, 0))
+    else:
+        images = [cv2.cvtColor(x, cv2.COLOR_BGR2RGB) for x in images]
     return images
 
 @torch.no_grad()
@@ -109,7 +116,7 @@ def visualize(batch, out, between, out_cmd, loss_point, loss_cmd):
         _topdown = Image.fromarray(COLOR[topdown.argmax(0).detach().cpu().numpy()])
         _draw = ImageDraw.Draw(_topdown)
 
-        _draw.ellipse((target[0]-2, target[1]-2, target[0]+2, target[1]+2), (255, 255, 255))
+        _draw.ellipse((target[0]-2, target[1]-2, target[0]+2, target[1]+2), route_colors[i])
 
         for x, y in points:
             x = (x + 1) / 2 * 256
@@ -123,11 +130,11 @@ def visualize(batch, out, between, out_cmd, loss_point, loss_cmd):
 
             _draw.ellipse((x-2, y-2, x+2, y+2), (255, 0, 0))
 
-        for x, y in _between:
-            x = (x + 1) / 2 * 256
-            y = (y + 1) / 2 * 256
+        #for x, y in _between:
+        #    x = (x + 1) / 2 * 256
+        #    y = (y + 1) / 2 * 256
 
-            _draw.ellipse((x-1, y-1, x+1, y+1), (0, 255, 0))
+        #    _draw.ellipse((x-1, y-1, x+1, y+1), (0, 255, 0))
 
         _draw.text((5, 10), 'Point: %.3f' % _loss_point)
         _draw.text((5, 30), 'Command: %.3f' % _loss_cmd)
