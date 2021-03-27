@@ -332,6 +332,7 @@ if __name__ == '__main__':
     parser.add_argument('--command_coefficient', type=float, default=0.0)
     parser.add_argument('--temperature', type=float, default=10.0)
     parser.add_argument('--hack', action='store_true', default=True)
+    parser.add_argument('--augment_data', action='store_true')
     parser.add_argument('--angle_jitter', type=float, default=5)
     parser.add_argument('--pixel_jitter', type=int, default=5.5) # 3 meters
     parser.add_argument('--temperature_decay_interval', type=int, default=500)

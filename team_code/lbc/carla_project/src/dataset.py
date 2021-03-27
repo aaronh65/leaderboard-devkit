@@ -184,10 +184,7 @@ class CarlaDataset(Dataset):
         #rgb_right = transforms.functional.to_tensor(rgb_right)
 
         topdown = Image.open(path / 'topdown' / ('%s.png' % frame))
-        #topdown = topdown.crop((128, 0, 128 + 256, 256))
-        #topdown = np.array(topdown)
-        #topdown = preprocess_semantic(topdown)
-
+        
         u = np.float32(self.measurements.iloc[i][['x', 'y']])
         theta = self.measurements.iloc[i]['theta']
         if np.isnan(theta):
@@ -209,19 +206,24 @@ class CarlaDataset(Dataset):
             target += [128, 256]
 
             points.append(target)
-
-        points = torch.FloatTensor(points)
-        points = torch.clamp(points, 0, 256)
-
+        points = np.array(points).astype(np.float32)
         target = np.float32(self.measurements.iloc[i][['x_command', 'y_command']])
         target = R.T.dot(target - u)
         target *= PIXELS_PER_WORLD
         target += [128, 256]
         target = np.clip(target, 0, 256)
 
-        topdown, points, target = self._augment_and_preprocess(topdown, points, target)
+        if self.hparams.augment_data:
+            topdown, points, target = self._augment_and_preprocess(topdown, points, target)
+        else:
+            topdown = topdown.crop((128, 0, 128 + 256, 256))
+            topdown = np.array(topdown)
+
+        topdown = preprocess_semantic(np.array(topdown))
         points = (points / 256) * 2 - 1
         points = torch.FloatTensor(points)
+        points = torch.clamp(points, 0, 256)
+
         target = torch.FloatTensor(target)
 
         # heatmap = make_heatmap((256, 256), target)
@@ -264,7 +266,6 @@ class CarlaDataset(Dataset):
                 topdown.shape[1::-1], flags=cv2.INTER_NEAREST)
         topdown = Image.fromarray(topdown)
         topdown = topdown.crop((128+dx,0+dy,128+256+dx,256+dy))
-        topdown = preprocess_semantic(np.array(topdown))
 
         return topdown, points, target
 
@@ -286,6 +287,7 @@ if __name__ == '__main__':
     parser.add_argument('--dataset_dir', type=str, required=True)
     parser.add_argument('--angle_jitter', type=float, default=5)
     parser.add_argument('--pixel_jitter', type=int, default=5.5) # 3 meters
+    parser.add_argument('--augment_data', action='store_true')
     hparams = parser.parse_args()
 
     data = CarlaDataset(hparams.dataset_dir, hparams)
