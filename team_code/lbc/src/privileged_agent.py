@@ -163,6 +163,7 @@ class PrivilegedAgent(MapAgent):
         topdown = topdown[None].cuda()
 
         target = torch.from_numpy(tick_data['target'])
+        print(tick_data['target'])
         target = target[None].cuda()
 
         points, weights, target_heatmap = self.net.forward(topdown, target) # world frame

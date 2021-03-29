@@ -78,6 +78,7 @@ class SegmentationModel(torch.nn.Module):
 
     def forward(self, input, temperature=10, get_weights=False):
         # downsampling input for smaller network?
+        print(temperature)
         if self.hack:
             input = torch.nn.functional.interpolate(input, scale_factor=0.5, mode='bilinear')
         x = self.norm(input)
