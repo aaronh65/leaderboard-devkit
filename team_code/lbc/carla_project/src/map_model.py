@@ -46,7 +46,7 @@ def fuse_vmaps(topdown, vmap, temperature=10, alpha=0.75):
 
 @torch.no_grad()
 # N,C,H,W
-def plot_weights(topdown, target, points, weights, loss_point=None, alpha=0.25, use_wandb=False):
+def plot_weights(topdown, target, points, weights, loss_point=None, alpha=0.75, use_wandb=False):
     n,c,_ = points.shape
     points = points.clone().detach().cpu().numpy() # N,C,2
     points = (points + 1) / 2 * 256
@@ -79,7 +79,7 @@ def plot_weights(topdown, target, points, weights, loss_point=None, alpha=0.25, 
         _wgts = np.expand_dims(_wgts, 2) #H,W*4,1
         _wgts_tiled = np.tile(_wgts, (1,1,3))#H,W*4,3
 
-        out = cv2.addWeighted(_wgts_tiled, alpha, _topdown_tiled, 1-alpha, 0)
+        out = cv2.addWeighted(_wgts_tiled, alpha, _topdown_tiled, 1, 0)
         out = np.array(out)
         images.append((loss_point[i], out))
 
@@ -116,7 +116,7 @@ def visualize(batch, out, between, out_cmd, loss_point, loss_cmd):
         _topdown = Image.fromarray(COLOR[topdown.argmax(0).detach().cpu().numpy()])
         _draw = ImageDraw.Draw(_topdown)
 
-        _draw.ellipse((target[0]-2, target[1]-2, target[0]+2, target[1]+2), route_colors[i])
+        _draw.ellipse((target[0]-2, target[1]-2, target[0]+2, target[1]+2), route_colors[1])
 
         for x, y in points:
             x = (x + 1) / 2 * 256
@@ -161,7 +161,7 @@ class MapModel(pl.LightningModule):
         self.hparams = hparams
 
         self.to_heatmap = ToHeatmap(hparams.heatmap_radius)
-        self.net = SegmentationModel(10, 4, hparams.waypoint_mode, hack=hparams.hack)
+        self.net = SegmentationModel(10, 4, batch_norm=True, hack=hparams.hack)
         self.controller = RawController(4)
         self.factor = hparams.temperature_decay_factor
         self.interval = hparams.temperature_decay_interval
@@ -171,7 +171,8 @@ class MapModel(pl.LightningModule):
 
         # decay temperature if necessary
         if self.hparams.waypoint_mode != 'expectation' and self.global_step % self.interval == 0 and self.global_step != 0:
-            self.temperature[0] /= self.factor
+            self.temperature[0] = max(self.temperature[0] / self.factor, 1e-9)
+            #print(self.temperature[0])
 
         target_heatmap = self.to_heatmap(target, topdown)[:, None]
         input = torch.cat((topdown, target_heatmap), 1)
@@ -321,7 +322,8 @@ if __name__ == '__main__':
     parser.add_argument('-D', '--debug', action='store_true')
     parser.add_argument('-G', '--gpus', type=int, default=-1)
     parser.add_argument('--data_root', type=pathlib.Path, default='/data')
-    parser.add_argument('--max_epochs', type=int, default=50)
+    parser.add_argument('--max_epochs', type=int, default=25)
+    parser.add_argument('--steps_per_epoch', type=int, default=1000)
     parser.add_argument('--save_dir', type=pathlib.Path)
     parser.add_argument('--id', type=str, default=datetime.now().strftime("%Y%m%d_%H%M%S")) 
     parser.add_argument('--log', action='store_true')
@@ -332,17 +334,17 @@ if __name__ == '__main__':
     parser.add_argument('--command_coefficient', type=float, default=0.0)
     parser.add_argument('--temperature', type=float, default=10.0)
     parser.add_argument('--hack', action='store_true', default=True)
-    parser.add_argument('--augment_data', action='store_true')
-    parser.add_argument('--angle_jitter', type=float, default=5)
-    parser.add_argument('--pixel_jitter', type=int, default=5.5) # 3 meters
     parser.add_argument('--temperature_decay_interval', type=int, default=500)
     parser.add_argument('--temperature_decay_factor', type=float, default=2)
-    parser.add_argument('--steps_per_epoch', type=int, default=1000)
 
 
     # Data args.
     parser.add_argument('--dataset_dir', type=pathlib.Path, required=True)
     parser.add_argument('--batch_size', type=int, default=4)
+    parser.add_argument('--augment_data', action='store_true')
+    parser.add_argument('--angle_jitter', type=float, default=5)
+    parser.add_argument('--pixel_jitter', type=int, default=5.5) # 3 meters
+
 
     # Optimizer args.
     parser.add_argument('--lr', type=float, default=1e-4)
