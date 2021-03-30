@@ -334,7 +334,7 @@ if __name__ == '__main__':
     parser.add_argument('--command_coefficient', type=float, default=0.0)
     parser.add_argument('--temperature', type=float, default=10.0)
     parser.add_argument('--hack', action='store_true', default=True)
-    parser.add_argument('--temperature_decay_interval', type=int, default=500)
+    parser.add_argument('--temperature_decay_interval', type=int, default=1000)
     parser.add_argument('--temperature_decay_factor', type=float, default=2)
 
 
