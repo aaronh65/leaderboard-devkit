@@ -1,6 +1,6 @@
 import copy,shutil
 import argparse
-import pathlib
+from pathlib import Path
 
 import numpy as np
 import cv2
@@ -28,21 +28,6 @@ from misc.utils import *
 #lbc_color = (178,34,34) # dark red
 route_colors = [(255,255,255), (112,128,144), (47,79,79), (47,79,79)] 
 
-
-@torch.no_grad()
-def fuse_vmaps(topdown, vmap, temperature=10, alpha=0.75):
-
-    vmap_mean = torch.mean(vmap[:,0:2,:,:], dim=1, keepdim=True) # N,1,H,W
-    vmap_flat = vmap_mean.view(vmap_mean.shape[:-2] + (-1,)) # N,1,H*W
-    vmap_prob = F.softmax(vmap_flat/temperature, dim=-1) # to prob
-    vmap_norm = vmap_prob / torch.max(vmap_prob, dim=-1, keepdim=True)[0] # to [0,1]
-    vmap_show = (vmap_norm * 256).view_as(vmap_mean).cpu().numpy().astype(np.uint8) # N,1,H,W
-    vmap_show = np.repeat(vmap_show, repeats=3, axis=1).transpose((0,2,3,1)) # N,H,W,3
-    fused = np.array(COLOR[topdown.argmax(1).cpu()]).astype(np.uint8) # N,H,W,3
-    for i in range(fused.shape[0]):
-        cv2.addWeighted(vmap_show[i], alpha, fused[i], 1, 0, fused[i])
-    fused = fused.astype(np.uint8) # (N,H,W,3)
-    return fused
 
 @torch.no_grad()
 # N,C,H,W
@@ -284,32 +269,35 @@ class MapModel(pl.LightningModule):
 
 
 def main(hparams):
-    model = MapModel(hparams)
-    logger = False
+
     if hparams.log:
         logger = WandbLogger(id=hparams.id, save_dir=str(hparams.save_dir), project='lbc')
+    else:
+        logger = False
     checkpoint_callback = ModelCheckpoint(hparams.save_dir, save_top_k=1)
 
-    try:
-        resume_from_checkpoint = sorted(hparams.save_dir.glob('*.ckpt'))[-1]
-    except:
-        resume_from_checkpoint = None
-
-    trainer = pl.Trainer(
-            gpus=hparams.gpus, max_epochs=hparams.max_epochs,
-            resume_from_checkpoint=resume_from_checkpoint,
-            logger=logger, checkpoint_callback=checkpoint_callback,
-            distributed_backend='dp',)
-
-
-    with open(hparams.save_dir / 'config.yml', 'w') as f:
+    if hparams.restore_from is None:
+        model = MapModel(hparams)
         hparams_copy = copy.copy(vars(model.hparams))
         hparams_copy['dataset_dir'] = str(hparams.dataset_dir)
         hparams_copy['save_dir'] = str(hparams.save_dir)
         del hparams_copy['data_root']
-        yaml.dump(hparams_copy, f, default_flow_style=False, sort_keys=False)
+    else:
+        model = MapModel.load_from_checkpoint(hparams.restore_from)
+        hparams_copy = copy.copy(vars(model.hparams))
+        hparams_copy['dataset_dir'] = str(hparams.dataset_dir)
+        hparams_copy['save_dir'] = str(hparams.save_dir)
+        hparams_copy['max_epochs'] = hparams.max_epochs
 
+    with open(hparams.save_dir / 'config.yml', 'w') as f:
+            yaml.dump(hparams_copy, f, default_flow_style=False, sort_keys=False)
     shutil.copyfile(hparams.dataset_dir / 'config.yml', hparams.save_dir / 'data_config.yml')
+
+    trainer = pl.Trainer(
+            gpus=hparams.gpus, max_epochs=hparams.max_epochs,
+            resume_from_checkpoint=hparams.restore_from,
+            logger=logger, checkpoint_callback=checkpoint_callback,
+            distributed_backend='dp',)
 
     trainer.fit(model)
 
@@ -321,12 +309,13 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-D', '--debug', action='store_true')
     parser.add_argument('-G', '--gpus', type=int, default=-1)
-    parser.add_argument('--data_root', type=pathlib.Path, default='/data')
+    parser.add_argument('--data_root', type=Path, default='/data')
     parser.add_argument('--max_epochs', type=int, default=25)
     parser.add_argument('--steps_per_epoch', type=int, default=1000)
-    parser.add_argument('--save_dir', type=pathlib.Path)
+    parser.add_argument('--save_dir', type=Path)
     parser.add_argument('--id', type=str, default=datetime.now().strftime("%Y%m%d_%H%M%S")) 
     parser.add_argument('--log', action='store_true')
+    parser.add_argument('--restore_from', type=str)
 
     parser.add_argument('--waypoint_mode', type=str, default='expectation', choices=['expectation', 'argmax'])
     parser.add_argument('--heatmap_radius', type=int, default=5)
@@ -339,7 +328,7 @@ if __name__ == '__main__':
 
 
     # Data args.
-    parser.add_argument('--dataset_dir', type=pathlib.Path, required=True)
+    parser.add_argument('--dataset_dir', type=Path, required=True)
     parser.add_argument('--batch_size', type=int, default=4)
     parser.add_argument('--augment_data', action='store_true')
     parser.add_argument('--angle_jitter', type=float, default=5)

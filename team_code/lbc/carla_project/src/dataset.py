@@ -288,11 +288,17 @@ if __name__ == '__main__':
     parser.add_argument('--angle_jitter', type=float, default=5)
     parser.add_argument('--pixel_jitter', type=int, default=5.5) # 3 meters
     parser.add_argument('--augment_data', action='store_true')
+    parser.add_argument('--save_visuals', action='store_true')
     hparams = parser.parse_args()
 
     data = CarlaDataset(hparams.dataset_dir, hparams)
     converter = Converter()
     to_heatmap = ToHeatmap()
+
+    if hparams.save_visuals:
+        save_path = Path(hparams.dataset_dir) / 'dataset_debug'
+        save_path.mkdir(exist_ok=True)
+        print(save_path)
 
     for i in range(len(data)):
         rgb, topdown, points, target, actions, meta = data[i]
@@ -327,6 +333,11 @@ if __name__ == '__main__':
             _draw_rgb.ellipse((x-2, y-2, x+2, y+2), (255, 0, 0))
 
         _topdown.thumbnail(_rgb.size)
+        _img = cv2.cvtColor(np.hstack((_rgb, _topdown)), cv2.COLOR_BGR2RGB)
 
-        cv2.imshow('debug', cv2.cvtColor(np.hstack((_rgb, _topdown)), cv2.COLOR_BGR2RGB))
-        cv2.waitKey(0)
+        if hparams.save_visuals:
+            #print(str(save_path / f'{i:06d}.png'))
+            cv2.imwrite(str(save_path / f'{i:06d}.png'), _img)
+        else:
+            cv2.imshow('debug', _img)
+            cv2.waitKey(0)
