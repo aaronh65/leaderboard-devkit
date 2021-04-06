@@ -156,7 +156,7 @@ class MapModel(pl.LightningModule):
 
         # decay temperature if necessary
         if self.hparams.waypoint_mode != 'expectation' and self.global_step % self.interval == 0 and self.global_step != 0:
-            self.temperature[0] = max(self.temperature[0] / self.factor, 1e-9)
+            self.temperature[0] = max(self.temperature[0] / self.factor, self.hparams.temperature_minimum)
             #print(self.temperature[0])
 
         target_heatmap = self.to_heatmap(target, topdown)[:, None]
@@ -278,19 +278,28 @@ def main(hparams):
 
     if hparams.restore_from is None:
         model = MapModel(hparams)
-        hparams_copy = copy.copy(vars(model.hparams))
-        hparams_copy['dataset_dir'] = str(hparams.dataset_dir)
-        hparams_copy['save_dir'] = str(hparams.save_dir)
-        del hparams_copy['data_root']
+        model_hparams = copy.copy(vars(model.hparams))
+        model_hparams['dataset_dir'] = str(hparams.dataset_dir)
+        model_hparams['save_dir'] = str(hparams.save_dir)
+        del model_hparams['data_root']
     else:
         model = MapModel.load_from_checkpoint(hparams.restore_from)
-        hparams_copy = copy.copy(vars(model.hparams))
-        hparams_copy['dataset_dir'] = str(hparams.dataset_dir)
-        hparams_copy['save_dir'] = str(hparams.save_dir)
-        hparams_copy['max_epochs'] = hparams.max_epochs
+
+        new_hparams = vars(hparams)
+        model_hparams = vars(model.hparams)
+        
+        print(hparams.overwrite_hparams)
+        for param in hparams.overwrite_hparams + ['save_dir']:
+            model_hparams[param] = new_hparams[param]
+        model.hparams = dict_to_sns(model_hparams)
+
+        # copy and postprocess for saving
+        model_hparams['dataset_dir'] = str(hparams.dataset_dir)
+        model_hparams['save_dir'] = str(hparams.save_dir)
+
 
     with open(hparams.save_dir / 'config.yml', 'w') as f:
-            yaml.dump(hparams_copy, f, default_flow_style=False, sort_keys=False)
+            yaml.dump(model_hparams, f, default_flow_style=False, sort_keys=False)
     shutil.copyfile(hparams.dataset_dir / 'config.yml', hparams.save_dir / 'data_config.yml')
 
     trainer = pl.Trainer(
@@ -316,6 +325,7 @@ if __name__ == '__main__':
     parser.add_argument('--id', type=str, default=datetime.now().strftime("%Y%m%d_%H%M%S")) 
     parser.add_argument('--log', action='store_true')
     parser.add_argument('--restore_from', type=str)
+    parser.add_argument('-ow', '--overwrite_hparams', nargs='+')
 
     parser.add_argument('--waypoint_mode', type=str, default='expectation', choices=['expectation', 'argmax'])
     parser.add_argument('--heatmap_radius', type=int, default=5)
@@ -325,6 +335,7 @@ if __name__ == '__main__':
     parser.add_argument('--hack', action='store_true', default=True)
     parser.add_argument('--temperature_decay_interval', type=int, default=1000)
     parser.add_argument('--temperature_decay_factor', type=float, default=2)
+    parser.add_argument('--temperature_minimum', type=float, default=1e-9)
 
 
     # Data args.
