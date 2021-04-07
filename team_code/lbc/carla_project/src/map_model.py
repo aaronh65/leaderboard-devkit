@@ -318,7 +318,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-D', '--debug', action='store_true')
     parser.add_argument('-G', '--gpus', type=int, default=-1)
-    parser.add_argument('--data_root', type=Path, default='/data')
+    parser.add_argument('--data_root', type=Path, default='/data/aaronhua')
     parser.add_argument('--max_epochs', type=int, default=25)
     parser.add_argument('--steps_per_epoch', type=int, default=1000)
     parser.add_argument('--save_dir', type=Path)
@@ -352,7 +352,7 @@ if __name__ == '__main__':
 
     parsed = parser.parse_args()
     suffix = f'debug/{parsed.id}' if parsed.debug else parsed.id
-    save_dir = parsed.data_root / 'leaderboard/training/lbc/map_model' / parsed.waypoint_mode / suffix
+    save_dir = parsed.data_root / 'leaderboard/training/lbc/map_model' / suffix
     parsed.save_dir = save_dir
     parsed.save_dir.mkdir(parents=True, exist_ok=True)
 
