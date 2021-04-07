@@ -5,9 +5,9 @@ from collections import deque
 from itertools import islice
 
 #from rl.common.env_utils import *
-from rl.common.base_env import BaseEnv
+from dqn.src.env.base_env import BaseEnv
 #from rl.dspred.replay_buffer import ReplayBuffer
-from rl.dspred.global_buffer import ReplayBuffer
+#from rl.dspred.global_buffer import ReplayBuffer
 
 from leaderboard.utils.statistics_util import penalty_dict, collision_types
 from srunner.scenariomanager.carla_data_provider import CarlaDataProvider
@@ -51,13 +51,40 @@ class CarlaEnv(BaseEnv):
         
         if self.config.save_data:
             self.save_data(reward, done, info)
-        else:
-            ReplayBuffer.add_env_data(reward, done, info)
+        #else:
+        #    ReplayBuffer.add_env_data(reward, done, info)
 
         if self.econfig.short_stop:
             done = done or self.frame > 200
 
         return reward, done, info
+
+    def rollout(self, num_steps=None, num_episodes=None, complete=None):
+        assert num_steps != None or num_episodes != None or complete != None
+        status = 'running'
+        if complete != None:
+            #print('rolling out until completion')
+            while status != 'done':
+                reward, done, info = self.step()
+                if done:
+                    self.cleanup()
+                    status = self.reset()
+        elif num_episodes != None:
+            counter=0
+            while counter < num_episodes and status != 'done':
+                reward, done, info = self.step()
+                if done:
+                    self.cleanup()
+                    status = self.reset()
+                    counter += 1
+        elif num_steps != None:
+            counter=0
+            while counter < num_steps and status != 'done':
+                reward, done, info = self.step()
+                counter += 1
+                if done:
+                    self.cleanup()
+                    status = self.reset()
 
     def compute_reward(self, info, threshold=11):
 

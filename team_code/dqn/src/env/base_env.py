@@ -33,15 +33,14 @@ class BaseEnv(gym.Env):
         CarlaDataProvider.set_traffic_manager_port(
                 self.econfig.trafficmanager_port)
 
-        # leaderboard objects
+        # leaderboard
         data_dir = f'{config.project_root}/leaderboard/data'
-        self.indexer = RouteIndexer(
-                f'{data_dir}/{self.econfig.routes}',
-                f'{data_dir}/{self.econfig.scenarios}', 
-                self.econfig.repetitions)
+        rpath = f'{data_dir}/{self.econfig.routes}'
+        spath = f'{data_dir}/{self.econfig.scenarios}'
+        assert os.path.exists(rpath) and os.path.exists(spath), 'invalid Leaderboard setup'
+        self.indexer = RouteIndexer(rpath, spath, self.econfig.repetitions)
         self.num_routes = len(self.indexer._configs_list)
         self.manager = ScenarioManager(60, False) # 60s timeout?
-        #self.statistic_manager = StatisticsManager()
         self.scenario = None
 
         # forwards SIGINTs to signal handler
@@ -115,7 +114,8 @@ class BaseEnv(gym.Env):
                 self.world, rconfig, 
                 criteria_enable=True, 
                 env_config=self.econfig)
-        self.manager.load_scenario(
+        # loads scenario and sets up actual agent?
+        self.manager.load_scenario( 
                 self.scenario, rconfig.agent,
                 rconfig.repetition_index)
 

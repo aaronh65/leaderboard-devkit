@@ -4,42 +4,59 @@ import numpy as np
 import torch
 
 from PIL import Image, ImageDraw
+from pathlib import Path
 from carla import VehicleControl
 
 #from lbc.carla_project.src.map_model import MapModel
-from common.utils import *
-from map_model import MapModel, fuse_vmaps
-from lbc.carla_project.src.dataset import preprocess_semantic
+from misc.utils import *
+from dqn.src.agents.map_model import MapModel, fuse_vmaps
+#from lbc.carla_project.src.dataset import preprocess_semantic
 from lbc.carla_project.src.converter import Converter
 from lbc.carla_project.src.common import CONVERTER, COLOR
-from map_agent import MapAgent
-from pid_controller import PIDController
+from lbc.src.pid_controller import PIDController
+from lbc.src.map_agent import MapAgent
 
 from leaderboard.envs.sensor_interface import SensorInterface
 
 HAS_DISPLAY = int(os.environ.get('HAS_DISPLAY', 0))
 
 def get_entry_point():
-    return 'DSPredAgent'
+    return 'PrivilegedAgent'
 
-class DSPredAgent(MapAgent):
+class PrivilegedAgent(MapAgent):
     def setup(self, path_to_conf_file):
         super().setup(path_to_conf_file)
 
-        self.config.env = dict_to_sns(self.config.env)
-        self.config.agent = dict_to_sns(self.config.agent)
+        self.econfig = dict_to_sns(self.config.env)
+        self.aconfig = dict_to_sns(self.config.agent)
         self.config.save_root = Path(self.config.save_root)
 
         self.converter = Converter()
 
-        weights_path = Path(f'{self.config.project_root}/{self.aconfig.weights_path}')
-        self.net = MapModel.load_from_checkpoint(weights_path)
+        weights_path = Path(self.aconfig.weights_path)
+        if 'lbc' in str(weights_path):
+            from lbc.carla_project.src.map_model import MapModel as LBCModel
+            lbc_model = LBCModel.load_from_checkpoint(weights_path)
+            self.net = MapModel()
+            self.net.net = lbc_model.net
+            self.net.temperature = lbc_model.temperature
+            self.net.to_heatmap = lbc_model.to_heatmap
+        else:
+            self.net = MapModel.load_from_checkpoint(weights_path)
         self.net.cuda()
         self.net.eval()
 
         if self.aconfig.mode == 'dagger':
-            expert_path = weights_path.parent / 'lbc_expert.ckpt'
-            self.expert = MapModel.load_from_checkpoint(expert_path)
+            expert_path = Path(self.aconfig.expert_path)
+            if 'lbc' in str(expert_path):
+                from lbc.carla_project.src.map_model import MapModel as LBCModel
+                lbc_model = LBCModel.load_from_checkpoint(expert_path)
+                self.expert = MapModel()
+                self.expert.net = lbc_model.net
+                self.expert.temperature = lbc_model.temperature
+                self.expert.to_heatmap = lbc_model.to_heatmap
+            else:
+                self.expert = MapModel.load_from_checkpoint(expert_path)
             self.expert.cuda()
             self.expert.eval()
 

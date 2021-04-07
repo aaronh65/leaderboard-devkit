@@ -1,7 +1,0 @@
-# LBC autopilot
-
-project_root: /home/aaron/workspace/carla/leaderboard-devkit
-save_root: /data/leaderboard/results/rl/dspred/debug/template
-save_data: False
-split: devtest
-repetitions: 1

@@ -1,26 +1,20 @@
-import copy,shutil
-import argparse
+import argparse, copy, shutil, yaml
 from pathlib import Path
-
-import numpy as np
-import cv2
-import torch
-import pytorch_lightning as pl
-import torchvision
-import wandb
-import yaml
-
 from datetime import datetime
 
+from PIL import Image, ImageDraw
+import cv2, numpy as np
+
+import torch, torchvision, wandb
+import pytorch_lightning as pl
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
-from PIL import Image, ImageDraw
 
 from lbc.carla_project.src.models import SegmentationModel, RawController, spatial_norm
 from lbc.carla_project.src.utils.heatmap import ToHeatmap
 from lbc.carla_project.src.dataset import get_dataset
-#from lbc.carla_project.src.prioritized_dataset import get_dataset
 from lbc.carla_project.src.common import COLOR, CONVERTER
+
 from misc.utils import *
 
 #text_color = (255,255,255)

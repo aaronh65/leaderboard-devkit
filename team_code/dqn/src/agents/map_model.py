@@ -1,25 +1,20 @@
-import os, yaml, copy
-import argparse
-import pathlib
+import os, argparse, copy, shutil, yaml
+from pathlib import Path
 from datetime import datetime
-from tqdm import tqdm
 
-import cv2
-import wandb
-import numpy as np
-import torch, torchvision
-import torch.nn.functional as F
+from PIL import Image, ImageDraw
+import cv2, numpy as np
+
+import torch, torchvision, wandb
+#import torch.nn.functional as F
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
-from torch.utils.data import DataLoader
-from PIL import Image, ImageDraw
 
-from lbc.carla_project.src.models import SegmentationModel, RawController, SpatialSoftmax
-from lbc.carla_project.src.utils.heatmap import ToHeatmap, ToTemporalHeatmap
+from dqn.src.agents.models import SegmentationModel, RawController, SpatialSoftmax
+from dqn.src.agents.heatmap import ToHeatmap, ToTemporalHeatmap
 from lbc.carla_project.src.common import COLOR
-from rl.dspred.offline_dataset import get_dataloader
-#from rl.dspred.online_dataset import get_dataloader
+from lbc.carla_project.src.common import CONVERTER, COLOR
  
 HAS_DISPLAY = int(os.environ['HAS_DISPLAY'])
 PROJECT_ROOT = os.environ['PROJECT_ROOT']
@@ -125,77 +120,71 @@ def visualize(batch, vmap, hmap, nvmap, nhmap, naction, meta, r=2):
 
 # just needs to know if it's rolling out or nah
 class MapModel(pl.LightningModule):
-    def __init__(self, hparams):
+    def __init__(self, hparams=None):
         super().__init__()
 
-        self.hparams = hparams
+        if hparams is not None:
+            self.hparams = hparams
+            self.to_heatmap = ToHeatmap(hparams.heatmap_radius)
+            self.net = SegmentationModel(10, 4, batch_norm=True, hack=hparams.hack)
+            self.register_buffer('temperature', torch.Tensor([self.hparams.temperature]))
 
-        # model stuff
-        self.to_heatmap = ToHeatmap(hparams.heatmap_radius)
-        self.expert_heatmap = ToTemporalHeatmap(56)
-        self.net = SegmentationModel(10, 4, hack=hparams.hack, temperature=hparams.temperature)
         self.controller = RawController(4)
-        #self.criterion = torch.nn.MSELoss(reduction='none') # weights? prioritized replay?
         self.td_criterion = torch.nn.MSELoss(reduction='none') # weights? prioritized replay?
         self.margin_criterion = torch.nn.MSELoss(reduction='none')
         self.margin_weight = 100
 
+
         
-    def setup_train(self, env, config):
-        self.config = config
-        self.env = env
-        self.n = config.agent.n
-        self.discount = 0.99 ** (self.n + 1)
+    #def setup_train(self, env, config):
+    #    self.config = config
+    #    self.env = env
+    #    self.n = config.agent.n
+    #    self.discount = 0.99 ** (self.n + 1)
 
-        print('populating...')
-        self.populate(config.agent.burn_timesteps)
-        self.env.reset()
+    #    print('populating...')
+    #    self.populate(config.agent.burn_timesteps)
+    #    self.env.reset()
 
-    # burn in
-    def populate(self, steps):
-        # make sure agent is burning in instead of inferencing
-        self.env.hero_agent.burn_in = True
-        done = False
-        for step in tqdm(range(steps)):
-            if done or step % 200 == 0:
-                if step != 0:
-                    self.env.cleanup()
-                self.env.reset()
-            reward, done = self.env.step()
-        self.env.cleanup()
-        self.env.hero_agent.burn_in = False
+    ## burn in
+    #def populate(self, steps):
+    #    # make sure agent is burning in instead of inferencing
+    #    self.env.hero_agent.burn_in = True
+    #    done = False
+    #    for step in tqdm(range(steps)):
+    #        if done or step % 200 == 0:
+    #            if step != 0:
+    #                self.env.cleanup()
+    #            self.env.reset()
+    #        reward, done = self.env.step()
+    #    self.env.cleanup()
+    #    self.env.hero_agent.burn_in = False
 
-    # move to environment class
-    def rollout(self, num_episodes=-1, num_steps=-1):
-        assert num_episodes != -1 or num_steps != -1, \
-                'specify either num steps or num epsiodes' 
+    ## move to environment class
+    #def rollout(self, num_episodes=-1, num_steps=-1):
+    #    assert num_episodes != -1 or num_steps != -1, \
+    #            'specify either num steps or num epsiodes' 
 
-        num_steps, num_episodes = 0, 0
+    #    num_steps, num_episodes = 0, 0
 
-        ## step environment
-        self.eval()
-        self.env.reset()
-        self.env.hero_agent.burn_in = np.random.random() < self.config.agent.epsilon
-        with torch.no_grad():
-            for rollout_step in range(self.config.agent.rollout_steps):
-                _reward, _done = self.env.step() # reward, done
-                if _done:
-                    self.env.cleanup()
-                    self.env.reset()
-        self.train()
+    #    ## step environment
+    #    self.eval()
+    #    self.env.reset()
+    #    self.env.hero_agent.burn_in = np.random.random() < self.config.agent.epsilon
+    #    with torch.no_grad():
+    #        for rollout_step in range(self.config.agent.rollout_steps):
+    #            _reward, _done = self.env.step() # reward, done
+    #            if _done:
+    #                self.env.cleanup()
+    #                self.env.reset()
+    #    self.train()
 
     def forward(self, topdown, target, debug=True):
         target_heatmap = self.to_heatmap(target, topdown)[:, None]
-        out = self.net(torch.cat((topdown, target_heatmap), 1), heatmap=debug)
+        input = torch.cat((topdown, target_heatmap), 1)
+        points, logits, weights = self.net(input, temperature=self.temperature.item())
 
-        if not debug:
-            return out
-
-        points, logits = out
-
-        # extract action?
-
-        return (points, logits, target_heatmap)
+        return points, logits, weights, target_heatmap
 
     # two modes: sample, argmax?
     def get_dqn_actions(self, vmap, explore=False):
