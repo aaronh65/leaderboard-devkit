@@ -108,9 +108,9 @@ class CarlaEnv(BaseEnv):
 
         # imitation reward - take out this computation?
         # 0 reward if either point is > 2 meters away
-        points_map = self.hero_agent.tick_data['points_map']
-        points_lbc = self.hero_agent.tick_data['points_lbc']
-        delta = np.linalg.norm(points_map[:2] - points_lbc[:2], axis=1) # (2,1)
+        points_student = self.hero_agent.tick_data['points_map']
+        points_expert = self.hero_agent.tick_data['points_expert']
+        delta = np.linalg.norm(points_student[:2] - points_expert[:2], axis=1) # (2,1)
         imitation_reward = max((threshold - np.amax(delta))/threshold, 0)
 
         info['penalty'] = penalty

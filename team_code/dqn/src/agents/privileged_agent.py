@@ -10,6 +10,7 @@ from carla import VehicleControl
 #from lbc.carla_project.src.map_model import MapModel
 from misc.utils import *
 from dqn.src.agents.map_model import MapModel, fuse_vmaps
+from lbc.carla_project.src.dataset import preprocess_semantic
 #from lbc.carla_project.src.dataset import preprocess_semantic
 from lbc.carla_project.src.converter import Converter
 from lbc.carla_project.src.common import CONVERTER, COLOR
@@ -38,7 +39,7 @@ class PrivilegedAgent(MapAgent):
             from lbc.carla_project.src.map_model import MapModel as LBCModel
             lbc_model = LBCModel.load_from_checkpoint(weights_path)
             self.net = MapModel()
-            self.net.net = lbc_model.net
+            self.net.net.load_state_dict(lbc_model.net.state_dict())
             self.net.temperature = lbc_model.temperature
             self.net.to_heatmap = lbc_model.to_heatmap
         else:
@@ -46,13 +47,13 @@ class PrivilegedAgent(MapAgent):
         self.net.cuda()
         self.net.eval()
 
-        if self.aconfig.mode == 'dagger':
+        if self.aconfig.dagger_expert:
             expert_path = Path(self.aconfig.expert_path)
             if 'lbc' in str(expert_path):
                 from lbc.carla_project.src.map_model import MapModel as LBCModel
                 lbc_model = LBCModel.load_from_checkpoint(expert_path)
                 self.expert = MapModel()
-                self.expert.net = lbc_model.net
+                self.expert.net.load_state_dict(lbc_model.net.state_dict())
                 self.expert.temperature = lbc_model.temperature
                 self.expert.to_heatmap = lbc_model.to_heatmap
             else:
@@ -64,26 +65,24 @@ class PrivilegedAgent(MapAgent):
 
     def _init(self):
         super()._init()
+
         self._turn_controller = PIDController(K_P=1.25, K_I=0.75, K_D=0.3, n=40)
         self._speed_controller = PIDController(K_P=5.0, K_I=0.5, K_D=1.0, n=40)
 
-        # make debug directories
         if self.config.save_debug or self.config.save_data:
 
-            save_root = self.config.save_root
             route_name = os.environ['ROUTE_NAME']
             repetition = os.environ['REPETITION']
-            self.save_path = Path(f'{save_root}/data/{route_name}/{repetition}')
+            self.save_path = Path(f'{self.config.save_root}/data/{route_name}/{repetition}')
             self.save_path.mkdir(parents=True, exist_ok=True)
-
-            print(self.save_path)
 
         if self.config.save_debug:
             (self.save_path / 'debug').mkdir()
+
         if self.config.save_data:
             (self.save_path / 'topdown').mkdir()
-            (self.save_path / 'points_lbc').mkdir()
-            (self.save_path / 'points_dqn').mkdir()
+            (self.save_path / 'points_expert').mkdir()
+            (self.save_path / 'points_student').mkdir()
             (self.save_path / 'measurements').mkdir()
 
     def reset(self):
@@ -92,10 +91,11 @@ class PrivilegedAgent(MapAgent):
     def save_data(self,  tick_data):
         sp = self.save_path
         frame = f'{self.step:06d}'
-        with open(sp / 'points_lbc' / f'{frame}.npy', 'wb') as f:
-            np.save(f, tick_data['points_lbc'])
-        with open(sp / 'points_dqn' / f'{frame}.npy', 'wb') as f:
-            np.save(f, tick_data['points_dqn'])
+        if 'points_expert' in tick_data.keys():
+            with open(sp / 'points_expert' / f'{frame}.npy', 'wb') as f:
+                np.save(f, tick_data['points_expert'])
+        with open(sp / 'points_student' / f'{frame}.npy', 'wb') as f:
+            np.save(f, tick_data['points_map'])
         Image.fromarray(tick_data['topdown']).save(sp / 'topdown' / f'{frame}.png')
 
     # remove rgb cameras from base agent
@@ -159,37 +159,35 @@ class PrivilegedAgent(MapAgent):
         target = torch.from_numpy(tick_data['target'])
         target = target[None].cuda()
 
-        # expectation points
-        points_exp, vmap, hmap = self.net.forward(topdown, target, debug=True) # world frame
-        points_exp = points_exp.clone().cpu().squeeze().numpy()
-        points_exp = (points_exp + 1) / 2 * 256 # (-1,1) to (0,256)
-        points_exp = np.clip(points_exp, 0, 256)
+        points, logits, weights, tmap = self.net.forward(topdown, target)
+        points = points.clone().cpu().squeeze().numpy()
 
-        # dqn points
-        points_dqn, Q_all = self.net.get_dqn_actions(vmap, explore=self.burn_in) # (1,4,2), (1,4,1)
-        points_dqn = np.clip(points_dqn.clone().cpu().squeeze().numpy(), 0, 256) # (4,2)
-        tick_data['points_dqn'] = points_dqn
-        tick_data['points_exp'] = points_exp
-        tick_data['maps'] = (vmap, hmap)
+        # 1. is the model using argmax or soft argmax?
+        if self.aconfig.waypoint_mode == 'softargmax':
+            points_map = (points + 1) / 2 * 256 # (-1,1) to (0,256)
+        elif self.aconfig.waypoint_mode == 'argmax':
+            points_map, _ = self.net.get_dqn_actions(vmap, explore=self.burn_in) # (1,4,2),(1,4,1)
+            points_map = points_map.clone().cpu().squeeze().numpy()
+        points_map = np.clip(points_map, 0, 256)
+        tick_data['points_map'] = points_map
+        tick_data['maps'] = (logits, weights, tmap)
 
-        if self.aconfig.mode == 'dagger': # dagger and dqn
-            points_lbc, _, _ = self.expert.forward(topdown, target, debug=True)
-            points_lbc = points_lbc.clone().cpu().squeeze().numpy()
-            points_lbc = (points_lbc + 1) / 2 * 256
-            points_lbc = np.clip(points_lbc, 0, 256)
-            tick_data['points_lbc'] = points_lbc
+        # 2. is there an expert present?
+        if self.aconfig.dagger_expert: # dagger and dqn
+            points_expert, _, _ = self.expert.forward(topdown, target, debug=True)
+            points_expert = points_expert.clone().cpu().squeeze().numpy()
+            points_expert = (points_expert + 1) / 2 * 256
+            points_expert = np.clip(points_expert, 0, 256)
+            tick_data['points_expert'] = points_expert
+        elif self.aconfig.data_hack:
+            tick_data['points_expert'] = points_map
 
+        # 3. is the model using random waypoint selection/burning in?
         if self.aconfig.mode == 'forward' or self.burn_in:
             #points_map = np.random.randint(0, 256, size=(4,2)) 
             x = np.random.randint(128 - 56, 128 + 56, (4,1))
             y = np.random.randint(256 - 128, 256, (4,1))
             points_map = np.hstack((x,y))
-
-        if self.aconfig.mode == 'data': # expert behavior policy
-            tick_data['points_lbc'] = points_exp
-            points_map = points_exp
-        else:
-            points_map = points_dqn
 
         # get aim and controls
         points_world = self.converter.map_to_world(torch.Tensor(points_map)).numpy()
@@ -207,7 +205,7 @@ class PrivilegedAgent(MapAgent):
         throttle = np.clip(throttle, 0.0, 0.75)
         throttle = throttle if not brake else 0.0
 
-        control = carla.VehicleControl()
+        control = VehicleControl()
         control.steer = steer
         control.throttle = throttle
         control.brake = float(brake)
@@ -229,7 +227,7 @@ class PrivilegedAgent(MapAgent):
         text_color = (255,255,255)
         aim_color = (65,105,225) # dark blue
         dqn_color = (60,179,113) # dark green
-        lbc_color = (178,34,34) # dark red
+        expert_color = (178,34,34) # dark red
         route_colors = [(255,255,255), (112,128,144), (47,79,79), (47,79,79)] 
         
 
@@ -237,20 +235,20 @@ class PrivilegedAgent(MapAgent):
         # plot Q points instead of LBC version (argmax instead of expectation)
         aim = tick_data['aim']
         route_map = tick_data['route_map']
-        points_dqn = tick_data['points_dqn']
-        points_lbc = None if 'points_lbc' not in tick_data.keys() else tick_data['points_lbc']
+        points_map = tick_data['points_map']
+        points_expert = None if 'points_expert' not in tick_data.keys() else tick_data['points_expert']
         
         # (H,W,3) right image
         topdown = tick_data['topdown_pth']
-        vmap, hmap = tick_data['maps'] # (1, H, W)
-        fused = fuse_vmaps(topdown, vmap, temperature=1, alpha=0.5).squeeze()
+        logits, weights, tmap = tick_data['maps'] # (1, H, W)
+        fused = fuse_vmaps(topdown, logits, temperature=1, alpha=0.5).squeeze()
         fused = Image.fromarray(fused)
         draw = ImageDraw.Draw(fused)
-        for x, y in points_dqn[0:2]:
+        for x, y in points_map[0:2]:
             draw.ellipse((x-r, y-r, x+r, y+r), dqn_color)
-        if points_lbc is not None:
-            for x, y in points_lbc:
-                draw.ellipse((x-r, y-r, x+r, y+r), lbc_color)
+        if points_expert is not None:
+            for x, y in points_expert:
+                draw.ellipse((x-r, y-r, x+r, y+r), expert_color)
         x, y = aim
         draw.ellipse((x-r, y-r, x+r, y+r), aim_color)
         for i, (x,y) in enumerate(route_map[:3]):
@@ -260,16 +258,16 @@ class PrivilegedAgent(MapAgent):
         # left image
         aim_cam = self.converter.map_to_cam(torch.Tensor(aim)).numpy()
         route_cam = self.converter.map_to_cam(torch.Tensor(route_map)).numpy()
-        points_dqn_cam = self.converter.map_to_cam(torch.Tensor(points_dqn)).numpy()
+        points_cam = self.converter.map_to_cam(torch.Tensor(points_map)).numpy()
 
         rgb = Image.fromarray(tick_data['rgb'])
         draw = ImageDraw.Draw(rgb)
-        for x,y in points_dqn_cam[0:2]:
+        for x,y in points_cam[0:2]:
             draw.ellipse((x-r, y-r, x+r, y+r), dqn_color)
-        if points_lbc is not None:
-            points_lbc_cam = self.converter.map_to_cam(torch.Tensor(points_lbc)).numpy()
-            for x, y in points_lbc_cam:
-                draw.ellipse((x-r, y-r, x+r, y+r), lbc_color)
+        if points_expert is not None:
+            points_expert_cam = self.converter.map_to_cam(torch.Tensor(points_expert)).numpy()
+            for x, y in points_expert_cam:
+                draw.ellipse((x-r, y-r, x+r, y+r), expert_color)
         x, y = aim_cam
         draw.ellipse((x-r, y-r, x+r, y+r), aim_color)
         for i, (x,y) in enumerate(route_cam[:4]):

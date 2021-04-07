@@ -6,7 +6,7 @@ from PIL import Image, ImageDraw
 import cv2, numpy as np
 
 import torch, torchvision, wandb
-#import torch.nn.functional as F
+import torch.nn.functional as F
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
@@ -126,9 +126,12 @@ class MapModel(pl.LightningModule):
         if hparams is not None:
             self.hparams = hparams
             self.to_heatmap = ToHeatmap(hparams.heatmap_radius)
-            self.net = SegmentationModel(10, 4, batch_norm=True, hack=hparams.hack)
             self.register_buffer('temperature', torch.Tensor([self.hparams.temperature]))
+        else:
+            self.to_heatmap = ToHeatmap(5)
+            self.register_buffer('temperature', torch.Tensor([10]))
 
+        self.net = SegmentationModel(10, 4, batch_norm=True, hack=True)
         self.controller = RawController(4)
         self.td_criterion = torch.nn.MSELoss(reduction='none') # weights? prioritized replay?
         self.margin_criterion = torch.nn.MSELoss(reduction='none')

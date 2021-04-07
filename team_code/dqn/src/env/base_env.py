@@ -75,9 +75,10 @@ class BaseEnv(gym.Env):
         route_num = int(rconfig.name.split('_')[-1])
         route_name = f'route_{route_num:02d}'
         repetition = f'repetition_{rconfig.repetition_index:02d}'
-        self.hero_agent.reset(route_name, repetition)
+        #self.hero_agent.reset(route_name, repetition)
         os.environ['ROUTE_NAME'] = route_name
         os.environ['REPETITION'] = repetition
+        self.hero_agent.reset()
 
         self.rconfig = rconfig
         #self.statistics_manager = StatisticsManager()

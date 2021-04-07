@@ -29,8 +29,8 @@ def main(args, config):
     client.set_timeout(600)
     try:
         env = CarlaEnv(config, client, agent)
-        #env.reset()
-        #env.rollout(complete=True)
+        env.reset()
+        env.rollout(complete=True)
         #collect(config, agent, env)
     except KeyboardInterrupt:
         env.cleanup()
@@ -45,12 +45,14 @@ def parse_args():
     parser = argparse.ArgumentParser()
 
     parser.add_argument('-D', '--debug', action='store_true')
-    parser.add_argument('-G', '--gpu', type=int, default=0)
     parser.add_argument('--data_root', type=str, default='/data/aaronhua')
     parser.add_argument('--id', type=str, default=datetime.now().strftime("%Y%m%d_%H%M%S"))
     parser.add_argument('--save_debug', action='store_true')
     parser.add_argument('--save_data', action='store_true', default=True)
     parser.add_argument('--short_stop', action='store_true')
+    parser.add_argument('--dagger_expert', action='store_true')
+    parser.add_argument('--data_hack', action='store_true', default=True)
+
 
     # server/client stuff
     parser.add_argument('-WP', '--world_port', type=int, default=2000)
@@ -110,6 +112,8 @@ def parse_args():
 
     aconf = config['agent']
     aconf['mode'] = 'data'
+    aconf['dagger_expert'] = args.dagger_expert
+    aconf['data_hack'] = args.data_hack
  
     # save new config
     with open(f'{save_root}/config.yml', 'w') as f:
