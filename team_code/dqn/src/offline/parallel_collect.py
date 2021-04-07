@@ -1,4 +1,5 @@
-import os, time, argparse, subprocess
+import os, time, argparse, traceback
+import subprocess, psutil 
 import numpy as np
 from datetime import datetime
 from collections import deque
@@ -10,6 +11,7 @@ parser.add_argument('-G', '--gpus', type=int, default=1)
 parser.add_argument('--split', type=str, default='devtest', choices=['devtest','testing','training'])
 parser.add_argument('--data_root', type=str, default='/data/aaronhua')
 parser.add_argument('--repetitions', type=int, default=1)
+parser.add_argument('--save_debug', action='store_true')
 parser.add_argument('--id', type=str, default=datetime.now().strftime("%Y%m%d_%H%M%S"))
 args = parser.parse_args()
 
@@ -78,14 +80,15 @@ try:
 
         env = os.environ.copy()
         env["CUDA_VISIBLE_DEVICES"] = str(gpu)
-        cmd = f'python collector.py --data_root {args.data_root} --id {args.id} --split {args.split} --routenum {routenum} --repetitions {args.repetitions} -WP {wp} -TP {tp} --save_data --save_debug'
+        cmd = f'python collect_data.py --data_root {args.data_root} --id {args.id} --split {args.split} --routenum {routenum} --repetitions {args.repetitions} -WP {wp} -TP {tp} --save_data'
         if args.debug:
             cmd += ' --debug'
+        if args.save_debug:
+            cmd += ' --save_debug'
         worker_procs.append(subprocess.Popen(cmd, env=env, shell=True))
         print(cmd)
         gpu_free[gpu] = False
         gpu_proc[gpu] = worker_procs[-1]
-        gpu_route[gpu] = routenum
 
 except KeyboardInterrupt:
     print('detected keyboard interrupt')
@@ -97,6 +100,7 @@ print('shutting down processes...')
 for proc in carla_procs + worker_procs:
     try:
         kill(proc.pid)
-    except:
+    except Exception as e:
+        traceback.print_exc()
         continue
 print('done')
