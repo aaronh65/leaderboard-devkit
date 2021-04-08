@@ -5,4 +5,7 @@ split: devtest
 #weights_path: team_code/lbc/weights/argmax_training.ckpt
 #temperature: 0.0000001 # 1e-7
 #weights_path: team_code/lbc/weights/test_temp_restore.ckpt
-weights_path: team_code/lbc/weights/expectation_training_noaug.ckpt
+#weights_path: team_code/lbc/weights/expectation_training_noaug.ckpt
+#weights_path: team_code/lbc/weights/20210329_145120/epoch=23.ckpt
+#weights_path: team_code/lbc/weights/20210331_124155/epoch=21.ckpt
+weights_path: team_code/lbc/weights/20210331_165310/epoch=21.ckpt

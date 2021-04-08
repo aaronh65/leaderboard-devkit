@@ -74,7 +74,8 @@ class PrivilegedAgent(MapAgent):
             route_name = os.environ['ROUTE_NAME']
             repetition = os.environ['REPETITION']
             self.save_path = Path(f'{self.config.save_root}/data/{route_name}/{repetition}')
-            self.save_path.mkdir(parents=True, exist_ok=True)
+            self.save_path.mkdir(parents=True, exist_ok=False)
+            print(self.save_path)
 
         if self.config.save_debug:
             (self.save_path / 'debug').mkdir()
@@ -212,7 +213,7 @@ class PrivilegedAgent(MapAgent):
         #print(timestamp) # GAMETIME
 
         condition = not self.burn_in and not self.aconfig.mode == 'forward' # not random
-        condition = condition and (self.config.save_debug and self.step % 5 == 0)
+        condition = condition and (self.config.save_debug and self.step % 4 == 0)
         if condition or HAS_DISPLAY:
             self.debug_display(tick_data, steer, throttle, brake, desired_speed)
 

@@ -12,6 +12,7 @@ parser.add_argument('--split', type=str, default='devtest', choices=['devtest','
 parser.add_argument('--data_root', type=str, default='/data/aaronhua')
 parser.add_argument('--repetitions', type=int, default=1)
 parser.add_argument('--save_debug', action='store_true')
+parser.add_argument('--short_stop', action='store_true')
 parser.add_argument('--id', type=str, default=datetime.now().strftime("%Y%m%d_%H%M%S"))
 args = parser.parse_args()
 
@@ -85,6 +86,8 @@ try:
             cmd += ' --debug'
         if args.save_debug:
             cmd += ' --save_debug'
+        if args.short_stop:
+            cmd += ' --short_stop'
         worker_procs.append(subprocess.Popen(cmd, env=env, shell=True))
         print(cmd)
         gpu_free[gpu] = False
