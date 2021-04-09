@@ -18,17 +18,6 @@ SHOW_HEATMAPS = False
 #    weights = (weights - weights_min) / (weights_max - weights_min)
 #    return weights
 
-@torch.no_grad()
-# assumes n,c,h,w
-def spatial_norm(tensor):
-    n,c,h,w = tensor.shape
-    flat = tensor.clone().detach().view((n,c,h*w))
-    norm_max, _ = torch.max(flat, dim=-1, keepdim=True)
-    norm_min, _ = torch.min(flat, dim=-1, keepdim=True)
-    flat = (flat - norm_min) / (norm_max - norm_min)
-    out = flat.view_as(tensor)
-    return out # n,c,h,w
-
 class RawController(torch.nn.Module):
     def __init__(self, n_input=4, k=32):
         super().__init__()

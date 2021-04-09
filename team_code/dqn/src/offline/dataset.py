@@ -161,14 +161,13 @@ class CarlaDataset(Dataset):
         path = self.dataset_dir
         route, rep = path.parts[-2:]
         frame = self.frames[i]
-        meta = '%s %s %s' % (route, rep, frame)
+        meta = '%s/%s/%s' % (route, rep, frame)
         
-        # check if we're done in the next n steps
-        ni = i + self.hparams.n + 1 # index of the next state in DQN
+        # check for n-step return end index
+        ni = i + self.hparams.n + 1
         ni = min(ni, len(self.frames)-1)
-
-        # panda df slicing is end index inclusive
-        done_list = self.measurements.loc[i:ni-1, 'done'].to_numpy()
+        # check if episode terminated prematurely
+        done_list = self.measurements.loc[i:ni-1, 'done'].to_numpy() # slicing end-inclusive
         done = int(1 in done_list)
         if done:
             ni = i + done_list.index(1) + 1
@@ -212,10 +211,10 @@ class CarlaDataset(Dataset):
                 #topdown, ntopdown, (points_student, points_expert))
 
         info = {'discount': discount, 
+                'points_student': points_student,
                 'points_expert': points_expert,
-                'meta': encode_str(meta)
+                'metadata': torch.Tensor(encode_str(meta))
                 }
-
         
         # state, action, reward, next_state, done, info
         return (topdown, target), points_student, reward, (ntopdown, ntarget), done, info
@@ -262,7 +261,6 @@ if __name__ == '__main__':
     loader = get_dataloader(model.hparams, is_train=False)
 
     for i, batch in enumerate(loader):
-        print(i)
 
         state, action, reward, next_state, done, info = batch
         action = action.cuda()

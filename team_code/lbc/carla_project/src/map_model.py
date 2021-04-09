@@ -10,7 +10,7 @@ import pytorch_lightning as pl
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
 
-from lbc.carla_project.src.models import SegmentationModel, RawController, spatial_norm
+from lbc.carla_project.src.models import SegmentationModel, RawController
 from lbc.carla_project.src.utils.heatmap import ToHeatmap
 from lbc.carla_project.src.dataset import get_dataset
 from lbc.carla_project.src.common import COLOR, CONVERTER

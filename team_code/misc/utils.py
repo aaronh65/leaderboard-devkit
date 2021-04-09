@@ -1,11 +1,6 @@
 import os
 from types import SimpleNamespace
 
-def encode_str(string):
-    return [ord(c) for c in string]
-
-def decode_str(string):
-    return ''.join(chr(c) for c in string)
 
 
 def mkdir_if_not_exists(path, verbose=False):
@@ -41,4 +36,36 @@ def port_in_use(port):
     import socket
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         return s.connect_ex(('localhost', port)) == 0
+
+# TORCH RELEVANT
+import torch
+
+@torch.no_grad()
+# assumes n,c,h,w
+def spatial_norm(tensor):
+    n,c,h,w = tensor.shape
+    flat = tensor.clone().detach().view((n,c,h*w))
+    norm_max, _ = torch.max(flat, dim=-1, keepdim=True)
+    norm_min, _ = torch.min(flat, dim=-1, keepdim=True)
+    flat = (flat - norm_min) / (norm_max - norm_min)
+    out = flat.view_as(tensor)
+    return out # n,c,h,w
+
+# given NxCxHxW and NxCx2 coordinates, retrieve NxCx1 values
+def spatial_select(inp, coord):
+
+    h,w = inp.shape[-2:]
+    x,y = coord[...,0], coord[...,1] #N,4,1
+    flat_idx = torch.unsqueeze(y*w+x,dim=-1).long()
+    flat_inp = inp.view(inp.shape[:-2] + (-1,))
+    res = flat_inp.gather(dim=-1, index=flat_idx)
+    return res #N,C,1
+
+def encode_str(string):
+    return [ord(c) for c in string]
+
+def decode_str(string):
+    return ''.join(chr(c) for c in string)
+
+
 

@@ -11,70 +11,78 @@ import pytorch_lightning as pl
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
 
+from misc.utils import *
 from dqn.src.agents.models import SegmentationModel, RawController, SpatialSoftmax
 from dqn.src.agents.heatmap import ToHeatmap, ToTemporalHeatmap
 from dqn.src.offline.dataset import get_dataloader
-from lbc.carla_project.src.common import COLOR
 from lbc.carla_project.src.common import CONVERTER, COLOR
+from lbc.carla_project.src.map_model import plot_weights
  
 HAS_DISPLAY = int(os.environ['HAS_DISPLAY'])
 
-# takes (N,3,H,W) topdown and (N,4,H,W) vmaps
-# averages t=0.5s,1.0s vmaps and overlays it on topdown
+# takes (N,3,H,W) topdown and (N,4,H,W) logits
+# averages t=0.5s,1.0s logitss and overlays it on topdown
 @torch.no_grad()
-def fuse_vmaps(topdown, vmap, temperature=10, alpha=0.75):
+def fuse_logits(topdown, logits, temperature=10, alpha=0.75):
 
-    vmap_mean = torch.mean(vmap[:,0:2,:,:], dim=1, keepdim=True) # N,1,H,W
-    vmap_flat = vmap_mean.view(vmap_mean.shape[:-2] + (-1,)) # N,1,H*W
-    vmap_prob = F.softmax(vmap_flat/temperature, dim=-1) # to prob
-    vmap_norm = vmap_prob / torch.max(vmap_prob, dim=-1, keepdim=True)[0] # to [0,1]
-    vmap_show = (vmap_norm * 256).view_as(vmap_mean).cpu().numpy().astype(np.uint8) # N,1,H,W
-    vmap_show = np.repeat(vmap_show, repeats=3, axis=1).transpose((0,2,3,1)) # N,H,W,3
+    logits_mean = torch.mean(logits[:,0:2,:,:], dim=1, keepdim=True) # N,1,H,W
+    logits_norm = spatial_norm(logits_mean).cpu().numpy()*255
+    logits_norm = logits_norm.astype(np.uint8)
+    print(logits_norm)
+    #logits_flat = logits_mean.view(logits_mean.shape[:-2] + (-1,)) # N,1,H*W
+    #logits_prob = F.softmax(logits_flat/temperature, dim=-1) # to prob
+    #logits_norm = logits_prob / torch.max(logits_prob, dim=-1, keepdim=True)[0] # to [0,1]
+    #logits_show = (logits_norm * 256).view_as(logits_mean).cpu().numpy().astype(np.uint8) # N,1,H,W
+    logits_show = np.repeat(logits_norm, repeats=3, axis=1).transpose((0,2,3,1)) # N,H,W,3
     fused = np.array(COLOR[topdown.argmax(1).cpu()]).astype(np.uint8) # N,H,W,3
     for i in range(fused.shape[0]):
-        cv2.addWeighted(vmap_show[i], alpha, fused[i], 1, 0, fused[i])
+        cv2.addWeighted(logits_show[i], alpha, fused[i], 1, 0, fused[i])
     fused = fused.astype(np.uint8) # (N,H,W,3)
     return fused
 
 # visualize each timestep's heatmap?
 @torch.no_grad()
-def visualize(batch, vmap, hmap, nvmap, nhmap, naction, meta, r=2):
+def visualize(batch, logits, tmap, nlogits, ntmap, naction, meta, r=2):
 
     text_color = (255,255,255)
-    dqn_color = (65,105,225) # dark blue
     aim_color = (60,179,113) # dark green
-    lbc_color = (178,34,34) # dark red
+    student_color = (65,105,225) # dark blue
+    expert_color = (178,34,34) # dark red
     route_colors = [(255,255,255), (112,128,144), (47,79,79), (47,79,79)] 
 
     state, action, reward, next_state, done, info = batch
-    hparams, td_loss, margin_loss = meta['hparams'], meta['td_loss'], meta['margin_loss']
+    batch_loss, td_loss, margin_loss = meta['batch_loss'], meta['td_loss'], meta['margin_loss']
+    hparams = meta['hparams']
     Q, nQ = meta['Q'], meta['nQ']
     discount = info['discount'].cpu()
     n = hparams.n
 
     topdown, target = state
-    fused = fuse_vmaps(topdown, vmap, hparams.temperature, 1.0)
+    fused = fuse_logits(topdown, logits, hparams.temperature, 1.0)
 
     ntopdown, ntarget = next_state
-    nfused = fuse_vmaps(ntopdown, nvmap, hparams.temperature, 1.0)
+    nfused = fuse_logits(ntopdown, nlogits, hparams.temperature, 1.0)
 
     images = list()
     for i in range(min(action.shape[0], 32)):
 
         # current state
         _topdown = fused[i]
-        _topdown[hmap[i][0].cpu() > 0.1] = 255
+        _topdown[tmap[i][0].cpu() > 0.1] = 255
         _topdown = Image.fromarray(_topdown)
         _draw = ImageDraw.Draw(_topdown)
         _action = action[i].cpu().numpy().astype(np.uint8) # (4,2)
-        if 'points_lbc' in info.keys():
-            points_lbc = info['points_lbc']
-            for x, y in points_lbc[i]:
-                _draw.ellipse((x-r, y-r, x+r, y+r), lbc_color)
-        if 'points_dqn' in info.keys():
-            points_dqn = info['points_dqn']
-            for x, y in points_dqn[i][:2]:
-                _draw.ellipse((x-r, y-r, x+r, y+r), dqn_color)
+        for x, y in _action:
+            _draw.ellipse((x-r, y-r, x+r, y+r), expert_color)
+        #if 'points_expert' in info.keys():
+        #    points_expert = info['points_expert']
+        #    for x, y in points_expert[i]:
+        #        _draw.ellipse((x-r, y-r, x+r, y+r), expert_color)
+        #if 'points_student' in info.keys():
+        #    points_student = info['points_student']
+        #    for x, y in points_student[i]:
+        #        continue
+        #        _draw.ellipse((x-r, y-r, x+r, y+r), student_color)
         x, y = np.mean(_action[0:2], axis=0)
         _draw.ellipse((x-r, y-r, x+r, y+r), aim_color)
 
@@ -85,30 +93,34 @@ def visualize(batch, vmap, hmap, nvmap, nhmap, naction, meta, r=2):
 
         # next state
         _ntopdown = nfused[i]
-        _ntopdown[nhmap[i][0].cpu() > 0.1] = 255
+        _ntopdown[ntmap[i][0].cpu() > 0.1] = 255
         _ntopdown = Image.fromarray(_ntopdown)
         _ndraw = ImageDraw.Draw(_ntopdown)
         _naction = naction[i].cpu().numpy().astype(np.uint8) # (4,2)
-        for x, y in _naction[0:2]:
-            _ndraw.ellipse((x-r, y-r, x+r, y+r), dqn_color)
+        for x, y in _naction:
+            _ndraw.ellipse((x-r, y-r, x+r, y+r), student_color)
         x, y = np.mean(_naction[0:2], axis=0)
         _ndraw.ellipse((x-r, y-r, x+r, y+r), aim_color)
 
         _ndraw.text((5, 10), f'action = ({x},{y})', text_color)
         _ndraw.text((5, 20), f'nQ = {nQ[i].item():.2f}', text_color)
         _ndraw.text((5, 30), f'discount = {discount[i].item():.2f}', text_color)
-        _ndraw.text((5, 40), f'td_loss = {td_loss[i].item():.2f}', text_color)
-        _ndraw.text((5, 50), f'margin_loss = {margin_loss[i].item():.2f}', text_color)
+        _td_loss = f'{td_loss[i].item():.2f}'
+        _margin_loss = f'{margin_loss[i].item():.2f}'
+        _batch_loss = f'{batch_loss[i].item():.2f}'
+        _ndraw.text((5, 40), f'batch_loss = {_td_loss} + {_margin_loss} = {_batch_loss}', text_color)
+        _metadata = decode_str(info['metadata'][i])
+        _ndraw.text((5, 50), f'meta = {_metadata}', text_color)
 
         _combined = np.hstack((np.array(_topdown), np.array(_ntopdown)))
         if HAS_DISPLAY:
             cv2.imshow(f'topdown{i}', cv2.cvtColor(_combined, cv2.COLOR_BGR2RGB))
         _combined = _combined.transpose(2,0,1)
-        images.append((td_loss[i].item() + margin_loss[i].item(), torch.ByteTensor(_combined)))
+        images.append((batch_loss[i].item(), torch.ByteTensor(_combined)))
         #images.append((td_loss[i].item(), torch.ByteTensor(_combined)))
 
     if HAS_DISPLAY:
-        cv2.waitKey(1)
+        cv2.waitKey(0)
 
     images.sort(key=lambda x: x[0], reverse=True)
     result = torchvision.utils.make_grid([x[1] for x in images], nrow=4)
@@ -139,6 +151,8 @@ class MapModel(pl.LightningModule):
 
     def restore_from_lbc(self, weights_path):
         from lbc.carla_project.src.map_model import MapModel as LBCModel
+
+        print('restoring from LBC')
         lbc_model = LBCModel.load_from_checkpoint(weights_path)
         self.net.load_state_dict(lbc_model.net.state_dict())
         self.temperature = lbc_model.temperature
@@ -194,36 +208,16 @@ class MapModel(pl.LightningModule):
 
         return points, logits, weights, target_heatmap
 
-    # given NxCxHxW and NxCx2 coordinates, retrieve NxCx1 values
-    def spatial_select(self, inp, coord):
-
-        h,w = inp.shape[-2:]
-        x,y = coord[...,0], coord[...,1] #N,4,1
-        flat_idx = torch.unsqueeze(y*w+x,dim=-1).long()
-        flat_inp = inp.view(inp.shape[:-2] + (-1,))
-        res = flat_inp.gather(dim=-1, index=flat_idx)
-        return res #N,C,1
-
-    # two modes: sample, argmax?
-    def get_dqn_actions(self, vmap, explore=False):
-        #aim_vmap = torch.mean(vmap[:,0:2,:,:], dim=1) #(N, H, W)
-        vmap_flat = vmap.view(vmap.shape[:-2] + (-1,)) # (N, 4, H*W)
-        Q_all, action_flat = torch.max(vmap_flat, -1, keepdim=True) # (N, 4, 1)
-
-        if explore:
-            pass
-            # figure out vectorized sampling...
-            #probs = vmap_flat / Q_all
-            #print(probs.shape)
-            #action_flat = np.random.choice(
-            #        np.arange(256*256), 
-            #        size=(len(vmap_flat), 4, 1), 
-            #        p=probs.cpu().numpy())
-            #print(action_flat.shape)
+        # two modes: sample, argmax?
+    def get_dqn_actions(self, logits, explore=False):
+        #aim_logits = torch.mean(logits[:,0:2,:,:], dim=1) #(N, H, W)
+        h,w = logits.shape[-2:]
+        logits_flat = logits.view(logits.shape[:-2] + (-1,)) # (N, 4, H*W)
+        Q_all, action_flat = torch.max(logits_flat, -1, keepdim=True) # (N, 4, 1)
 
         action = torch.cat((
-            action_flat % 256,
-            action_flat // 256),
+            action_flat % w,
+            action_flat // w),
             axis=2) # (N, C, 2)
         
         return action, Q_all # (N,4,2), (N,4,1)
@@ -243,7 +237,7 @@ class MapModel(pl.LightningModule):
         state, action, reward, next_state, done, info = batch
         topdown, target = state
         points, logits, weights, tmap = self.forward(topdown, target, debug=True)
-        Q_all = self.get_Q_values(logits, action)
+        Q_all = spatial_select(logits, action)
         Q = torch.mean(Q_all, axis=1, keepdim=False)
 
         ntopdown, ntarget = next_state
@@ -260,11 +254,11 @@ class MapModel(pl.LightningModule):
 
         # expert margin loss
         points_expert = info['points_expert']
-        Q_expert_all = self.get_Q_values(logits, info['points_expert']) #N,T,1
+        Q_expert_all = spatial_select(logits, info['points_expert']) #N,T,1
         Q_expert = torch.mean(Q_expert_all.squeeze(), axis=-1, keepdim=True) #N,1
 
         margin_map = torch.ones_like(logits)*8 #N,T,H,W
-        margin_map_expert = self.spatial_select(margin_map, points_expert)
+        margin_map_expert = spatial_select(margin_map, points_expert)
         margin_map_expert = 0
         _, Q_margin_all = self.get_dqn_actions(margin_map + logits) #N,T,1
         Q_margin = torch.mean(Q_margin_all.squeeze(), axis=-1, keepdim=True) #N,1
@@ -272,9 +266,7 @@ class MapModel(pl.LightningModule):
         margin_loss = self.hparams.lambda_margin * margin_loss
 
         batch_loss = td_loss + margin_loss #N,1
-        print(batch_loss.shape)
         loss = torch.mean(batch_loss, dim=0) #1,
-        print(loss.shape)
 
         if batch_nb % 50 == 0:
             # TODO: handle debug images
@@ -284,10 +276,13 @@ class MapModel(pl.LightningModule):
 
             meta = {
                     'Q': Q, 'nQ': nQ, 'hparams': self.hparams,
+                    'batch_loss': batch_loss,
                     'td_loss': td_loss, 
                     'margin_loss': margin_loss,
+                    'metadata': info['metadata'],
                     }
             images, result = visualize(batch, logits, tmap, nlogits, ntmap, naction, meta)
+            #images, result = visualize(batch, weights, tmap, nweights, ntmap, naction, meta)
             metrics['train_image'] = result
             
         if self.logger != None:
@@ -309,7 +304,7 @@ class MapModel(pl.LightningModule):
         state, action, reward, next_state, done, info = batch
         topdown, target = state
         points, logits, weights, tmap = self.forward(topdown, target, debug=True)
-        Q_all  = self.get_Q_values(logits, action).squeeze() #NxT
+        Q_all = spatial_select(weights, action).squeeze() #NxT
         Q = torch.mean(Q_all, axis=-1, keepdim=True)
 
         ntopdown, ntarget = next_state
@@ -324,30 +319,20 @@ class MapModel(pl.LightningModule):
 
         # expert margin loss
         points_expert = info['points_expert']
-        Q_expert_all = self.get_Q_values(logits, info['points_expert']) #N,T,1
+        Q_expert_all = spatial_select(logits, points_expert) #N,T,1
         Q_expert = torch.mean(Q_expert_all.squeeze(), axis=-1, keepdim=True) #N,1
 
         margin_map = torch.ones_like(logits)*8 #N,T,H,W
-        margin_map_expert = self.spatial_select(margin_map, points_expert)
+        margin_map_expert = spatial_select(margin_map, points_expert)
         margin_map_expert = 0
         _, Q_margin_all = self.get_dqn_actions(margin_map + logits) #N,T,1
         Q_margin = torch.mean(Q_margin_all.squeeze(), axis=-1, keepdim=True) #N,1
+
         margin_loss = Q_margin - Q_expert
         margin_loss = self.hparams.lambda_margin * margin_loss
 
-        #margin_map = Q + margin_map - Q_expert.squeeze()
-        #margin_map = margin_map.view(margin_map.shape[:2] + (-1,))
-        #margin_loss = torch.max(margin_loss, dim=-1)[0] # Nx1
-        #margin_loss = self.hparams.lambda_margin * torch.sum(margin_loss)
-
-
         batch_loss = td_loss + margin_loss
-        #if not self.hparams.no_margin:
-        #    batch_loss += margin_loss
-        #if not self.hparams.no_td:
-        #    batch_loss += td_loss
         val_loss = torch.mean(batch_loss, axis=0)
-        print(val_loss.shape)
 
                 
         if self.logger != None:
@@ -359,10 +344,14 @@ class MapModel(pl.LightningModule):
 
             meta = {
                     'Q': Q, 'nQ': nQ, 'hparams': self.hparams, 
+                    'batch_loss': batch_loss,
                     'td_loss': td_loss,
                     'margin_loss': margin_loss,
+                    'metadata': info['metadata']
                     }
+            print(logits)
             images, result = visualize(batch, logits, tmap, nlogits, ntmap, naction, meta)
+            #images, result = visualize(batch, weights, tmap, nweights, ntmap, naction, meta)
             metrics['val_image'] = result
 
             self.logger.log_metrics(metrics, self.global_step)
@@ -411,7 +400,16 @@ def main(args):
     checkpoint_callback = ModelCheckpoint(args.save_dir, save_top_k=1) # figure out what's up with this
 
     # resume and add a couple arguments
-    model = MapModel(args)
+    if args.restore_from is not None:
+        if 'lbc' in args.restore_from:
+            model = MapModel(args)
+            model.restore_from_lbc(args.restore_from)
+        elif 'dqn' in args.restore_from:
+            model = MapModel.load_from_checkpoint(args.restore_from)
+            pass
+    else:
+        model = MapModel(args)
+
     #model = MapModel.load_from_checkpoint(RESUME)
     #model.hparams.max_epochs = args.max_epochs
     #model.hparams.dataset_dir = args.dataset_dir
@@ -453,7 +451,7 @@ if __name__ == '__main__':
 
     parser.add_argument('-D', '--debug', action='store_true')
     parser.add_argument('-G', '--gpus', type=int, default=-1)
-    parser.add_argument('--restore_from', type=Path)
+    parser.add_argument('--restore_from', type=str)
     parser.add_argument('--save_dir', type=Path)
     parser.add_argument('--id', type=str, default=datetime.now().strftime("%Y%m%d_%H%M%S")) 
     parser.add_argument('--data_root', type=Path, default='/data/aaronhua')
