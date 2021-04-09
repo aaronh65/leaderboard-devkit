@@ -2,20 +2,18 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-import torch
 import imgaug.augmenters as iaa
 import pandas as pd
+import torch
 
 from torch.utils.data import Dataset
 from torchvision import transforms
 from PIL import Image
-from numpy import nan
 
-from lbc.carla_project.src.converter import Converter, PIXELS_PER_WORLD
+from lbc.carla_project.src.converter import PIXELS_PER_WORLD
 from lbc.carla_project.src.dataset_wrapper import Wrap
-from lbc.carla_project.src import common
+from lbc.carla_project.src.common import *
 from misc.utils import *
-
 
 # Reproducibility.
 #np.random.seed(0)
@@ -24,8 +22,7 @@ from misc.utils import *
 # Data has frame skip of 5.
 GAP = 1
 STEPS = 4
-N_CLASSES = len(common.COLOR)
-
+N_CLASSES = len(COLOR)
 
 def get_weights(data, key='speed', bins=4):
     if key == 'none':
@@ -147,7 +144,6 @@ class CarlaDataset(Dataset):
         self.measurements = pd.DataFrame([eval(x.read_text()) for x in measurements])
 
         self.transform = transform
-        self.converter = Converter()
 
         self.hparams = hparams
 
@@ -229,7 +225,6 @@ class CarlaDataset(Dataset):
         # heatmap = make_heatmap((256, 256), target)
         # heatmap = torch.FloatTensor(heatmap).unsqueeze(0)
 
-        # command_img = self.converter.map_to_cam(torch.FloatTensor(target))
         # heatmap_img = make_heatmap((144, 256), command_img)
         # heatmap_img = torch.FloatTensor(heatmap_img).unsqueeze(0)
 

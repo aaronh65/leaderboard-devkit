@@ -13,12 +13,11 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 
 from dqn.src.agents.models import SegmentationModel, RawController, SpatialSoftmax
 from dqn.src.agents.heatmap import ToHeatmap, ToTemporalHeatmap
+from dqn.src.offline.dataset import get_dataloader
 from lbc.carla_project.src.common import COLOR
 from lbc.carla_project.src.common import CONVERTER, COLOR
  
 HAS_DISPLAY = int(os.environ['HAS_DISPLAY'])
-PROJECT_ROOT = os.environ['PROJECT_ROOT']
-RESUME = f'{PROJECT_ROOT}/team_code/rl/config/weights/lbc_expert.ckpt'
 
 # takes (N,3,H,W) topdown and (N,4,H,W) vmaps
 # averages t=0.5s,1.0s vmaps and overlays it on topdown
@@ -138,7 +137,13 @@ class MapModel(pl.LightningModule):
         self.margin_weight = 100
 
 
-        
+    def restore_from_lbc(self, weights_path):
+        from lbc.carla_project.src.map_model import MapModel as LBCModel
+        lbc_model = LBCModel.load_from_checkpoint(weights_path)
+        self.net.load_state_dict(lbc_model.net.state_dict())
+        self.temperature = lbc_model.temperature
+        self.to_heatmap = lbc_model.to_heatmap
+       
     #def setup_train(self, env, config):
     #    self.config = config
     #    self.env = env
@@ -189,6 +194,16 @@ class MapModel(pl.LightningModule):
 
         return points, logits, weights, target_heatmap
 
+    # given NxCxHxW and NxCx2 coordinates, retrieve NxCx1 values
+    def spatial_select(self, inp, coord):
+
+        h,w = inp.shape[-2:]
+        x,y = coord[...,0], coord[...,1] #N,4,1
+        flat_idx = torch.unsqueeze(y*w+x,dim=-1).long()
+        flat_inp = inp.view(inp.shape[:-2] + (-1,))
+        res = flat_inp.gather(dim=-1, index=flat_idx)
+        return res #N,C,1
+
     # two modes: sample, argmax?
     def get_dqn_actions(self, vmap, explore=False):
         #aim_vmap = torch.mean(vmap[:,0:2,:,:], dim=1) #(N, H, W)
@@ -213,11 +228,13 @@ class MapModel(pl.LightningModule):
         
         return action, Q_all # (N,4,2), (N,4,1)
 
-    def get_Q_values(self, vmap, action):
+    def get_Q_values(self, logits, action):
         x, y = action[...,0], action[...,1] # Nx4
-        action_flat = torch.unsqueeze(y*256 + x, dim=2) # (N,4, 1)
-        vmap_flat = vmap.view(vmap.shape[:-2] + (-1,)) # (N, 4, H*W)
-        Q_all = vmap_flat.gather(2, action_flat.long()) # (N, 4, 1)
+        action_flat = torch.unsqueeze(y*256 + x, dim=2).long() # (N,4, 1)
+        action_flat = torch.clamp(action_flat, 0, 256*256-1)
+        logits_flat = logits.view(logits.shape[:-2] + (-1,)) # (N, 4, H*W)
+        Q_all = logits_flat.gather(dim=-1, index=action_flat) # (N, 4, 1)
+        #print(Q_all.shape)
         return Q_all # (N,4,1)
 
     def training_step(self, batch, batch_nb):
@@ -225,36 +242,39 @@ class MapModel(pl.LightningModule):
 
         state, action, reward, next_state, done, info = batch
         topdown, target = state
-        points, vmap, hmap = self.forward(topdown, target, debug=True)
-        Q_all = self.get_Q_values(vmap, action)
-        Q = torch.mean(Q_all[:, :2], axis=1, keepdim=False)
+        points, logits, weights, tmap = self.forward(topdown, target, debug=True)
+        Q_all = self.get_Q_values(logits, action)
+        Q = torch.mean(Q_all, axis=1, keepdim=False)
 
         ntopdown, ntarget = next_state
         with torch.no_grad():
-            npoints, nvmap, nhmap = self.forward(ntopdown, ntarget, debug=True)
-        naction, nQ_all = self.get_dqn_actions(nvmap)
-        nQ = torch.mean(nQ_all[:, :2], axis=1, keepdim=False)
+            npoints, nlogits, nweights, ntmap = self.forward(ntopdown, ntarget, debug=True)
+        naction, nQ_all = self.get_dqn_actions(nlogits)
+        nQ = torch.mean(nQ_all, axis=1, keepdim=False)
+
 
         # td loss
         discount = info['discount']
         td_target = reward + discount * nQ * (1-done)
-        td_loss = self.td_criterion(Q, td_target) # TD(n) error Nx1
+        td_loss = self.hparams.lambda_td * self.td_criterion(Q, td_target) # TD(n) error Nx1
 
         # expert margin loss
-        expert_heatmap = self.expert_heatmap(info['points_lbc'], vmap)
-        margin = vmap + (1 - expert_heatmap)
-        _, Q_margin = self.get_dqn_actions(margin)
-        Q_expert = self.get_Q_values(vmap, info['points_lbc'])
-        margin_loss = Q_margin - Q_expert # Nx4
-        margin_loss = self.margin_weight*torch.mean(margin_loss, axis=1, keepdim=False) # Nx1
+        points_expert = info['points_expert']
+        Q_expert_all = self.get_Q_values(logits, info['points_expert']) #N,T,1
+        Q_expert = torch.mean(Q_expert_all.squeeze(), axis=-1, keepdim=True) #N,1
 
-        batch_loss = 0
-        if not self.hparams.no_margin:
-            batch_loss += margin_loss
-        if not self.hparams.no_td:
-            batch_loss += td_loss
-        loss = torch.mean(batch_loss, dim=0)
-        
+        margin_map = torch.ones_like(logits)*8 #N,T,H,W
+        margin_map_expert = self.spatial_select(margin_map, points_expert)
+        margin_map_expert = 0
+        _, Q_margin_all = self.get_dqn_actions(margin_map + logits) #N,T,1
+        Q_margin = torch.mean(Q_margin_all.squeeze(), axis=-1, keepdim=True) #N,1
+        margin_loss = Q_margin - Q_expert
+        margin_loss = self.hparams.lambda_margin * margin_loss
+
+        batch_loss = td_loss + margin_loss #N,1
+        print(batch_loss.shape)
+        loss = torch.mean(batch_loss, dim=0) #1,
+        print(loss.shape)
 
         if batch_nb % 50 == 0:
             # TODO: handle debug images
@@ -267,7 +287,7 @@ class MapModel(pl.LightningModule):
                     'td_loss': td_loss, 
                     'margin_loss': margin_loss,
                     }
-            images, result = visualize(batch, vmap, hmap, nvmap, nhmap, naction, meta)
+            images, result = visualize(batch, logits, tmap, nlogits, ntmap, naction, meta)
             metrics['train_image'] = result
             
         if self.logger != None:
@@ -288,34 +308,46 @@ class MapModel(pl.LightningModule):
 
         state, action, reward, next_state, done, info = batch
         topdown, target = state
-        points, vmap, hmap = self.forward(topdown, target, debug=True)
-        Q_all = self.get_Q_values(vmap, action)
-        Q = torch.mean(Q_all[:, :2], axis=1, keepdim=False)
+        points, logits, weights, tmap = self.forward(topdown, target, debug=True)
+        Q_all  = self.get_Q_values(logits, action).squeeze() #NxT
+        Q = torch.mean(Q_all, axis=-1, keepdim=True)
 
         ntopdown, ntarget = next_state
-        npoints, nvmap, nhmap = self.forward(ntopdown, ntarget, debug=True)
-        naction, nQ_all = self.get_dqn_actions(nvmap)
-        nQ = torch.mean(nQ_all[:, :2], axis=1, keepdim=False)
+        npoints, nlogits, nweights, ntmap = self.forward(ntopdown, ntarget, debug=True)
+        naction, nQ_all = self.get_dqn_actions(nlogits)
+        nQ = torch.mean(nQ_all.squeeze(), axis=-1, keepdim=True) # N,1
 
         # td loss
         discount = info['discount']
         td_target = reward + discount * nQ * (1-done)
-        td_loss = self.td_criterion(Q, td_target) # TD(n) error Nx1
+        td_loss = self.hparams.lambda_td * self.td_criterion(Q, td_target) # TD(n) error Nx1
 
         # expert margin loss
-        expert_heatmap = self.expert_heatmap(info['points_lbc'], vmap)
-        margin = vmap + (1 - expert_heatmap)
-        _, Q_margin = self.get_dqn_actions(margin)
-        Q_expert = self.get_Q_values(vmap, info['points_lbc'])
-        margin_loss = Q_margin - Q_expert # Nx4
-        margin_loss = self.margin_weight*torch.mean(margin_loss, axis=1, keepdim=False) # Nx1
+        points_expert = info['points_expert']
+        Q_expert_all = self.get_Q_values(logits, info['points_expert']) #N,T,1
+        Q_expert = torch.mean(Q_expert_all.squeeze(), axis=-1, keepdim=True) #N,1
 
-        batch_loss = 0
-        if not self.hparams.no_margin:
-            batch_loss += margin_loss
-        if not self.hparams.no_td:
-            batch_loss += td_loss
+        margin_map = torch.ones_like(logits)*8 #N,T,H,W
+        margin_map_expert = self.spatial_select(margin_map, points_expert)
+        margin_map_expert = 0
+        _, Q_margin_all = self.get_dqn_actions(margin_map + logits) #N,T,1
+        Q_margin = torch.mean(Q_margin_all.squeeze(), axis=-1, keepdim=True) #N,1
+        margin_loss = Q_margin - Q_expert
+        margin_loss = self.hparams.lambda_margin * margin_loss
+
+        #margin_map = Q + margin_map - Q_expert.squeeze()
+        #margin_map = margin_map.view(margin_map.shape[:2] + (-1,))
+        #margin_loss = torch.max(margin_loss, dim=-1)[0] # Nx1
+        #margin_loss = self.hparams.lambda_margin * torch.sum(margin_loss)
+
+
+        batch_loss = td_loss + margin_loss
+        #if not self.hparams.no_margin:
+        #    batch_loss += margin_loss
+        #if not self.hparams.no_td:
+        #    batch_loss += td_loss
         val_loss = torch.mean(batch_loss, axis=0)
+        print(val_loss.shape)
 
                 
         if self.logger != None:
@@ -330,7 +362,7 @@ class MapModel(pl.LightningModule):
                     'td_loss': td_loss,
                     'margin_loss': margin_loss,
                     }
-            images, result = visualize(batch, vmap, hmap, nvmap, nhmap, naction, meta)
+            images, result = visualize(batch, logits, tmap, nlogits, ntmap, naction, meta)
             metrics['val_image'] = result
 
             self.logger.log_metrics(metrics, self.global_step)
@@ -379,21 +411,22 @@ def main(args):
     checkpoint_callback = ModelCheckpoint(args.save_dir, save_top_k=1) # figure out what's up with this
 
     # resume and add a couple arguments
-    model = MapModel.load_from_checkpoint(RESUME)
-    model.hparams.max_epochs = args.max_epochs
-    model.hparams.dataset_dir = args.dataset_dir
-    model.hparams.batch_size = args.batch_size
-    model.hparams.save_dir = args.save_dir
-    model.hparams.n = args.n
-    model.hparams.gamma = args.gamma
-    model.hparams.num_workers = args.num_workers
-    model.hparams.no_margin = args.no_margin
-    model.hparams.no_td = args.no_td
-    model.hparams.data_mode = 'offline'
+    model = MapModel(args)
+    #model = MapModel.load_from_checkpoint(RESUME)
+    #model.hparams.max_epochs = args.max_epochs
+    #model.hparams.dataset_dir = args.dataset_dir
+    #model.hparams.batch_size = args.batch_size
+    #model.hparams.save_dir = args.save_dir
+    #model.hparams.n = args.n
+    #model.hparams.gamma = args.gamma
+    #model.hparams.num_workers = args.num_workers
+    #model.hparams.no_margin = args.no_margin
+    #model.hparams.no_td = args.no_td
+    #model.hparams.data_mode = 'offline'
 
     with open(args.save_dir / 'config.yml', 'w') as f:
         hparams_copy = copy.copy(vars(model.hparams))
-        hparams_copy['dataset_dir'] = str(model.dataset_dir)
+        hparams_copy['dataset_dir'] = str(model.hparams.dataset_dir)
         hparams_copy['save_dir'] = str(model.hparams.save_dir)
         del hparams_copy['id']
         yaml.dump(hparams_copy, f, default_flow_style=False, sort_keys=False)
@@ -402,7 +435,7 @@ def main(args):
     # when resuming, the network starts at epoch 36
     trainer = pl.Trainer(
         gpus=args.gpus, max_epochs=args.max_epochs,
-        resume_from_checkpoint=RESUME,
+        #resume_from_checkpoint=RESUME,
         logger=logger,
         checkpoint_callback=checkpoint_callback,
         distributed_backend='dp',)
@@ -419,43 +452,36 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     parser.add_argument('-D', '--debug', action='store_true')
+    parser.add_argument('-G', '--gpus', type=int, default=-1)
+    parser.add_argument('--restore_from', type=Path)
+    parser.add_argument('--save_dir', type=Path)
+    parser.add_argument('--id', type=str, default=datetime.now().strftime("%Y%m%d_%H%M%S")) 
+    parser.add_argument('--data_root', type=Path, default='/data/aaronhua')
+    parser.add_argument('--log', action='store_true')
 
     # Trainer args
+    parser.add_argument('--dataset_dir', type=Path)
     parser.add_argument('--max_epochs', type=int, default=50)
     parser.add_argument('--num_workers', type=int, default=4)
-    parser.add_argument('-G', '--gpus', type=int, default=-1)
-    
-    parser.add_argument('--save_dir', type=pathlib.Path)
-    parser.add_argument('--data_root', type=pathlib.Path, default='/data')
-    parser.add_argument('--id', type=str, default=datetime.now().strftime("%Y%m%d_%H%M%S")) 
-    #parser.add_argument('--offline', action='store_true', default=False)
+    parser.add_argument('--gamma', type=float, default=0.99)
+    parser.add_argument('--lambda_margin', type=float, default=1.0)
+    parser.add_argument('--lambda_td', type=float, default=1.0)
+    parser.add_argument('--lr', type=float, default=1e-4)
+    parser.add_argument('--n', type=int, default=20)
+    parser.add_argument('--batch_size', type=int, default=4)
+    parser.add_argument('--sample_by', type=str, 
+            choices=['none', 'even', 'speed', 'steer'], default='even')
+    parser.add_argument('--weight_decay', type=float, default=0.0)
 
     # Model args
     parser.add_argument('--heatmap_radius', type=int, default=5)
-    #parser.add_argument('--command_coefficient', type=float, default=0.1)
     parser.add_argument('--temperature', type=float, default=10.0)
     parser.add_argument('--hack', action='store_true', default=False) # what is this again?
-    parser.add_argument('--batch_size', type=int, default=4)
-    parser.add_argument('--weight_decay', type=float, default=0.0)
-    parser.add_argument('--lr', type=float, default=1e-4)
-    parser.add_argument('--n', type=int, default=20)
-    parser.add_argument('--sample_by', type=str, 
-            choices=['none', 'even', 'speed', 'steer'], default='none')
-    parser.add_argument('--gamma', type=float, default=0.99)
-    parser.add_argument('--no_margin', action='store_true')
-    parser.add_argument('--no_td', action='store_true')
-
-    # Program args
-    parser.add_argument('--dataset_dir', type=pathlib.Path)
-    parser.add_argument('--log', action='store_true')
-
-    
+        
     args = parser.parse_args()
-    assert not (args.no_margin and args.no_td), 'no loss provided for training'
 
-    if args.dataset_dir is None: # local
-        #args.dataset_dir = '/data/leaderboard/data/rl/dspred/debug/20210311_143718'
-        args.dataset_dir = '/data/leaderboard/data/rl/dspred/20210311_213726'
+    if args.dataset_dir is None:
+        args.dataset_dir = '/data/aaronhua/leaderboard/data/dqn/20210407_024101'
 
     suffix = f'debug/{args.id}' if args.debug else args.id
     save_root = args.data_root / f'leaderboard/training/rl/dspred/{suffix}'

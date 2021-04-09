@@ -36,8 +36,6 @@ class ToTemporalHeatmap(torch.nn.Module):
         return heatmap
 
 
-    pass
-
 class ToHeatmap(torch.nn.Module):
     def __init__(self, radius=5):
         super().__init__()

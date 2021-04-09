@@ -34,14 +34,10 @@ class PrivilegedAgent(MapAgent):
 
         self.converter = Converter()
 
-        weights_path = Path(self.aconfig.weights_path)
-        if 'lbc' in str(weights_path):
-            from lbc.carla_project.src.map_model import MapModel as LBCModel
-            lbc_model = LBCModel.load_from_checkpoint(weights_path)
+        weights_path = self.aconfig.weights_path
+        if 'lbc' in weights_path:
             self.net = MapModel()
-            self.net.net.load_state_dict(lbc_model.net.state_dict())
-            self.net.temperature = lbc_model.temperature
-            self.net.to_heatmap = lbc_model.to_heatmap
+            self.net.restore_from_lbc(weights_path)
         else:
             self.net = MapModel.load_from_checkpoint(weights_path)
         self.net.cuda()
