@@ -1,7 +1,7 @@
 #####################
 # this script is usually used on a remote cluster
 
-import os, sys, time
+import os, sys, time, shutil
 import yaml, argparse
 import subprocess, psutil, traceback
 from datetime import datetime

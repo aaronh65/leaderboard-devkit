@@ -200,7 +200,7 @@ class PrivilegedAgent(MapAgent):
         control.brake = float(brake)
         #print(timestamp) # GAMETIME
 
-        if DEBUG or self.config.save_debug:
+        if DEBUG or self.config.save_debug and self.step % 4 == 0:
 
             # transform image model cam points to overhead BEV image (spectator frame?)
             self.debug_display(
@@ -279,7 +279,7 @@ class PrivilegedAgent(MapAgent):
         _topdown = _topdown.resize((256, 256))
         _save_img = Image.fromarray(np.hstack([_combined, _topdown]))
         _save_img = cv2.cvtColor(np.array(_save_img), cv2.COLOR_BGR2RGB)
-        if self.step % 10 == 0 and self.config.save_debug:
+        if self.step % 4 == 0 and self.config.save_debug:
             frame_number = self.step // 10
             save_path = self.save_path / 'debug' / f'{frame_number:06d}.png'
             cv2.imwrite(str(save_path), _save_img)
