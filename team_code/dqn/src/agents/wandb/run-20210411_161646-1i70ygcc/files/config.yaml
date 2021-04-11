@@ -1,0 +1,171 @@
+wandb_version: 1
+
+_wandb:
+  desc: null
+  value:
+    cli_version: 0.10.25
+    framework: lightning
+    is_jupyter_run: false
+    is_kaggle_kernel: false
+    python_version: 3.7.9
+    t:
+      1:
+      - 1
+      - 9
+      2:
+      - 1
+      - 9
+      3:
+      - 2
+      4: 3.7.9
+      5: 0.10.25
+      8:
+      - 5
+    visualize:
+      train/Qmap_hist:
+        panel_config:
+          fieldSettings:
+            value: Qmap
+          panelDefId: wandb/histogram/v0
+          stringSettings:
+            title: Qmap/b0/c0 distribution
+          transform:
+            name: tableWithLeafColNames
+          userQuery:
+            queryFields:
+            - args:
+              - name: runSets
+                value: ${runSets}
+              fields:
+              - fields: []
+                name: id
+              - fields: []
+                name: name
+              - fields: []
+                name: _defaultColorIndex
+              - args:
+                - name: tableKey
+                  value: train/Qmap_hist_table
+                fields: []
+                name: summaryTable
+              name: runSets
+        panel_type: Vega2
+      train/logits_hist:
+        panel_config:
+          fieldSettings:
+            value: logits
+          panelDefId: wandb/histogram/v0
+          stringSettings:
+            title: logits/b0/c0 distribution
+          transform:
+            name: tableWithLeafColNames
+          userQuery:
+            queryFields:
+            - args:
+              - name: runSets
+                value: ${runSets}
+              fields:
+              - fields: []
+                name: id
+              - fields: []
+                name: name
+              - fields: []
+                name: _defaultColorIndex
+              - args:
+                - name: tableKey
+                  value: train/logits_hist_table
+                fields: []
+                name: summaryTable
+              name: runSets
+        panel_type: Vega2
+      train/weights_hist:
+        panel_config:
+          fieldSettings:
+            value: weights
+          panelDefId: wandb/histogram/v0
+          stringSettings:
+            title: weights/b0/c0 distribution
+          transform:
+            name: tableWithLeafColNames
+          userQuery:
+            queryFields:
+            - args:
+              - name: runSets
+                value: ${runSets}
+              fields:
+              - fields: []
+                name: id
+              - fields: []
+                name: name
+              - fields: []
+                name: _defaultColorIndex
+              - args:
+                - name: tableKey
+                  value: train/weights_hist_table
+                fields: []
+                name: summaryTable
+              name: runSets
+        panel_type: Vega2
+batch_size:
+  desc: null
+  value: 4
+data_root:
+  desc: null
+  value: /data/aaronhua
+dataset_dir:
+  desc: null
+  value: /data/aaronhua/leaderboard/data/dqn/20210407_024101
+debug:
+  desc: null
+  value: true
+gamma:
+  desc: null
+  value: 0.99
+gpus:
+  desc: null
+  value: -1
+hack:
+  desc: null
+  value: false
+heatmap_radius:
+  desc: null
+  value: 5
+id:
+  desc: null
+  value: '20210411_161644'
+lambda_margin:
+  desc: null
+  value: 1.0
+lambda_td:
+  desc: null
+  value: 1.0
+log:
+  desc: null
+  value: true
+lr:
+  desc: null
+  value: 0.0001
+max_epochs:
+  desc: null
+  value: 50
+n:
+  desc: null
+  value: 20
+num_workers:
+  desc: null
+  value: 4
+restore_from:
+  desc: null
+  value: /data/aaronhua/leaderboard/training/lbc/20210405_225046/epoch=22.ckpt
+sample_by:
+  desc: null
+  value: even
+save_dir:
+  desc: null
+  value: /data/aaronhua/leaderboard/training/dqn/offline/debug/20210411_161644
+temperature:
+  desc: null
+  value: 10.0
+weight_decay:
+  desc: null
+  value: 0.0

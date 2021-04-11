@@ -128,7 +128,9 @@ def visualize(batch, out, between, out_cmd, loss_point, loss_cmd):
     images.sort(key=lambda x: x[0], reverse=True)
 
     result = torchvision.utils.make_grid([torch.ByteTensor(x[1]) for x in images], nrow=4)
-    result = wandb.Image(result.numpy().transpose(1, 2, 0))
+    result = result.numpy().transpose(1, 2, 0)
+    print(result.shape)
+    result = wandb.Image(result)
 
     return result
 
@@ -209,6 +211,7 @@ class MapModel(pl.LightningModule):
         #loss = (loss_point + self.hparams.command_coefficient * loss_cmd).mean()
         loss = loss_point.mean()
 
+        img = visualize(batch, points_lbc, between, out_cmd, loss_point, loss_cmd)
         if batch_nb == 0 and self.logger != None:
             self.logger.log_metrics({
                 'val_image': visualize(batch, points_lbc, between, out_cmd, loss_point, loss_cmd),
@@ -333,7 +336,7 @@ if __name__ == '__main__':
 
 
     # Data args.
-    parser.add_argument('--dataset_dir', type=Path, required=True)
+    parser.add_argument('--dataset_dir', type=Path)
     parser.add_argument('--batch_size', type=int, default=4)
     parser.add_argument('--augment_data', action='store_true')
     parser.add_argument('--angle_jitter', type=float, default=5)
@@ -350,5 +353,7 @@ if __name__ == '__main__':
     parsed.save_dir = save_dir
     parsed.save_dir.mkdir(parents=True, exist_ok=True)
 
+    if parsed.dataset_dir is None:
+        parsed.dataset_dir = Path('/data/aaronhua/leaderboard/data/lbc/auto_pilot/20210323_203108')
 
     main(parsed)

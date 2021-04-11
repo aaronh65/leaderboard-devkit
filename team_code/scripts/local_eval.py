@@ -71,4 +71,4 @@ os.environ["PRIVILEGED"] = str(int(privileged))
  
 cmd = f'bash run_leaderboard.sh'
 print(f'running {cmd} on {args.split} routes for {args.repetitions} repetitions')
-#os.system(cmd)
+os.system(cmd)

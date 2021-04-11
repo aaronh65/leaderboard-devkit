@@ -25,23 +25,29 @@ HAS_DISPLAY = int(os.environ['HAS_DISPLAY'])
 @torch.no_grad()
 def fuse_logits(topdown, logits, temperature=10, alpha=0.75):
 
-    logits_mean = torch.mean(logits[:,0:2,:,:], dim=1, keepdim=True) # N,1,H,W
-    logits_norm = spatial_norm(logits_mean).cpu().numpy()*255
-    logits_norm = logits_norm.astype(np.uint8)
+    #logits_mean = torch.mean(logits[:,0:2,:,:], dim=1, keepdim=True) # N,1,H,W
+    logits_norm = spatial_norm(logits).cpu().numpy()*255 #N,T,H,W
+    logits_norm = np.expand_dims(logits_norm,axis=-1).astype(np.uint8) 
+    #print(logits_norm.squeeze()[0][0])
+    #print(logits_norm.squeeze()[0][1])
+    logits_show = np.tile(logits_norm, (1,1,1,1,3)) #N,T,H,W,3
+    #logits_show = np.repeat(logits_norm, repeats=3, axis=-1) #N,T,H,W,3
     #logits_flat = logits_mean.view(logits_mean.shape[:-2] + (-1,)) # N,1,H*W
     #logits_prob = F.softmax(logits_flat/temperature, dim=-1) # to prob
     #logits_norm = logits_prob / torch.max(logits_prob, dim=-1, keepdim=True)[0] # to [0,1]
     #logits_show = (logits_norm * 256).view_as(logits_mean).cpu().numpy().astype(np.uint8) # N,1,H,W
-    logits_show = np.repeat(logits_norm, repeats=3, axis=1).transpose((0,2,3,1)) # N,H,W,3
+    #logits_show = np.repeat(logits_norm, repeats=3, axis=1).transpose((0,2,3,1)) # N,H,W,3
     fused = np.array(COLOR[topdown.argmax(1).cpu()]).astype(np.uint8) # N,H,W,3
     for i in range(fused.shape[0]):
-        cv2.addWeighted(logits_show[i], alpha, fused[i], 1, 0, fused[i])
+        logits_mask = cv2.addWeighted(logits_show[i][0], 1, logits_show[i][1], 1, 0)
+        fused[i] = cv2.addWeighted(logits_mask, alpha, fused[i], 1, 0)
     fused = fused.astype(np.uint8) # (N,H,W,3)
     return fused
 
 # visualize each timestep's heatmap?
 @torch.no_grad()
-def visualize(batch, Qmap, tmap, nQmap, ntmap, naction, meta, r=2):
+def visualize(batch, Qmap, tmap, nQmap, ntmap, naction, meta, r=2,title='topdown'):
+    #print(title)
 
     text_color = (255,255,255)
     aim_color = (60,179,113) # dark green
@@ -101,21 +107,38 @@ def visualize(batch, Qmap, tmap, nQmap, ntmap, naction, meta, r=2):
         _ndraw.text((5, 30), f'batch_loss = {_td_loss} + {_margin_loss} = {_batch_loss}', text_color)
 
         _combined = np.hstack((np.array(_topdown), np.array(_ntopdown)))
-        if HAS_DISPLAY:
-            cv2.imshow(f'topdown{i}', cv2.cvtColor(_combined, cv2.COLOR_BGR2RGB))
-        _combined = _combined.transpose(2,0,1)
-        images.append((batch_loss[i].item(), torch.ByteTensor(_combined)))
+        #if HAS_DISPLAY:
+        #    #cv2.imshow(f'{title}_{i}', cv2.cvtColor(_combined, cv2.COLOR_BGR2RGB))
+        #    pass
+        images.append((batch_loss[i].item(), _combined))
         #images.append((td_loss[i].item(), torch.ByteTensor(_combined)))
 
-    if HAS_DISPLAY:
-        cv2.waitKey(5000)
+    #if HAS_DISPLAY:
+    #    cv2.waitKey(5000)
+    #    pass
 
     images.sort(key=lambda x: x[0], reverse=True)
-    result = torchvision.utils.make_grid([x[1] for x in images], nrow=4)
-    result = wandb.Image(result.numpy().transpose(1,2,0))
+    result = [torch.ByteTensor(x[1].transpose(2,0,1)) for x in images]
+    result = torchvision.utils.make_grid(result, nrow=2)
+    result = result.numpy().transpose(1,2,0)
+    result = wandb.Image(result)
+    if HAS_DISPLAY:
+        images = [x[1] for x in images]
+        combined = np.hstack(images)
+        cv2.imshow(title, combined)
+        cv2.waitKey(5000)
 
     return images, result
 
+@torch.no_grad()
+def make_histogram(tensor, in_type, b_i=0, c_i=0):
+    data = tensor.detach().cpu().numpy()[b_i][c_i].flatten()
+    if len(data) > 10000:
+        data = data[-10000:]
+    data = [[item] for item in data] 
+    table = wandb.Table(data=data, columns=[in_type])
+    hist = wandb.plot.histogram(table, in_type, title=f'{in_type}/b{b_i}/c{c_i} distribution')
+    return hist
 
 # just needs to know if it's rolling out or nah
 class MapModel(pl.LightningModule):
@@ -140,11 +163,12 @@ class MapModel(pl.LightningModule):
         #self.Q_mult = torch.nn.Parameter(torch.rand(1))
         #self.Q_bias = torch.nn.Parameter(torch.rand(1))
 
-    def on_train_start(self):
-        print('on_train_start')
-        print(self.logger is not None)
-        if self.logger is not None:
-            self.logger.watch(self)
+    #def on_train_start(self):
+    #    #print('on_train_start')
+    #    #print(self.logger is not None)
+    #    #if self.logger is not None:
+    #    #    self.logger.watch(self)
+    #    pass
 
     def restore_from_lbc(self, weights_path):
         from lbc.carla_project.src.map_model import MapModel as LBCModel
@@ -207,7 +231,9 @@ class MapModel(pl.LightningModule):
         #$Qmap = Q_unscaled * self.Q_mult + self.Q_bias # (N,T,H,W)
 
         #$Qmap = logits
-        Qmap = self.Q_conv(weights) # weights are [0,1]
+        #Qmap = self.Q_conv(weights) # weights are [0,1]
+        #Qmap = self.Q_conv(logits) # weights are [0,1]
+        Qmap = logits
         return points, logits, weights, target_heatmap, Qmap
 
         # two modes: sample, argmax?
@@ -259,37 +285,15 @@ class MapModel(pl.LightningModule):
         #Q_expert = torch.mean(Q_expert_all.squeeze(), axis=-1, keepdim=True) #N,1
 
         margin_map = self.expert_heatmap(points_expert, Qmap) #[0,1] tall at expert points
-        #print(points_expert)
         margin_map = (1-margin_map)*8 #[0, 8] low at expert points
         margin = Qmap + margin_map  - Q_expert_all.unsqueeze(-1)
-        margin_loss = torch.clamp(margin, 0, 100) #N,T,H,W
-        margin_loss = torch.mean(margin_loss, dim=(1,2,3)) #N,
+        margin_loss = torch.mean(margin, dim=(1,2,3)) #N,
         margin_loss = self.hparams.lambda_margin * margin_loss.unsqueeze(-1)
-
-
-
-        #margin_map = self.expert_heatmap(points_expert, Qmap) #[0,1] tall at expert points
-        #margin_map = (1-margin_map)*8 #[0, 8] low at expert points
-        ##margin_map = torch.ones_like(Qmap)*8 #N,T,H,W
-        ##margin_map_expert = spatial_select(margin_map, points_expert)
-        ##margin_map_expert = 0
-        ##_, Q_margin_all = self.get_dqn_actions(margin_map + Qmap) #N,T,1
-        #margin = Qmap + margin_map  - Q_expert_all.unsqueeze(-1)
-        #margin_loss = torch.clamp(margin, 0, 100) #N,T,H,W
-        #margin_loss = torch.mean(margin_loss, dim=(1,2,3)) #N,
-        ##Q_margin = torch.mean(Q_margin_all.squeeze(), axis=-1, keepdim=True) #N,1
-        ##margin_loss = Q_margin - Q_expert
-        #margin_loss = self.hparams.lambda_margin * margin_loss.unsqueeze(-1)
 
         batch_loss = td_loss + margin_loss #N,1
         loss = torch.mean(batch_loss, dim=0) #1,
 
         if batch_nb % 50 == 0:
-            # TODO: handle debug images
-            #if self.config.save_debug:
-            #    img = cv2.cvtColor(np.array(self.env.hero_agent.debug_img), cv2.COLOR_RGB2BGR)
-            #    metrics['debug_image'] = wandb.Image(img)
-
             meta = {
                     'Q': Q, 'nQ': nQ, 'hparams': self.hparams,
                     'batch_loss': batch_loss,
@@ -297,33 +301,38 @@ class MapModel(pl.LightningModule):
                     'margin_loss': margin_loss,
                     'metadata': info['metadata'],
                     }
-            #print(f'batch_nb {batch_nb}')
-            #print(self.Q_mult)
-            #print(self.Q_bias)
-            #print(Q_expert_all.squeeze())
-            #print(Q_all.squeeze())
-            #print(loss)
-            #print()
-            #images, result = visualize(batch, logits, tmap, nlogits, ntmap, naction, meta)
-            images, result = visualize(batch, Qmap, tmap, nQmap, ntmap, naction, meta)
-            metrics['train_image'] = result
-            
+
+            images, result = visualize(batch, logits, tmap, nlogits, ntmap, naction, meta, title='logits')
+
+
         if self.logger != None:
+            metrics = {
+                        f'train/TD({self.hparams.n}) loss': td_loss.mean().item(),
+                        'train/margin_loss': margin_loss.mean().item(),
+                        'train/batch_loss': batch_loss.mean().item(),
+                        }
 
-            loss_metrics = {
-                f'TD({self.hparams.n}) loss': td_loss.mean().item(),
-                'margin_loss': margin_loss.mean().item(),
-                'batch_loss': batch_loss.mean().item(),
-                #'Q_conv_weight': wandb.Histogram(self.Q_conv.weight.data.cpu().numpy().flatten()),
-                #'Q_conv_bias': wandb.Histogram(self.Q_conv.bias.data.cpu().numpy().flatten()),
-                
-                'Q_w': self.Q_conv.weight.data.squeeze().cpu().numpy(),
-                'Q_b': self.Q_conv.bias.data.squeeze().cpu().numpy(),
+            if batch_nb % 50 == 0:
+                self.logger.log_metrics({'train_viz': [result]}, self.global_step)
+                # TODO: handle debug images
+                #if self.config.save_debug:
+                #    img = cv2.cvtColor(np.array(self.env.hero_agent.debug_img), cv2.COLOR_RGB2BGR)
+                #    metrics['debug_image'] = wandb.Image(img)
 
-                }
+                                #images, result = visualize(batch, weights, tmap, nweights, ntmap, naction, meta, title='weights')
+                #images, result = visualize(batch, Qmap, tmap, nQmap, ntmap, naction, meta, title='Qmap')
 
+                #images, result = visualize(batch, weights, tmap, nweights, ntmap, naction, meta)
+                #images, result = visualize(batch, Qmap, tmap, nQmap, ntmap, naction, meta)
+                            #cv2.waitKey(5000)
+                            
+                metrics['Q_w']= self.Q_conv.weight.data.squeeze().cpu().numpy()
+                metrics['Q_b']= self.Q_conv.bias.data.squeeze().cpu().numpy()
+
+                to_hist = {'logits': logits, 'weights': weights, 'Qmap': Qmap}
+                for key, item in to_hist.items():
+                    metrics[f'train/{key}_hist'] = make_histogram(item, key)
             self.logger.log_metrics(metrics, self.global_step)
-            self.logger.log_metrics(loss_metrics, self.global_step)
 
         return {'loss': loss}
 
@@ -353,55 +362,58 @@ class MapModel(pl.LightningModule):
         Q_expert = torch.mean(Q_expert_all.squeeze(), axis=-1, keepdim=True) #N,1
 
 
+        #if True:
+        #    hmaps = np.hstack(margin_map[0].cpu().numpy())
+        #    print(hmaps.shape)
+        #    cv2.imshow('hmaps',hmaps)
+        #    cv2.waitKey(0)
         margin_map = self.expert_heatmap(points_expert, Qmap) #[0,1] tall at expert points
         margin_map = (1-margin_map)*8 #[0, 8] low at expert points
         margin = Qmap + margin_map  - Q_expert_all.unsqueeze(-1)
-        margin_loss = torch.clamp(margin, 0, 100) #N,T,H,W
-        margin_loss = torch.mean(margin_loss, dim=(1,2,3)) #N,
+        margin_loss = torch.mean(margin, dim=(1,2,3)) #N,
         margin_loss = self.hparams.lambda_margin * margin_loss.unsqueeze(-1)
 
-        #margin_map = torch.ones_like(Qmap)*8 #N,T,H,W
-        #margin_map_expert = spatial_select(margin_map, points_expert)
-        #margin_map_expert = 0
-        #_, Q_margin_all = self.get_dqn_actions(margin_map + Qmap) #N,T,1
-        #Q_margin = torch.mean(Q_margin_all.squeeze(), axis=-1, keepdim=True) #N,1
-
-        #margin_loss = torch.clamp(margin_loss, 0, 1)
-        #margin_loss = Q_margin - Q_expert
-        #margin_loss = self.hparams.lambda_margin * margin_loss
 
         batch_loss = td_loss + margin_loss
         val_loss = torch.mean(batch_loss, axis=0)
-        #print(self.Q_conv.weight.data.shape)
-        #print(self.Q_conv.bias.data.shape)
-
+        
                 
+        meta = {
+                'Q': Q, 'nQ': nQ, 'hparams': self.hparams, 
+                'batch_loss': batch_loss,
+                'td_loss': td_loss,
+                'margin_loss': margin_loss,
+                'metadata': info['metadata']
+                }
+
+        images, result = visualize(batch, logits, tmap, nlogits, ntmap, naction, meta, title='logits')
+
         if self.logger != None:
-            loss_metrics = {
-                    f'TD({self.hparams.n}) loss': td_loss.mean().item(),
-                    'margin_loss': margin_loss.mean().item(),
-                    'batch_loss': batch_loss.mean().item(),
-                    #'Q_conv_weight': float(np.mean(self.Q_conv.weight.data.cpu().numpy().flatten())),
-                    #'Q_conv_bias': float(np.mean(self.Q_conv.bias.data.cpu().numpy().flatten())),
-                    
-                    'Q_w': self.Q_conv.weight.data.squeeze().cpu().numpy(),
-                    'Q_b': self.Q_conv.bias.data.squeeze().cpu().numpy(),
-                    }
+            #print(result)
+            #print(result.shape)
+            self.logger.log_metrics({'val_viz': [result]}, self.global_step)
 
-            meta = {
-                    'Q': Q, 'nQ': nQ, 'hparams': self.hparams, 
-                    'batch_loss': batch_loss,
-                    'td_loss': td_loss,
-                    'margin_loss': margin_loss,
-                    'metadata': info['metadata']
-                    }
-            images, result = visualize(batch, Qmap, tmap, nQmap, ntmap, naction, meta)
-            #images, result = visualize(batch, weights, tmap, nweights, ntmap, naction, meta)
+            if HAS_DISPLAY:
+                images = [x[1] for x in images]
+                combined = np.hstack(images)
+                cv2.imshow('logits', combined)
+                #cv2.waitKey(0)
 
-            metrics['val_image'] = result
+            metrics = {
+                        #'Q_w' = self.Q_conv.weight.data.squeeze().cpu().numpy(),
+                        #'Q_b' = self.Q_conv.bias.data.squeeze().cpu().numpy(),
+                        f'val/TD({self.hparams.n}) loss': td_loss.mean().item(),
+                        'val/margin_loss': margin_loss.mean().item(),
+                        'val/batch_loss': batch_loss.mean().item(),
+                        }
+
+            #to_hist = {'logits': logits, 'weights': weights, 'Qmap': Qmap}
+            #for key, item in to_hist.items():
+            #    metrics[f'{key}_hist'] = make_histogram(item, key)
+            #self.logger.log_metrics(metrics, self.global_step)
 
             self.logger.log_metrics(metrics, self.global_step)
-            self.logger.log_metrics(loss_metrics, self.global_step)
+            #self.logger.log_metrics(loss_metrics, self.global_step)
         return {'val_loss': val_loss}
 
     def validation_epoch_end(self, batch_metrics):
@@ -454,7 +466,8 @@ def main(args):
 
     logger = False
     if args.log:
-        logger = WandbLogger(id=args.id, save_dir=str(args.save_dir), project='dqn_offline')
+        logger = WandbLogger(id=args.id, save_dir=str(args.save_dir), project='dqn_test')
+        #wandb.init(project='dqn_test')
     checkpoint_callback = ModelCheckpoint(args.save_dir, save_top_k=1) # figure out what's up with this
 
 
@@ -530,7 +543,7 @@ if __name__ == '__main__':
         args.dataset_dir = '/data/aaronhua/leaderboard/data/dqn/20210407_024101'
 
     suffix = f'debug/{args.id}' if args.debug else args.id
-    save_root = args.data_root / f'leaderboard/training/rl/dspred/{suffix}'
+    save_root = args.data_root / f'leaderboard/training/dqn/offline/{suffix}'
 
     args.save_dir = save_root
     args.save_dir.mkdir(parents=True, exist_ok=True)
