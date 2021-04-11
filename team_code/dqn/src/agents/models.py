@@ -7,22 +7,12 @@ from torchvision.models.segmentation import deeplabv3_resnet50
 
 HAS_DISPLAY = int(os.environ.get('HAS_DISPLAY', 0))
 SHOW_HEATMAPS = False
-# n,c,h,w heatmaps
-#@torch.no_grad()
-#def logits2weights(logits, temperature):
-#    logits = logits.clone().detach().cpu()/temperature # n,c,h,w
-#    flat = logits.view(logits.shape[:-2] + (-1, ))
-#    weights = F.softmax(flat, dim=-1).view_as(logits).numpy()
-#    weights_max = np.amax(weights, axis=(-1,-2), keepdims=True)
-#    weights_min = np.amin(weights, axis=(-1,-2), keepdims=True)
-#    weights = (weights - weights_min) / (weights_max - weights_min)
-#    return weights
 
 @torch.no_grad()
 # assumes n,c,h,w
 def spatial_norm(tensor):
     n,c,h,w = tensor.shape
-    flat = tensor.clone().detach().view((n,c,h*w))
+    flat = tensor.view((n,c,h*w))
     norm_max, _ = torch.max(flat, dim=-1, keepdim=True)
     norm_min, _ = torch.min(flat, dim=-1, keepdim=True)
     flat = (flat - norm_min) / (norm_max - norm_min)

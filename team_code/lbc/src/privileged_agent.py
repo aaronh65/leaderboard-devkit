@@ -30,7 +30,7 @@ class PrivilegedAgent(MapAgent):
         self.converter = Converter()
         project_root = self.config.project_root
         weights_path = self.config.weights_path
-        self.net = MapModel.load_from_checkpoint(f'{project_root}/{weights_path}')
+        self.net = MapModel.load_from_checkpoint(str(weights_path))
         self.net.cuda()
         self.net.eval()
 
@@ -163,7 +163,7 @@ class PrivilegedAgent(MapAgent):
         topdown = topdown[None].cuda()
 
         target = torch.from_numpy(tick_data['target'])
-        print(tick_data['target'])
+        #print(tick_data['target'])
         target = target[None].cuda()
 
         points, weights, target_heatmap = self.net.forward(topdown, target) # world frame

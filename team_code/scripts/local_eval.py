@@ -2,11 +2,10 @@
 # this script is used on my local machine
 # you need to run CARLA before running this script
 
-import os, sys, time
+import os, sys, time, shutil
 import yaml, argparse
 from datetime import datetime
 from pathlib import Path
-
 
 
 parser = argparse.ArgumentParser()
@@ -27,7 +26,7 @@ project_root = os.environ['PROJECT_ROOT']
 # make save root + log dir
 tokens = args.agent.split('.')[0].split('/')
 appr, algo = tokens[0], tokens[-1]
-prefix = '/data/leaderboard/data' if args.save_data else '/data/leaderboard/benchmark'
+prefix = '/data/aaronhua/leaderboard/data' if args.save_data else '/data/aaronhua/leaderboard/benchmark'
 suffix = f'debug/{args.id}' if args.debug else args.id
 save_root = Path(f'{prefix}/{appr}/{algo}/{suffix}')
 save_root.mkdir(parents=True,exist_ok=True)
@@ -36,7 +35,6 @@ save_root.mkdir(parents=True,exist_ok=True)
 
 # agent-specific config
 config_path = f'{project_root}/team_code/{appr}/config/{algo}.yml'
-print(config_path)
 with open(config_path, 'r') as f:
     config = yaml.load(f, Loader=yaml.Loader)
 
@@ -51,8 +49,13 @@ track = 'SENSORS'
 privileged = algo in ['auto_pilot', 'privileged']
 
 config_path = f'{save_root}/config.yml'
+print(config_path)
 with open(config_path, 'w') as f:
     yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+if 'weights_path' in config.keys():
+    wpath = Path(config['weights_path']).parent
+    shutil.copyfile(wpath / 'config.yml', save_root / 'train_config.yml')
+    shutil.copyfile(wpath / 'data_config.yml', save_root / 'data_config.yml')
 
 # environ variables
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
@@ -68,4 +71,4 @@ os.environ["PRIVILEGED"] = str(int(privileged))
  
 cmd = f'bash run_leaderboard.sh'
 print(f'running {cmd} on {args.split} routes for {args.repetitions} repetitions')
-os.system(cmd)
+#os.system(cmd)

@@ -17,11 +17,13 @@ parser.add_argument('--split', type=str, default='devtest',
         choices=['devtest','testing','training','debug'])
 parser.add_argument('--repetitions', type=int, default=1)
 
-parser.add_argument('--data_root', type=str, default='/data')
+parser.add_argument('--data_root', type=str, default='/data/aaronhua')
 parser.add_argument('--id', type=str, default=datetime.now().strftime("%Y%m%d_%H%M%S"))
 parser.add_argument('--save_data', action='store_true')
 parser.add_argument('--save_debug', action='store_true')
 args = parser.parse_args()
+
+assert args.data_root != '/data/aaronhua', 'should not do heavy I/O to /data'
 
 # specific for multiprocessing and running multiple servers
 def kill(proc_pid):
@@ -56,6 +58,10 @@ config_path = f'{project_root}/team_code/{appr}/config/{algo}.yml'
 print(config_path)
 with open(config_path, 'r') as f:
     config = yaml.load(f, Loader=yaml.Loader)
+if 'weights_path' in config.keys():
+    wpath = Path(config['weights_path']).parent
+    shutil.copyfile(wpath / 'config.yml', save_root / 'train_config.yml')
+    shutil.copyfile(wpath / 'data_config.yml', save_root / 'data_config.yml')
 
 try:
     CARLA_ROOT = os.environ['CARLA_ROOT']

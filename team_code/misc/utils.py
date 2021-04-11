@@ -44,7 +44,7 @@ import torch
 # assumes n,c,h,w
 def spatial_norm(tensor):
     n,c,h,w = tensor.shape
-    flat = tensor.clone().detach().view((n,c,h*w))
+    flat = tensor.view((n,c,h*w))
     norm_max, _ = torch.max(flat, dim=-1, keepdim=True)
     norm_min, _ = torch.min(flat, dim=-1, keepdim=True)
     flat = (flat - norm_min) / (norm_max - norm_min)

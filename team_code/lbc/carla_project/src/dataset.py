@@ -128,7 +128,7 @@ def make_heatmap(size, pt, sigma=8):
 
 
 def preprocess_semantic(semantic_np):
-    topdown = common.CONVERTER[semantic_np]
+    topdown = CONVERTER[semantic_np]
     topdown = torch.LongTensor(topdown)
     topdown = torch.nn.functional.one_hot(topdown, N_CLASSES).permute(2, 0, 1).float()
 
@@ -293,7 +293,6 @@ if __name__ == '__main__':
     if hparams.save_visuals:
         save_path = Path(hparams.dataset_dir) / 'dataset_debug'
         save_path.mkdir(exist_ok=True)
-        print(save_path)
 
     for i in range(len(data)):
         rgb, topdown, points, target, actions, meta = data[i]
@@ -312,7 +311,7 @@ if __name__ == '__main__':
         _rgb[heatmap_cam > 0.1] = 255
         _rgb = Image.fromarray(_rgb)
 
-        _topdown = common.COLOR[topdown.argmax(0).cpu().numpy()]
+        _topdown = COLOR[topdown.argmax(0).cpu().numpy()]
         _topdown[heatmap > 0.1] = 255
         _topdown = Image.fromarray(_topdown)
         _draw_map = ImageDraw.Draw(_topdown)
