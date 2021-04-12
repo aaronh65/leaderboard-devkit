@@ -23,7 +23,7 @@ HAS_DISPLAY = int(os.environ['HAS_DISPLAY'])
 # takes (N,3,H,W) topdown and (N,4,H,W) logits
 # averages t=0.5s,1.0s logitss and overlays it on topdown
 @torch.no_grad()
-def fuse_logits(topdown, logits, alpha=0.75):
+def fuse_logits(topdown, logits, alpha=0.5):
 
     #logits_mean = torch.mean(logits[:,0:2,:,:], dim=1, keepdim=True) # N,1,H,W
     logits_norm = spatial_norm(logits).cpu().numpy()*255 #N,T,H,W
@@ -119,7 +119,7 @@ def visualize(batch, Qmap, tmap, nQmap, ntmap, naction, meta, r=2,title='topdown
 
     images.sort(key=lambda x: x[0], reverse=True)
     result = [torch.ByteTensor(x[1].transpose(2,0,1)) for x in images]
-    result = torchvision.utils.make_grid(result, nrow=2)
+    result = torchvision.utils.make_grid(result, nrow=4)
     result = result.numpy().transpose(1,2,0)
     result = wandb.Image(result)
     if HAS_DISPLAY:
@@ -158,7 +158,7 @@ class MapModel(pl.LightningModule):
         self.td_criterion = torch.nn.MSELoss(reduction='none') # weights? prioritized replay?
         self.expert_heatmap = ToTemporalHeatmap(5)
         self.margin_criterion = torch.nn.MSELoss(reduction='none')
-        self.Q_conv = torch.nn.Conv2d(in_channels=4,out_channels=4,kernel_size=1,groups=4)
+        #self.Q_conv = torch.nn.Conv2d(in_channels=4,out_channels=4,kernel_size=1,groups=4)
         self.margin_weight = 100
         #self.Q_mult = torch.nn.Parameter(torch.rand(1))
         #self.Q_bias = torch.nn.Parameter(torch.rand(1))
@@ -178,49 +178,6 @@ class MapModel(pl.LightningModule):
         self.net.load_state_dict(lbc_model.net.state_dict())
         self.temperature = lbc_model.temperature
         self.to_heatmap = lbc_model.to_heatmap
-       
-    #def setup_train(self, env, config):
-    #    self.config = config
-    #    self.env = env
-    #    self.n = config.agent.n
-    #    self.discount = 0.99 ** (self.n + 1)
-
-    #    print('populating...')
-    #    self.populate(config.agent.burn_timesteps)
-    #    self.env.reset()
-
-    ## burn in
-    #def populate(self, steps):
-    #    # make sure agent is burning in instead of inferencing
-    #    self.env.hero_agent.burn_in = True
-    #    done = False
-    #    for step in tqdm(range(steps)):
-    #        if done or step % 200 == 0:
-    #            if step != 0:
-    #                self.env.cleanup()
-    #            self.env.reset()
-    #        reward, done = self.env.step()
-    #    self.env.cleanup()
-    #    self.env.hero_agent.burn_in = False
-
-    ## move to environment class
-    #def rollout(self, num_episodes=-1, num_steps=-1):
-    #    assert num_episodes != -1 or num_steps != -1, \
-    #            'specify either num steps or num epsiodes' 
-
-    #    num_steps, num_episodes = 0, 0
-
-    #    ## step environment
-    #    self.eval()
-    #    self.env.reset()
-    #    self.env.hero_agent.burn_in = np.random.random() < self.config.agent.epsilon
-    #    with torch.no_grad():
-    #        for rollout_step in range(self.config.agent.rollout_steps):
-    #            _reward, _done = self.env.step() # reward, done
-    #            if _done:
-    #                self.env.cleanup()
-    #                self.env.reset()
-    #    self.train()
 
     def forward(self, topdown, target, debug=True):
         target_heatmap = self.to_heatmap(target, topdown)[:, None]
@@ -314,7 +271,7 @@ class MapModel(pl.LightningModule):
                         }
 
             if batch_nb % 50 == 0:
-                self.logger.log_metrics({'train_viz': [result]}, self.global_step)
+                #self.logger.log_metrics({'train_viz': result}, self.global_step)
                 # TODO: handle debug images
                 #if self.config.save_debug:
                 #    img = cv2.cvtColor(np.array(self.env.hero_agent.debug_img), cv2.COLOR_RGB2BGR)
@@ -327,8 +284,9 @@ class MapModel(pl.LightningModule):
                 #images, result = visualize(batch, Qmap, tmap, nQmap, ntmap, naction, meta)
                             #cv2.waitKey(5000)
                             
-                metrics['Q_w']= self.Q_conv.weight.data.squeeze().cpu().numpy()
-                metrics['Q_b']= self.Q_conv.bias.data.squeeze().cpu().numpy()
+                #metrics['Q_w'] = self.Q_conv.weight.data.squeeze().cpu().numpy()
+                #metrics['Q_b'] = self.Q_conv.bias.data.squeeze().cpu().numpy()
+                metrics['train_image'] = result
 
                 to_hist = {'logits': logits, 'weights': weights, 'Qmap': Qmap}
                 for key, item in to_hist.items():
@@ -393,7 +351,7 @@ class MapModel(pl.LightningModule):
         if self.logger != None:
             #print(result)
             #print(result.shape)
-            self.logger.log_metrics({'val_viz': [result]}, self.global_step)
+            #self.logger.log_metrics({'val_viz': result}, self.global_step)
 
             if HAS_DISPLAY:
                 images = [x[1] for x in images]
@@ -404,6 +362,7 @@ class MapModel(pl.LightningModule):
             metrics = {
                         #'Q_w' = self.Q_conv.weight.data.squeeze().cpu().numpy(),
                         #'Q_b' = self.Q_conv.bias.data.squeeze().cpu().numpy(),
+                        'val_image': result,
                         f'val/TD({self.hparams.n}) loss': td_loss.mean().item(),
                         'val/margin_loss': margin_loss.mean().item(),
                         'val/batch_loss': batch_loss.mean().item(),
@@ -455,6 +414,11 @@ class MapModel(pl.LightningModule):
 def main(args):
 
     
+    logger = False
+    if args.log:
+        logger = WandbLogger(id=args.id, save_dir=str(args.save_dir), project='dqn_test')
+        #wandb.init(project='dqn_test')
+    checkpoint_callback = ModelCheckpoint(args.save_dir, save_top_k=1) # figure out what's up with this
     # resume and add a couple arguments
     if args.restore_from is not None:
         if 'lbc' in args.restore_from:
@@ -466,11 +430,7 @@ def main(args):
     else:
         model = MapModel(args)
 
-    logger = False
-    if args.log:
-        logger = WandbLogger(id=args.id, save_dir=str(args.save_dir), project='dqn_test')
-        #wandb.init(project='dqn_test')
-    checkpoint_callback = ModelCheckpoint(args.save_dir, save_top_k=1) # figure out what's up with this
+
 
 
     #model = MapModel.load_from_checkpoint(RESUME)
@@ -490,6 +450,7 @@ def main(args):
         hparams_copy['dataset_dir'] = str(model.hparams.dataset_dir)
         hparams_copy['save_dir'] = str(model.hparams.save_dir)
         del hparams_copy['id']
+        del hparams_copy['data_root']
         yaml.dump(hparams_copy, f, default_flow_style=False, sort_keys=False)
 
     # offline trainer can use all gpus
