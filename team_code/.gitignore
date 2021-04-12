@@ -1,3 +1,4 @@
+*wandb*
 *.swp
 *.pyc
 *__pycache__*

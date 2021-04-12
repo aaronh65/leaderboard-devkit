@@ -23,7 +23,7 @@ HAS_DISPLAY = int(os.environ['HAS_DISPLAY'])
 # takes (N,3,H,W) topdown and (N,4,H,W) logits
 # averages t=0.5s,1.0s logitss and overlays it on topdown
 @torch.no_grad()
-def fuse_logits(topdown, logits, temperature=10, alpha=0.75):
+def fuse_logits(topdown, logits, alpha=0.75):
 
     #logits_mean = torch.mean(logits[:,0:2,:,:], dim=1, keepdim=True) # N,1,H,W
     logits_norm = spatial_norm(logits).cpu().numpy()*255 #N,T,H,W
@@ -63,10 +63,10 @@ def visualize(batch, Qmap, tmap, nQmap, ntmap, naction, meta, r=2,title='topdown
     n = hparams.n
 
     topdown, target = state
-    fused = fuse_logits(topdown, Qmap, hparams.temperature, 1.0)
+    fused = fuse_logits(topdown, Qmap)
 
     ntopdown, ntarget = next_state
-    nfused = fuse_logits(ntopdown, nQmap, hparams.temperature, 1.0)
+    nfused = fuse_logits(ntopdown, nQmap)
 
     images = list()
     for i in range(min(action.shape[0], 32)):
@@ -285,8 +285,9 @@ class MapModel(pl.LightningModule):
         #Q_expert = torch.mean(Q_expert_all.squeeze(), axis=-1, keepdim=True) #N,1
 
         margin_map = self.expert_heatmap(points_expert, Qmap) #[0,1] tall at expert points
-        margin_map = (1-margin_map)*8 #[0, 8] low at expert points
+        margin_map = (1-margin_map) #[0, 8] low at expert points
         margin = Qmap + margin_map  - Q_expert_all.unsqueeze(-1)
+        #cv2.imshow('margin', spatial_norm(margin).detach().cpu().numpy()[0][0])
         margin_loss = torch.mean(margin, dim=(1,2,3)) #N,
         margin_loss = self.hparams.lambda_margin * margin_loss.unsqueeze(-1)
 
@@ -368,8 +369,9 @@ class MapModel(pl.LightningModule):
         #    cv2.imshow('hmaps',hmaps)
         #    cv2.waitKey(0)
         margin_map = self.expert_heatmap(points_expert, Qmap) #[0,1] tall at expert points
-        margin_map = (1-margin_map)*8 #[0, 8] low at expert points
+        margin_map = (1-margin_map) #[0, 8] low at expert points
         margin = Qmap + margin_map  - Q_expert_all.unsqueeze(-1)
+        #cv2.imshow('margin', margin.detach().cpu().numpy()[0][0])
         margin_loss = torch.mean(margin, dim=(1,2,3)) #N,
         margin_loss = self.hparams.lambda_margin * margin_loss.unsqueeze(-1)
 
