@@ -134,11 +134,12 @@ def visualize(batch, Qmap, tmap, nQmap, ntmap, naction, meta, r=2,title='topdown
 def make_histogram(tensor, in_type, b_i=0, c_i=0):
     data = tensor.detach().cpu().numpy()[b_i][c_i].flatten()
     if len(data) > 10000:
-        data = data[-10000:]
-    data = [[item] for item in data] 
-    table = wandb.Table(data=data, columns=[in_type])
+        indices = np.random.randint(0, data.shape[0], 10000)
+        data = data[indices]
+    #data = [[item] for item in data] 
+    #table = wandb.Table(data=data, columns=[in_type])
     #hist = wandb.plot.histogram(table, in_type, title=f'{in_type}/b{b_i}/c{c_i} distribution')
-    hist = wandb.Histogram(table, in_type, title=f'{in_type}/b{b_i}/c{c_i} distribution')
+    hist = wandb.Histogram(data)
     return hist
 
 # just needs to know if it's rolling out or nah
@@ -252,7 +253,7 @@ class MapModel(pl.LightningModule):
         batch_loss = td_loss + margin_loss #N,1
         loss = torch.mean(batch_loss, dim=0) #1,
 
-        if batch_nb % 50 == 0:
+        if batch_nb % 25 == 0:
             meta = {
                     'Q': Q, 'nQ': nQ, 'hparams': self.hparams,
                     'batch_loss': batch_loss,
@@ -271,7 +272,7 @@ class MapModel(pl.LightningModule):
                         'train/batch_loss': batch_loss.mean().item(),
                         }
 
-            if batch_nb % 50 == 0:
+            if batch_nb % 25 == 0:
                 #self.logger.log_metrics({'train_viz': result}, self.global_step)
                 # TODO: handle debug images
                 #if self.config.save_debug:
@@ -289,10 +290,9 @@ class MapModel(pl.LightningModule):
                 #metrics['Q_b'] = self.Q_conv.bias.data.squeeze().cpu().numpy()
                 metrics['train_image'] = result
 
-                to_hist = {'logits': logits, 'weights': weights, 'Qmap': Qmap}
+                to_hist = {'logits': logits, 'weights': weights}
                 for key, item in to_hist.items():
-                    #metrics[f'train/{key}_hist'] = make_histogram(item, key)
-                    pass
+                    metrics[f'train/{key}_hist'] = make_histogram(item, key)
             self.logger.log_metrics(metrics, self.global_step)
 
         return {'loss': loss}
@@ -370,9 +370,9 @@ class MapModel(pl.LightningModule):
                         'val/batch_loss': batch_loss.mean().item(),
                         }
 
-            #to_hist = {'logits': logits, 'weights': weights, 'Qmap': Qmap}
-            #for key, item in to_hist.items():
-            #    metrics[f'{key}_hist'] = make_histogram(item, key)
+            to_hist = {'logits': logits, 'weights': weights}
+            for key, item in to_hist.items():
+                metrics[f'val/{key}_hist'] = make_histogram(item, key)
             #self.logger.log_metrics(metrics, self.global_step)
 
             self.logger.log_metrics(metrics, self.global_step)
