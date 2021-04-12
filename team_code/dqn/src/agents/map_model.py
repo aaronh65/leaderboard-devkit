@@ -137,7 +137,8 @@ def make_histogram(tensor, in_type, b_i=0, c_i=0):
         data = data[-10000:]
     data = [[item] for item in data] 
     table = wandb.Table(data=data, columns=[in_type])
-    hist = wandb.plot.histogram(table, in_type, title=f'{in_type}/b{b_i}/c{c_i} distribution')
+    #hist = wandb.plot.histogram(table, in_type, title=f'{in_type}/b{b_i}/c{c_i} distribution')
+    hist = wandb.Histogram(table, in_type, title=f'{in_type}/b{b_i}/c{c_i} distribution')
     return hist
 
 # just needs to know if it's rolling out or nah
@@ -290,7 +291,8 @@ class MapModel(pl.LightningModule):
 
                 to_hist = {'logits': logits, 'weights': weights, 'Qmap': Qmap}
                 for key, item in to_hist.items():
-                    metrics[f'train/{key}_hist'] = make_histogram(item, key)
+                    #metrics[f'train/{key}_hist'] = make_histogram(item, key)
+                    pass
             self.logger.log_metrics(metrics, self.global_step)
 
         return {'loss': loss}
