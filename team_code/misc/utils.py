@@ -47,22 +47,17 @@ def spatial_norm(tensor):
     flat = tensor.view((n,c,h*w))
     norm_max, _ = torch.max(flat, dim=-1, keepdim=True)
     norm_min, _ = torch.min(flat, dim=-1, keepdim=True)
-    norm_mean = torch.mean(flat, dim=-1, keepdim=True)
-
     flat = (flat - norm_min) / (norm_max - norm_min)
-    #print(torch.max(flat,dim=-1)[0])
-    #print(torch.min(flat,dim=-1)[0])
     out = flat.view_as(tensor)
     return out # n,c,h,w
 
 # given NxCxHxW and NxCx2 coordinates, retrieve NxCx1 values
-def spatial_select(inp, coord):
-
-    h,w = inp.shape[-2:]
-    x,y = coord[...,0], coord[...,1] #N,4,1
-    flat_idx = torch.unsqueeze(y*w+x,dim=-1).long()
-    flat_inp = inp.view(inp.shape[:-2] + (-1,))
-    res = flat_inp.gather(dim=-1, index=flat_idx)
+def spatial_select(tensor, coord):
+    n,c,h,w = tensor.shape
+    coord = coord.long()
+    x,y = coord[...,0], coord[...,1] #N,4
+    flat_idx = torch.unsqueeze(y*w+x, -1)
+    res = torch.gather(tensor.view((n,c,h*w)), -1, flat_idx)
     return res #N,C,1
 
 def encode_str(string):
