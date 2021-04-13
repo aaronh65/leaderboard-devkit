@@ -3,7 +3,6 @@ from pathlib import Path
 from datetime import datetime
 
 from PIL import Image, ImageDraw
-#import matplotlib.pyplot as plt
 from matplotlib import cm
 import cv2, numpy as np
 
@@ -21,6 +20,12 @@ from lbc.carla_project.src.common import CONVERTER, COLOR
 from lbc.carla_project.src.map_model import plot_weights
  
 HAS_DISPLAY = int(os.environ['HAS_DISPLAY'])
+text_color = (255,255,255)
+aim_color = (60,179,113) # dark green
+student_color = (65,105,225) # dark blue
+expert_color = (178,34,34) # dark red
+route_colors = [(255,255,255), (112,128,144), (47,79,79), (47,79,79)] 
+
 
 # takes (N,C,H,W) topdown and (N,4,H,W) logits
 # averages t=0.5s,1.0s logitss and overlays it on topdown
@@ -36,21 +41,79 @@ def fuse_logits(topdown, logits, alpha=0.5):
     fused = fused.astype(np.uint8) # (N,H,W,3)
     return fused
 
-def viz_logits_over_time(topdown, logits, action, color=(255,255,255), alpha=0.5):
+@torch.no_grad()
+def viz_Qmap(batch, meta, alpha=0.5):
+    state, action, reward, next_state, done, info = batch
+    topdown, target = state
+    points_expert = info['points_expert']
+
+    Qmap, Q_expert = meta['Qmap'], meta['Q_expert']
+    batch_loss, td_loss, margin = meta['batch_loss'], meta['td_loss'], meta['margin']
+    margin = meta['margin']
+
+    N,T,H,W = Qmap.shape
+    Qmap_norm = spatial_norm(Qmap).cpu().numpy() #N,T,H,W
+    fused = COLOR[topdown.argmax(1).cpu()]
+    fused = np.array(fused).astype(np.uint8) # N,H,W,3
+    fused = np.expand_dims(fused,axis=1) # N,1,H,W,3
+    fused = np.tile(fused, (1,T,1,1,1)) # N,T,H,W,3
+
+    Q_mins, points_min = torch.min(Qmap.view(N,T,H*W), dim=-1)
+    Q_maxs, points_max = torch.max(Qmap.view(N,T,H*W), dim=-1)
+
+
+    _margin = margin.mean(1).flatten().detach().clone().cpu().numpy()
+    idxs = np.argsort(_margin)[:8]
+    for n in idxs:
+        tensor = Qmap_norm[n]
+        imgs = list()
+        for t, hmap in enumerate(tensor):
+            hmap = np.uint8(cm.inferno(hmap)[...,:3]*255)
+            img = cv2.addWeighted(hmap, alpha, fused[n][t], 1, 0)
+
+            img = Image.fromarray(img)
+            draw = ImageDraw.Draw(img)
+            x, y = points_max[n][t] % W, points_max[n][t] // W
+            draw.ellipse((x-2,y-2,x+2,y+2), (0,0,255))
+            x, y = points_expert[n][t]
+            draw.ellipse((x-2,y-2,x+2,y+2), expert_color)
+            x, y = points_min[n][t] % W, points_min[n][t] // W
+            draw.ellipse((x-2,y-2,x+2,y+2), (255,255,255))
+            draw.text((5,10), f'Q_max: \t{Q_maxs[n][t]:.2f}', text_color)
+            draw.text((5,20), f'Q_exp: \t{Q_expert[n][t]:.2f}', text_color)
+            draw.text((5,30), f'Q_min: \t{Q_mins[n][t]:.2f}', text_color)
+            draw.text((5,40), f'loss: \t{margin[n][t]:.2f}', text_color)
+
+            img = cv2.cvtColor(np.array(img), cv2.COLOR_BGR2RGB)
+            imgs.append(img)
+            fused[n][t] = np.array(img)
+        img = np.hstack(imgs)
+        cv2.imshow(str(n), img)
+    cv2.waitKey(0)
+
+@torch.no_grad()
+def viz_logits_over_time(topdown, logits, action, points_expert, alpha=0.5):
+
+    student_color = (65,105,225) # dark blue
+    expert_color = (178,34,34) # dark red
+
     N,T,_,_ = logits.shape
     logits_norm = spatial_norm(logits).cpu().numpy() #N,T,H,W
     fused = COLOR[topdown.argmax(1).cpu()]
     fused = np.array(fused).astype(np.uint8) # N,H,W,3
     fused = np.expand_dims(fused,axis=1) # N,1,H,W,3
     fused = np.tile(fused, (1,T,1,1,1)) # N,T,H,W,3
+
     for b in range(N):
         for t in range(T):
             hmap = np.uint8(cm.inferno(logits_norm[b][t])[...,:3]*255)
             fused[b][t] = cv2.addWeighted(hmap, alpha, fused[b][t], 1, 0)
             _img = Image.fromarray(fused[b][t])
             _draw = ImageDraw.Draw(_img)
+            for _x, _y in points_expert[b]:
+                _draw.ellipse((_x-2, _y-2, _x+2, _y+2), expert_color)
             x, y = action[b,t]
-            _draw.ellipse((x-2,y-2,x+2,y+2),color)
+            _draw.ellipse((x-2,y-2,x+2,y+2), student_color)
             fused[b][t] = np.array(_img)
     fused = fused.astype(np.uint8) 
     return fused
@@ -67,7 +130,7 @@ def visualize(batch, Qmap, tmap, nQmap, ntmap, naction, meta, r=2,title='topdown
     route_colors = [(255,255,255), (112,128,144), (47,79,79), (47,79,79)] 
 
     state, action, reward, next_state, done, info = batch
-    batch_loss, td_loss, margin_loss = meta['batch_loss'], meta['td_loss'], meta['margin_loss']
+    batch_loss, td_loss, margin = meta['batch_loss'], meta['td_loss'], meta['margin']
     hparams = meta['hparams']
     Q, nQ = meta['Q'], meta['nQ']
     discount = info['discount'].cpu()
@@ -115,14 +178,14 @@ def visualize(batch, Qmap, tmap, nQmap, ntmap, naction, meta, r=2,title='topdown
         _ndraw.text((5, 10), f'nQ = {nQ[i].item():.2f}', text_color)
         _ndraw.text((5, 20), f'discount = {discount[i].item():.2f}', text_color)
         _td_loss = f'{td_loss[i].item():.2f}'
-        _margin_loss = f'{margin_loss[i].item():.2f}'
+        _margin_loss = f'{margin_loss[i].mean().item():.2f}'
         _batch_loss = f'{batch_loss[i].item():.2f}'
         _ndraw.text((5, 30), f'batch_loss = {_td_loss} + {_margin_loss} = {_batch_loss}', text_color)
 
         _combined = np.hstack((np.array(_topdown), np.array(_ntopdown)))
-        #if HAS_DISPLAY and i < 4:
-        #    cv2.imshow(f'{title}_{i}', cv2.cvtColor(_combined, cv2.COLOR_BGR2RGB))
-        #    pass
+        if HAS_DISPLAY and i < 4:
+            cv2.imshow(f'{title}_{i}', cv2.cvtColor(_combined, cv2.COLOR_BGR2RGB))
+            pass
         images.append(_combined)
     
     result1 = [torch.ByteTensor(x.transpose(2,0,1)) for x in images]
@@ -131,7 +194,7 @@ def visualize(batch, Qmap, tmap, nQmap, ntmap, naction, meta, r=2,title='topdown
     result1 = wandb.Image(result1)
 
     # heatmaps
-    result2 = viz_logits_over_time(ntopdown, nQmap, naction, color=student_color)
+    result2 = viz_logits_over_time(topdown, Qmap, action, info['points_expert'])
     result2 = [np.hstack(it) for it in result2]
     result2 = result2[:8] # 8x4 debug images
     imshow = result2[0].copy()
@@ -140,10 +203,10 @@ def visualize(batch, Qmap, tmap, nQmap, ntmap, naction, meta, r=2,title='topdown
     result2 = result2.numpy().transpose(1,2,0)
     result2 = wandb.Image(result2)
 
-    #if HAS_DISPLAY:
-    #    cv2.imshow('fused', cv2.cvtColor(imshow, cv2.COLOR_BGR2RGB))
-    #    cv2.waitKey(5000)
-    #    pass
+    if HAS_DISPLAY:
+        cv2.imshow('fused', cv2.cvtColor(imshow, cv2.COLOR_BGR2RGB))
+        cv2.waitKey(5000)
+        pass
 
     return result1, result2
 
@@ -239,29 +302,21 @@ class MapModel(pl.LightningModule):
         # expert margin loss
         points_expert = info['points_expert']
         Q_expert_all = spatial_select(Qmap, info['points_expert']) #N,T,1
-        #Q_expert = torch.mean(Q_expert_all.squeeze(), axis=-1, keepdim=True) #N,1
 
         margin_map = self.expert_heatmap(points_expert, Qmap) #[0,1] tall at expert points
-        margin_map = (1-margin_map)*self.margin_weight #[0, 8] low at expert points
-        margin = Qmap + margin_map  - Q_expert_all.unsqueeze(-1)
-        #cv2.imshow('margin', spatial_norm(margin).detach().cpu().numpy()[0][0])
-        margin = torch.clamp(margin, 0, 100)
-        margin_loss = torch.mean(margin, dim=(1,2,3)) #N,
-        margin_loss = self.hparams.lambda_margin * margin_loss.unsqueeze(-1)
+        margin_map = (1-margin_map)*self.margin_weight #[0, 1] before scaling - low at expert points
+        margin = Qmap + margin_map - Q_expert_all.unsqueeze(-1)
+        margin = F.relu(margin)
+        #margin_loss = torch.mean(margin, dim=(1,2,3)) #N,
+        #margin_loss = self.hparams.lambda_margin * margin_loss.unsqueeze(-1)
+        margin = torch.mean(margin, dim=(-1,-2)) #N,T
+        margin_loss = self.hparams.lambda_margin * margin.mean(dim=1,keepdim=True)
+
 
         batch_loss = td_loss + margin_loss #N,1
         loss = torch.mean(batch_loss, dim=0) #1,
 
         if batch_nb % 25 == 0:
-            #cv2.imshow('margin_map', margin_map.detach().cpu().numpy()[0][0])
-            #if HAS_DISPLAY:
-            #    for t in range(4):
-            #        im1 = spatial_norm(margin).detach().cpu().numpy()[0][t]
-            #        im2 = spatial_norm(Qmap).detach().cpu().numpy()[0][t]
-            #        plot = np.hstack((im1,im2))
-            #        cv2.imshow(f'debug_{t}', plot)
-            #    cv2.waitKey(5000)
-
             meta = {
                     'Q': Q, 'nQ': nQ, 'hparams': self.hparams,
                     'batch_loss': batch_loss,
@@ -270,8 +325,6 @@ class MapModel(pl.LightningModule):
                     'metadata': info['metadata'],
                     }
             result1, result2 = visualize(batch, Qmap, tmap, nQmap, ntmap, naction, meta, title='Qmap')
-            #images, result = visualize(batch, logits, tmap, nlogits, ntmap, naction, meta, title='logits')
-
 
         if self.logger != None:
             metrics = {
@@ -292,7 +345,7 @@ class MapModel(pl.LightningModule):
 
     # make this a validation episode rollout?
     def validation_step(self, batch, batch_nb):
-        metrics ={}
+        metrics = {}
 
         state, action, reward, next_state, done, info = batch
         topdown, target = state
@@ -313,42 +366,42 @@ class MapModel(pl.LightningModule):
         # expert margin loss
         points_expert = info['points_expert']
         Q_expert_all = spatial_select(Qmap, points_expert) #N,T,1
-        Q_expert = torch.mean(Q_expert_all.squeeze(), axis=-1, keepdim=True) #N,1
 
+        # DEBUG
 
         margin_map = self.expert_heatmap(points_expert, Qmap) #[0,1] tall at expert points
         margin_map = (1-margin_map)*self.margin_weight #[0, 8] low at expert points
-        margin = Qmap + margin_map  - Q_expert_all.unsqueeze(-1)
-        margin = torch.clamp(margin, 0, 100)
-        margin_loss = torch.mean(margin, dim=(1,2,3)) #N,
-        margin_loss = self.hparams.lambda_margin * margin_loss.unsqueeze(-1)
+        margin = Qmap + margin_map - Q_expert_all.unsqueeze(-1)
+        margin = F.relu(margin)
+        margin = torch.mean(margin, dim=(-1,-2)) #N,T
+        margin_loss = self.hparams.lambda_margin * margin.mean(dim=1,keepdim=True)
 
 
         batch_loss = td_loss + margin_loss
         val_loss = torch.mean(batch_loss, axis=0)
         
-                
-                #images, result = visualize(batch, logits, tmap, nlogits, ntmap, naction, meta, title='logits')
+        meta = {
+                'hparams': self.hparams,
+                'Qmap': Qmap, 'nQmap': nQmap, 
+                'Q': Q, 'nQ': nQ, 'Q_expert': Q_expert_all.squeeze(dim=-1),
+                'naction': naction,
+                'tmap': tmap, 'ntmap': ntmap,
+                'batch_loss': batch_loss,
+                'td_loss': td_loss,
+                'margin': margin,
+                }
+        viz_Qmap(batch, meta)
 
         if batch_nb == 0 and self.logger != None:
-            meta = {
-                    'Q': Q, 'nQ': nQ, 'hparams': self.hparams, 
-                    'batch_loss': batch_loss,
-                    'td_loss': td_loss,
-                    'margin_loss': margin_loss,
-                    'metadata': info['metadata']
-                    }
             result1, result2 = visualize(batch, Qmap, tmap, nQmap, ntmap, naction, meta,title='Qmap')
 
             metrics = {
                         'val_image_dqn': result1,
                         'val_image_hmap': result2,}
 
-            #to_hist = {'logits': logits, 'weights': weights}
             to_hist = {'Qmap': Qmap}
             for key, item in to_hist.items():
                 metrics[f'val/{key}_hist'] = make_histogram(item, key)
-
             self.logger.log_metrics(metrics, self.global_step)
 
         return {'val_loss': torch.mean(batch_loss,axis=0),
@@ -390,7 +443,6 @@ class MapModel(pl.LightningModule):
 # offline training
 
 def main(args):
-
     
     logger = False
     if args.log:
@@ -407,21 +459,6 @@ def main(args):
             pass
     else:
         model = MapModel(args)
-
-
-
-
-    #model = MapModel.load_from_checkpoint(RESUME)
-    #model.hparams.max_epochs = args.max_epochs
-    #model.hparams.dataset_dir = args.dataset_dir
-    #model.hparams.batch_size = args.batch_size
-    #model.hparams.save_dir = args.save_dir
-    #model.hparams.n = args.n
-    #model.hparams.gamma = args.gamma
-    #model.hparams.num_workers = args.num_workers
-    #model.hparams.no_margin = args.no_margin
-    #model.hparams.no_td = args.no_td
-    #model.hparams.data_mode = 'offline'
 
     with open(args.save_dir / 'config.yml', 'w') as f:
         hparams_copy = copy.copy(vars(model.hparams))
