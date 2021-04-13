@@ -25,7 +25,7 @@ route_colors = [(255,255,255), (112,128,144), (47,79,79), (47,79,79)]
 
 @torch.no_grad()
 # N,C,H,W
-def plot_weights(topdown, target, points, weights, loss_point=None, alpha=0.75, use_wandb=False):
+def plot_weights(topdown, target, points, weights, loss_point=None, alpha=0.5, use_wandb=False):
     n,c,_ = points.shape
     points = points.clone().detach().cpu().numpy() # N,C,2
     points = (points + 1) / 2 * 256

@@ -3,6 +3,8 @@ from pathlib import Path
 from datetime import datetime
 
 from PIL import Image, ImageDraw
+#import matplotlib.pyplot as plt
+from matplotlib import cm
 import cv2, numpy as np
 
 import torch, torchvision, wandb
@@ -20,28 +22,37 @@ from lbc.carla_project.src.map_model import plot_weights
  
 HAS_DISPLAY = int(os.environ['HAS_DISPLAY'])
 
-# takes (N,3,H,W) topdown and (N,4,H,W) logits
+# takes (N,C,H,W) topdown and (N,4,H,W) logits
 # averages t=0.5s,1.0s logitss and overlays it on topdown
 @torch.no_grad()
 def fuse_logits(topdown, logits, alpha=0.5):
-
-    #logits_mean = torch.mean(logits[:,0:2,:,:], dim=1, keepdim=True) # N,1,H,W
-    logits_norm = spatial_norm(logits).cpu().numpy()*255 #N,T,H,W
-    logits_norm = np.expand_dims(logits_norm,axis=-1).astype(np.uint8) 
-    #print(logits_norm.squeeze()[0][0])
-    #print(logits_norm.squeeze()[0][1])
-    logits_show = np.tile(logits_norm, (1,1,1,1,3)) #N,T,H,W,3
-    #logits_show = np.repeat(logits_norm, repeats=3, axis=-1) #N,T,H,W,3
-    #logits_flat = logits_mean.view(logits_mean.shape[:-2] + (-1,)) # N,1,H*W
-    #logits_prob = F.softmax(logits_flat/temperature, dim=-1) # to prob
-    #logits_norm = logits_prob / torch.max(logits_prob, dim=-1, keepdim=True)[0] # to [0,1]
-    #logits_show = (logits_norm * 256).view_as(logits_mean).cpu().numpy().astype(np.uint8) # N,1,H,W
-    #logits_show = np.repeat(logits_norm, repeats=3, axis=1).transpose((0,2,3,1)) # N,H,W,3
+    logits_norm = spatial_norm(logits).cpu().numpy() #N,T,H,W
     fused = np.array(COLOR[topdown.argmax(1).cpu()]).astype(np.uint8) # N,H,W,3
     for i in range(fused.shape[0]):
-        logits_mask = cv2.addWeighted(logits_show[i][0], 1, logits_show[i][1], 1, 0)
+        map1 = cm.inferno(logits_norm[i][0])[...,:3]*255
+        map2 = cm.inferno(logits_norm[i][1])[...,:3]*255
+        logits_mask = cv2.addWeighted(np.uint8(map1), 0.5, np.uint8(map2), 0.5, 0)
         fused[i] = cv2.addWeighted(logits_mask, alpha, fused[i], 1, 0)
     fused = fused.astype(np.uint8) # (N,H,W,3)
+    return fused
+
+def viz_logits_over_time(topdown, logits, action, color=(255,255,255), alpha=0.5):
+    N,T,_,_ = logits.shape
+    logits_norm = spatial_norm(logits).cpu().numpy() #N,T,H,W
+    fused = COLOR[topdown.argmax(1).cpu()]
+    fused = np.array(fused).astype(np.uint8) # N,H,W,3
+    fused = np.expand_dims(fused,axis=1) # N,1,H,W,3
+    fused = np.tile(fused, (1,T,1,1,1)) # N,T,H,W,3
+    for b in range(N):
+        for t in range(T):
+            hmap = np.uint8(cm.inferno(logits_norm[b][t])[...,:3]*255)
+            fused[b][t] = cv2.addWeighted(hmap, alpha, fused[b][t], 1, 0)
+            _img = Image.fromarray(fused[b][t])
+            _draw = ImageDraw.Draw(_img)
+            x, y = action[b,t]
+            _draw.ellipse((x-2,y-2,x+2,y+2),color)
+            fused[b][t] = np.array(_img)
+    fused = fused.astype(np.uint8) 
     return fused
 
 # visualize each timestep's heatmap?
@@ -69,10 +80,12 @@ def visualize(batch, Qmap, tmap, nQmap, ntmap, naction, meta, r=2,title='topdown
     nfused = fuse_logits(ntopdown, nQmap)
 
     images = list()
-    for i in range(min(action.shape[0], 32)):
+    indices = np.argsort(batch_loss.clone().detach().cpu().numpy().flatten())[::-1]
+    for idx in range(min(indices.shape[0], 16)):
+        i = indices[idx]
 
         # current state
-        _topdown = fused[i]
+        _topdown = fused[i].copy()
         _topdown[tmap[i][0].cpu() > 0.1] = 255
         _topdown = Image.fromarray(_topdown)
         _draw = ImageDraw.Draw(_topdown)
@@ -89,7 +102,7 @@ def visualize(batch, Qmap, tmap, nQmap, ntmap, naction, meta, r=2,title='topdown
         _draw.text((5, 40), f'meta = {_metadata}', text_color)
 
         # next state
-        _ntopdown = nfused[i]
+        _ntopdown = nfused[i].copy()
         _ntopdown[ntmap[i][0].cpu() > 0.1] = 255
         _ntopdown = Image.fromarray(_ntopdown)
         _ndraw = ImageDraw.Draw(_ntopdown)
@@ -107,28 +120,32 @@ def visualize(batch, Qmap, tmap, nQmap, ntmap, naction, meta, r=2,title='topdown
         _ndraw.text((5, 30), f'batch_loss = {_td_loss} + {_margin_loss} = {_batch_loss}', text_color)
 
         _combined = np.hstack((np.array(_topdown), np.array(_ntopdown)))
-        #if HAS_DISPLAY:
-        #    #cv2.imshow(f'{title}_{i}', cv2.cvtColor(_combined, cv2.COLOR_BGR2RGB))
+        #if HAS_DISPLAY and i < 4:
+        #    cv2.imshow(f'{title}_{i}', cv2.cvtColor(_combined, cv2.COLOR_BGR2RGB))
         #    pass
-        images.append((batch_loss[i].item(), _combined))
-        #images.append((td_loss[i].item(), torch.ByteTensor(_combined)))
+        images.append(_combined)
+    
+    result1 = [torch.ByteTensor(x.transpose(2,0,1)) for x in images]
+    result1 = torchvision.utils.make_grid(result1, nrow=2)
+    result1 = result1.numpy().transpose(1,2,0)
+    result1 = wandb.Image(result1)
+
+    # heatmaps
+    result2 = viz_logits_over_time(ntopdown, nQmap, naction, color=student_color)
+    result2 = [np.hstack(it) for it in result2]
+    result2 = result2[:8] # 8x4 debug images
+    imshow = result2[0].copy()
+    result2 = [torch.ByteTensor(x.transpose(2,0,1)) for x in result2]
+    result2 = torchvision.utils.make_grid(result2, nrow=1)
+    result2 = result2.numpy().transpose(1,2,0)
+    result2 = wandb.Image(result2)
 
     #if HAS_DISPLAY:
+    #    cv2.imshow('fused', cv2.cvtColor(imshow, cv2.COLOR_BGR2RGB))
     #    cv2.waitKey(5000)
     #    pass
 
-    images.sort(key=lambda x: x[0], reverse=True)
-    result = [torch.ByteTensor(x[1].transpose(2,0,1)) for x in images]
-    result = torchvision.utils.make_grid(result, nrow=4)
-    result = result.numpy().transpose(1,2,0)
-    result = wandb.Image(result)
-    if HAS_DISPLAY:
-        images = [x[1] for x in images]
-        combined = np.hstack(images)
-        cv2.imshow(title, combined)
-        cv2.waitKey(5000)
-
-    return images, result
+    return result1, result2
 
 @torch.no_grad()
 def make_histogram(tensor, in_type, b_i=0, c_i=0):
@@ -136,9 +153,6 @@ def make_histogram(tensor, in_type, b_i=0, c_i=0):
     if len(data) > 10000:
         indices = np.random.randint(0, data.shape[0], 10000)
         data = data[indices]
-    #data = [[item] for item in data] 
-    #table = wandb.Table(data=data, columns=[in_type])
-    #hist = wandb.plot.histogram(table, in_type, title=f'{in_type}/b{b_i}/c{c_i} distribution')
     hist = wandb.Histogram(data)
     return hist
 
@@ -160,17 +174,7 @@ class MapModel(pl.LightningModule):
         self.td_criterion = torch.nn.MSELoss(reduction='none') # weights? prioritized replay?
         self.expert_heatmap = ToTemporalHeatmap(5)
         self.margin_criterion = torch.nn.MSELoss(reduction='none')
-        #self.Q_conv = torch.nn.Conv2d(in_channels=4,out_channels=4,kernel_size=1,groups=4)
-        self.margin_weight = 100
-        #self.Q_mult = torch.nn.Parameter(torch.rand(1))
-        #self.Q_bias = torch.nn.Parameter(torch.rand(1))
-
-    #def on_train_start(self):
-    #    #print('on_train_start')
-    #    #print(self.logger is not None)
-    #    #if self.logger is not None:
-    #    #    self.logger.watch(self)
-    #    pass
+        self.margin_weight = 10
 
     def restore_from_lbc(self, weights_path):
         from lbc.carla_project.src.map_model import MapModel as LBCModel
@@ -186,12 +190,6 @@ class MapModel(pl.LightningModule):
         input = torch.cat((topdown, target_heatmap), 1)
         # points (N,T,2), logits/weights (N,T,H,W)
         points, logits, weights = self.net(input, temperature=self.temperature.item())
-        #Q_unscaled = weights * 2 - 1 #  (0,1) -> (-1,1)
-        #$Qmap = Q_unscaled * self.Q_mult + self.Q_bias # (N,T,H,W)
-
-        #$Qmap = logits
-        #Qmap = self.Q_conv(weights) # weights are [0,1]
-        #Qmap = self.Q_conv(logits) # weights are [0,1]
         Qmap = logits
         return points, logits, weights, target_heatmap, Qmap
 
@@ -244,9 +242,10 @@ class MapModel(pl.LightningModule):
         #Q_expert = torch.mean(Q_expert_all.squeeze(), axis=-1, keepdim=True) #N,1
 
         margin_map = self.expert_heatmap(points_expert, Qmap) #[0,1] tall at expert points
-        margin_map = (1-margin_map) #[0, 8] low at expert points
+        margin_map = (1-margin_map)*self.margin_weight #[0, 8] low at expert points
         margin = Qmap + margin_map  - Q_expert_all.unsqueeze(-1)
         #cv2.imshow('margin', spatial_norm(margin).detach().cpu().numpy()[0][0])
+        margin = torch.clamp(margin, 0, 100)
         margin_loss = torch.mean(margin, dim=(1,2,3)) #N,
         margin_loss = self.hparams.lambda_margin * margin_loss.unsqueeze(-1)
 
@@ -254,6 +253,15 @@ class MapModel(pl.LightningModule):
         loss = torch.mean(batch_loss, dim=0) #1,
 
         if batch_nb % 25 == 0:
+            #cv2.imshow('margin_map', margin_map.detach().cpu().numpy()[0][0])
+            #if HAS_DISPLAY:
+            #    for t in range(4):
+            #        im1 = spatial_norm(margin).detach().cpu().numpy()[0][t]
+            #        im2 = spatial_norm(Qmap).detach().cpu().numpy()[0][t]
+            #        plot = np.hstack((im1,im2))
+            #        cv2.imshow(f'debug_{t}', plot)
+            #    cv2.waitKey(5000)
+
             meta = {
                     'Q': Q, 'nQ': nQ, 'hparams': self.hparams,
                     'batch_loss': batch_loss,
@@ -261,8 +269,8 @@ class MapModel(pl.LightningModule):
                     'margin_loss': margin_loss,
                     'metadata': info['metadata'],
                     }
-
-            images, result = visualize(batch, logits, tmap, nlogits, ntmap, naction, meta, title='logits')
+            result1, result2 = visualize(batch, Qmap, tmap, nQmap, ntmap, naction, meta, title='Qmap')
+            #images, result = visualize(batch, logits, tmap, nlogits, ntmap, naction, meta, title='logits')
 
 
         if self.logger != None:
@@ -273,24 +281,9 @@ class MapModel(pl.LightningModule):
                         }
 
             if batch_nb % 25 == 0:
-                #self.logger.log_metrics({'train_viz': result}, self.global_step)
-                # TODO: handle debug images
-                #if self.config.save_debug:
-                #    img = cv2.cvtColor(np.array(self.env.hero_agent.debug_img), cv2.COLOR_RGB2BGR)
-                #    metrics['debug_image'] = wandb.Image(img)
-
-                                #images, result = visualize(batch, weights, tmap, nweights, ntmap, naction, meta, title='weights')
-                #images, result = visualize(batch, Qmap, tmap, nQmap, ntmap, naction, meta, title='Qmap')
-
-                #images, result = visualize(batch, weights, tmap, nweights, ntmap, naction, meta)
-                #images, result = visualize(batch, Qmap, tmap, nQmap, ntmap, naction, meta)
-                            #cv2.waitKey(5000)
-                            
-                #metrics['Q_w'] = self.Q_conv.weight.data.squeeze().cpu().numpy()
-                #metrics['Q_b'] = self.Q_conv.bias.data.squeeze().cpu().numpy()
-                metrics['train_image'] = result
-
-                to_hist = {'logits': logits, 'weights': weights}
+                metrics['train_image_dqn'] = result1
+                metrics['train_image_hmap'] = result2
+                to_hist = {'Qmap': Qmap}
                 for key, item in to_hist.items():
                     metrics[f'train/{key}_hist'] = make_histogram(item, key)
             self.logger.log_metrics(metrics, self.global_step)
@@ -323,15 +316,10 @@ class MapModel(pl.LightningModule):
         Q_expert = torch.mean(Q_expert_all.squeeze(), axis=-1, keepdim=True) #N,1
 
 
-        #if True:
-        #    hmaps = np.hstack(margin_map[0].cpu().numpy())
-        #    print(hmaps.shape)
-        #    cv2.imshow('hmaps',hmaps)
-        #    cv2.waitKey(0)
         margin_map = self.expert_heatmap(points_expert, Qmap) #[0,1] tall at expert points
-        margin_map = (1-margin_map) #[0, 8] low at expert points
+        margin_map = (1-margin_map)*self.margin_weight #[0, 8] low at expert points
         margin = Qmap + margin_map  - Q_expert_all.unsqueeze(-1)
-        #cv2.imshow('margin', margin.detach().cpu().numpy()[0][0])
+        margin = torch.clamp(margin, 0, 100)
         margin_loss = torch.mean(margin, dim=(1,2,3)) #N,
         margin_loss = self.hparams.lambda_margin * margin_loss.unsqueeze(-1)
 
@@ -340,44 +328,32 @@ class MapModel(pl.LightningModule):
         val_loss = torch.mean(batch_loss, axis=0)
         
                 
-        meta = {
-                'Q': Q, 'nQ': nQ, 'hparams': self.hparams, 
-                'batch_loss': batch_loss,
-                'td_loss': td_loss,
-                'margin_loss': margin_loss,
-                'metadata': info['metadata']
-                }
+                #images, result = visualize(batch, logits, tmap, nlogits, ntmap, naction, meta, title='logits')
 
-        images, result = visualize(batch, logits, tmap, nlogits, ntmap, naction, meta, title='logits')
-
-        if self.logger != None:
-            #print(result)
-            #print(result.shape)
-            #self.logger.log_metrics({'val_viz': result}, self.global_step)
-
-            if HAS_DISPLAY:
-                images = [x[1] for x in images]
-                combined = np.hstack(images)
-                cv2.imshow('logits', combined)
-                #cv2.waitKey(0)
+        if batch_nb == 0 and self.logger != None:
+            meta = {
+                    'Q': Q, 'nQ': nQ, 'hparams': self.hparams, 
+                    'batch_loss': batch_loss,
+                    'td_loss': td_loss,
+                    'margin_loss': margin_loss,
+                    'metadata': info['metadata']
+                    }
+            result1, result2 = visualize(batch, Qmap, tmap, nQmap, ntmap, naction, meta,title='Qmap')
 
             metrics = {
-                        #'Q_w' = self.Q_conv.weight.data.squeeze().cpu().numpy(),
-                        #'Q_b' = self.Q_conv.bias.data.squeeze().cpu().numpy(),
-                        'val_image': result,
-                        f'val/TD({self.hparams.n}) loss': td_loss.mean().item(),
-                        'val/margin_loss': margin_loss.mean().item(),
-                        'val/batch_loss': batch_loss.mean().item(),
-                        }
+                        'val_image_dqn': result1,
+                        'val_image_hmap': result2,}
 
-            to_hist = {'logits': logits, 'weights': weights}
+            #to_hist = {'logits': logits, 'weights': weights}
+            to_hist = {'Qmap': Qmap}
             for key, item in to_hist.items():
                 metrics[f'val/{key}_hist'] = make_histogram(item, key)
-            #self.logger.log_metrics(metrics, self.global_step)
 
             self.logger.log_metrics(metrics, self.global_step)
-            #self.logger.log_metrics(loss_metrics, self.global_step)
-        return {'val_loss': val_loss}
+
+        return {'val_loss': torch.mean(batch_loss,axis=0),
+                f'val_TD({self.hparams.n})_loss': torch.mean(td_loss,axis=0),
+                'val_margin_loss': torch.mean(margin_loss,axis=0),}
 
     def validation_epoch_end(self, batch_metrics):
         results = dict()
