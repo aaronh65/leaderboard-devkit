@@ -186,7 +186,7 @@ class MapModel(pl.LightningModule):
         self.net = SegmentationModel(10, 4, batch_norm=True, hack=True)
         self.controller = RawController(4)
         self.td_criterion = torch.nn.MSELoss(reduction='none') # weights? prioritized replay?
-        self.expert_heatmap = ToTemporalHeatmap(5)
+        self.expert_heatmap = ToTemporalHeatmap(2)
         self.margin_criterion = torch.nn.MSELoss(reduction='none')
         self.margin_weight = 10
 

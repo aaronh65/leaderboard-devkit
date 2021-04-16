@@ -1,7 +1,7 @@
 import torch
 
 class ToTemporalHeatmap(torch.nn.Module):
-    def __init__(self, radius=5):
+    def __init__(self, radius=2):
         super().__init__()
 
         bounds = torch.arange(-radius, radius+1, 1.0)
