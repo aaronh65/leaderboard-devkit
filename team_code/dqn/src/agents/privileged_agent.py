@@ -241,7 +241,7 @@ class PrivilegedAgent(MapAgent):
         fused = fuse_logits(topdown, Qmap).squeeze()
         fused = Image.fromarray(fused)
         draw = ImageDraw.Draw(fused)
-        for x, y in points_map[0:2]:
+        for x, y in points_map:
             draw.ellipse((x-r, y-r, x+r, y+r), student_color)
         if points_expert is not None:
             for x, y in points_expert:
@@ -259,7 +259,7 @@ class PrivilegedAgent(MapAgent):
 
         rgb = Image.fromarray(tick_data['rgb'])
         draw = ImageDraw.Draw(rgb)
-        for x,y in points_cam[0:2]:
+        for x,y in points_cam:
             draw.ellipse((x-r, y-r, x+r, y+r), student_color)
         if points_expert is not None:
             points_expert_cam = self.converter.map_to_cam(torch.Tensor(points_expert)).numpy()
