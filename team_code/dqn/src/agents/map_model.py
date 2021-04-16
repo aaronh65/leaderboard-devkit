@@ -178,9 +178,11 @@ class MapModel(pl.LightningModule):
         if hparams is not None:
             self.hparams = hparams
             self.to_heatmap = ToHeatmap(hparams.heatmap_radius)
+            self.expert_heatmap = ToTemporalHeatmap(hparams.expert_radius)
             self.register_buffer('temperature', torch.Tensor([self.hparams.temperature]))
         else:
             self.to_heatmap = ToHeatmap(5)
+            self.expert_heatmap = toTemporalHeatmap(2)
             self.register_buffer('temperature', torch.Tensor([10]))
 
         self.net = SegmentationModel(10, 4, batch_norm=True, hack=True)
@@ -399,7 +401,7 @@ def main(args):
     if args.log:
         logger = WandbLogger(id=args.id, save_dir=str(args.save_dir), project='dqn_test')
         #wandb.init(project='dqn_test')
-    checkpoint_callback = ModelCheckpoint(args.save_dir, save_top_k=1) # figure out what's up with this
+    checkpoint_callback = ModelCheckpoint(args.save_dir, save_top_k=3) # figure out what's up with this
     # resume and add a couple arguments
     if args.restore_from is not None:
         if 'lbc' in args.restore_from:
@@ -463,6 +465,7 @@ if __name__ == '__main__':
 
     # Model args
     parser.add_argument('--heatmap_radius', type=int, default=5)
+    parser.add_argument('--expert_radius', type=int, default=2)
     parser.add_argument('--temperature', type=float, default=10.0)
     parser.add_argument('--hack', action='store_true', default=False) # what is this again?
         
