@@ -179,16 +179,17 @@ class MapModel(pl.LightningModule):
             self.hparams = hparams
             self.to_heatmap = ToHeatmap(hparams.heatmap_radius)
             self.expert_heatmap = ToTemporalHeatmap(hparams.expert_radius)
+            #self.expert_heatmap = ToTemporalHeatmap(5)
             self.register_buffer('temperature', torch.Tensor([self.hparams.temperature]))
         else:
             self.to_heatmap = ToHeatmap(5)
-            self.expert_heatmap = toTemporalHeatmap(2)
+            self.expert_heatmap = ToTemporalHeatmap(2)
             self.register_buffer('temperature', torch.Tensor([10]))
 
         self.net = SegmentationModel(10, 4, batch_norm=True, hack=True)
         self.controller = RawController(4)
         self.td_criterion = torch.nn.MSELoss(reduction='none') # weights? prioritized replay?
-        self.expert_heatmap = ToTemporalHeatmap(2)
+        #self.expert_heatmap = ToTemporalHeatmap(2)
         self.margin_criterion = torch.nn.MSELoss(reduction='none')
         self.margin_weight = 10
 
@@ -420,6 +421,7 @@ def main(args):
         del hparams_copy['id']
         del hparams_copy['data_root']
         yaml.dump(hparams_copy, f, default_flow_style=False, sort_keys=False)
+    shutil.copyfile(hparams.dataset_dir / 'config.yml', hparams.save_dir / 'data_config.yml')
 
     # offline trainer can use all gpus
     # when resuming, the network starts at epoch 36

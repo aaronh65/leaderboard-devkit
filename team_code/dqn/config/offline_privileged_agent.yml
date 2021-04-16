@@ -5,9 +5,8 @@ save_debug: False
 env:
     placeholder: 0
 agent:
-    #weights_path: /data/aaronhua/leaderboard/training/lbc/20210405_225046/epoch=22.ckpt
-  weights_path: /data/aaronhua/leaderboard/training/dqn/offline/20210414_234111/epoch=18.ckpt
-  expert_path: /data/aaronhua/leaderboard/training/lbc/20210405_225046/epoch=22.ckpt
+  weights_path: /data/aaronhua/leaderboard/training/dqn/offline/20210416_015107/epoch=48.ckpt
+  expert_path: /data/aaronhua/leaderboard/training/lbc/map_model/20210405_225046/epoch=22.ckpt
   waypoint_mode: argmax # or argmax
   dagger_expert: false
   data_hack: false

@@ -41,6 +41,7 @@ class PrivilegedAgent(MapAgent):
         self.converter = Converter()
 
         weights_path = self.aconfig.weights_path
+        print(weights_path)
         if 'lbc' in weights_path:
             self.net = MapModel()
             self.net.restore_from_lbc(weights_path)

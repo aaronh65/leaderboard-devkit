@@ -55,19 +55,6 @@ save_root.mkdir(parents=True,exist_ok=True)
 (save_root / 'logs').mkdir(exist_ok=True)
 
 # agent-specific config
-if args.config_path is None:
-    config_path = f'{project_root}/team_code/{appr}/config/{algo}.yml'
-else:
-    config_path = f'{project_root}/team_code/{args.config_path}'
-
-print(config_path)
-with open(config_path, 'r') as f:
-    config = yaml.load(f, Loader=yaml.Loader)
-if 'weights_path' in config.keys():
-    wpath = Path(config['weights_path']).parent
-    shutil.copyfile(wpath / 'config.yml', save_root / 'train_config.yml')
-    shutil.copyfile(wpath / 'data_config.yml', save_root / 'data_config.yml')
-
 try:
     CARLA_ROOT = os.environ['CARLA_ROOT']
         
@@ -94,7 +81,12 @@ try:
     time.sleep(timeout)
 
     # agent-specific configurations
-    config_path = f'{project_root}/team_code/{appr}/config/{algo}.yml'
+    if args.config_path is None:
+        config_path = f'{project_root}/team_code/{appr}/config/{algo}.yml'
+    else:
+        config_path = f'{project_root}/team_code/{args.config_path}'
+
+    print(config_path)
     with open(config_path, 'r') as f:
         config = yaml.load(f, Loader=yaml.Loader)
 
@@ -111,7 +103,15 @@ try:
     config_path = f'{save_root}/config.yml'
     with open(config_path, 'w') as f:
         yaml.dump(config, f, default_flow_style=False, sort_keys=False)
-    
+
+    if 'weights_path' in config.keys() or ('agent' in config.keys() and 'weights_path' in config['agent'].keys()):
+        if 'weights_path' in config.keys():
+            wpath = Path(config['weights_path']).parent
+        else:
+            wpath = Path(config['agent']['weights_path']).parent
+        shutil.copyfile(wpath / 'config.yml', save_root / 'train_config.yml')
+        shutil.copyfile(wpath / 'data_config.yml', save_root / 'data_config.yml')
+
     # route paths
     route_dir = f'{project_root}/leaderboard/data/routes_{args.split}'
     routes = [route.split('.')[0] for route in sorted(os.listdir(route_dir)) if route.endswith('.xml')]
