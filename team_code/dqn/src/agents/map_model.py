@@ -175,33 +175,27 @@ class MapModel(pl.LightningModule):
     def __init__(self, hparams=None):
         super().__init__()
 
-        if hparams is not None: # occurs when restoring from LBC in priv agent
+        if hparams is not None:
             self.hparams = hparams
             self.to_heatmap = ToHeatmap(hparams.heatmap_radius)
             self.expert_heatmap = ToTemporalHeatmap(hparams.expert_radius)
-            self.register_buffer('temperature', torch.Tensor([self.hparams.temperature]))
-        else:
-            self.to_heatmap = ToHeatmap(5)
-            self.expert_heatmap = ToTemporalHeatmap(2)
-            self.register_buffer('temperature', torch.Tensor([10]))
+            self.register_buffer('temperature', torch.Tensor([hparams.temperature]))
+            self.net = SegmentationModel(10, 4, batch_norm=True, hack=hparams.hack)
 
-        self.net = SegmentationModel(10, 4, batch_norm=True, hack=True)
         self.controller = RawController(4)
-        self.td_criterion = torch.nn.MSELoss(reduction='none') # weights? prioritized replay?
-        #self.expert_heatmap = ToTemporalHeatmap(2)
+        self.td_criterion = torch.nn.MSELoss(reduction='none')
         self.margin_criterion = torch.nn.MSELoss(reduction='none')
-        self.expert_margin = 10
 
     def restore_from_lbc(self, weights_path):
         from lbc.carla_project.src.map_model import MapModel as LBCModel
 
         print('restoring from LBC')
         lbc_model = LBCModel.load_from_checkpoint(weights_path)
-        self.net.load_state_dict(lbc_model.net.state_dict())
+        self.net = lbc_model.net
         self.temperature = lbc_model.temperature
         self.to_heatmap = lbc_model.to_heatmap
 
-    def forward(self, topdown, target, debug=True):
+    def forward(self, topdown, target, debug=False):
         target_heatmap = self.to_heatmap(target, topdown)[:, None]
         input = torch.cat((topdown, target_heatmap), 1)
         # points (N,T,2), logits/weights (N,T,H,W)
@@ -215,15 +209,15 @@ class MapModel(pl.LightningModule):
         # two modes: sample, argmax?
     def get_dqn_actions(self, Qmap, explore=False):
         h,w = Qmap.shape[-2:]
-        Qmap_flat = Qmap.view(Qmap.shape[:-2] + (-1,)) # (N, 4, H*W)
-        Q_all, action_flat = torch.max(Qmap_flat, -1, keepdim=True) # (N, 4, 1)
+        Qmap_flat = Qmap.view(Qmap.shape[:-2] + (-1,)) # (N,T,H*W)
+        Q_all, action_flat = torch.max(Qmap_flat, -1, keepdim=True) # (N,T,1)
 
         action = torch.cat((
             action_flat % w,
             action_flat // w),
-            axis=2) # (N, C, 2)
+            axis=2) # (N,T,2)
         
-        return action, Q_all # (N,4,2), (N,4,1)
+        return action, Q_all # (N,T,2), (N,T,1)
 
     def training_step(self, batch, batch_nb):
         metrics ={}
@@ -240,7 +234,6 @@ class MapModel(pl.LightningModule):
         naction, nQ_all = self.get_dqn_actions(nQmap)
         nQ = torch.mean(nQ_all, axis=1, keepdim=False)
 
-
         # td loss
         discount = info['discount']
         td_target = reward + discount * nQ * (1-done)
@@ -251,7 +244,7 @@ class MapModel(pl.LightningModule):
         Q_expert_all = spatial_select(Qmap, info['points_expert']) #N,T,1
 
         margin_map = self.expert_heatmap(points_expert, Qmap) #[0,1] tall at expert points
-        margin_map = (1-margin_map)*self.margin_weight #[0, 1] before scaling - low at expert points
+        margin_map = (1-margin_map)*self.hparams.expert_margin
         margin = Qmap + margin_map - Q_expert_all.unsqueeze(-1)
         margin = F.relu(margin)
         margin = torch.mean(margin, dim=(-1,-2)) #N,T
@@ -260,7 +253,7 @@ class MapModel(pl.LightningModule):
         batch_loss = td_loss + margin_loss #N,1
         loss = torch.mean(batch_loss, dim=0) #1,
 
-        if batch_nb % 25 == 0:
+        if batch_nb % 250 == 0:
             meta = {
                 'hparams': self.hparams,
                 'Qmap': Qmap, 'nQmap': nQmap, 
@@ -284,7 +277,7 @@ class MapModel(pl.LightningModule):
                         'train/batch_loss': batch_loss.mean().item(),
                         }
 
-            if batch_nb % 25 == 0:
+            if batch_nb % 250 == 0:
                 metrics['train_td'] = wandb.Image(vtd)
                 metrics['train_Qmap'] = wandb.Image(vQmap)
                 to_hist = {'Qmap': Qmap}
@@ -300,12 +293,14 @@ class MapModel(pl.LightningModule):
 
         state, action, reward, next_state, done, info = batch
         topdown, target = state
-        points, logits, weights, tmap, Qmap = self.forward(topdown, target, debug=True)
+        with torch.no_grad():
+            points, logits, weights, tmap, Qmap = self.forward(topdown, target, debug=True)
         Q_all = spatial_select(Qmap, action).squeeze() #NxT
         Q = torch.mean(Q_all, axis=-1, keepdim=True)
 
         ntopdown, ntarget = next_state
-        npoints, nlogits, nweights, ntmap, nQmap = self.forward(ntopdown, ntarget, debug=True)
+        with torch.no_grad():
+            npoints, nlogits, nweights, ntmap, nQmap = self.forward(ntopdown, ntarget, debug=True)
         naction, nQ_all = self.get_dqn_actions(nQmap)
         nQ = torch.mean(nQ_all.squeeze(), axis=-1, keepdim=True) # N,1
 
@@ -321,7 +316,7 @@ class MapModel(pl.LightningModule):
         # DEBUG
 
         margin_map = self.expert_heatmap(points_expert, Qmap) #[0,1] tall at expert points
-        margin_map = (1-margin_map)*self.margin_weight #[0, 8] low at expert points
+        margin_map = (1-margin_map)*self.hparams.expert_margin #[0, 8] low at expert points
         margin = Qmap + margin_map - Q_expert_all.unsqueeze(-1)
         margin = F.relu(margin)
         margin = torch.mean(margin, dim=(-1,-2)) #N,T
@@ -419,7 +414,7 @@ def main(args):
         del hparams_copy['id']
         del hparams_copy['data_root']
         yaml.dump(hparams_copy, f, default_flow_style=False, sort_keys=False)
-    shutil.copyfile(hparams.dataset_dir / 'config.yml', hparams.save_dir / 'data_config.yml')
+    shutil.copyfile(args.dataset_dir / 'config.yml', args.save_dir / 'data_config.yml')
 
     # offline trainer can use all gpus
     # when resuming, the network starts at epoch 36
@@ -468,12 +463,12 @@ if __name__ == '__main__':
     parser.add_argument('--expert_radius', type=int, default=2)
     parser.add_argument('--expert_margin', type=float, default=10.0)
     parser.add_argument('--temperature', type=float, default=10.0)
-    parser.add_argument('--hack', action='store_true', default=False) # what is this again?
+    parser.add_argument('--hack', action='store_true')
         
     args = parser.parse_args()
 
     if args.dataset_dir is None:
-        args.dataset_dir = '/data/aaronhua/leaderboard/data/dqn/20210407_024101'
+        args.dataset_dir = Path('/data/aaronhua/leaderboard/data/dqn/20210407_024101')
 
     suffix = f'debug/{args.id}' if args.debug else args.id
     save_root = args.data_root / f'leaderboard/training/dqn/offline/{suffix}'

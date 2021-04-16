@@ -78,6 +78,4 @@ class SegmentationModel(torch.nn.Module):
         # extract 
         points, weights = self.extract(logits, temperature)
 
-        #if get_weights:
-        #    return points, weights
         return points, logits, weights
