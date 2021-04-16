@@ -19,6 +19,7 @@ parser.add_argument('--repetitions', type=int, default=1)
 parser.add_argument('--id', type=str, default=datetime.now().strftime("%Y%m%d_%H%M%S"))
 parser.add_argument('--save_data', action='store_true')
 parser.add_argument('--save_debug', action='store_true')
+parser.add_argument('--config_path', type=str)
 args = parser.parse_args()
 
 project_root = os.environ['PROJECT_ROOT']
@@ -34,7 +35,10 @@ save_root.mkdir(parents=True,exist_ok=True)
 (save_root / 'logs').mkdir(exist_ok=True)
 
 # agent-specific config
-config_path = f'{project_root}/team_code/{appr}/config/{algo}.yml'
+if args.config_path is None:
+    config_path = f'{project_root}/team_code/{appr}/config/{algo}.yml'
+else:
+    config_path = f'{project_root}/team_code/{args.config_path}'
 with open(config_path, 'r') as f:
     config = yaml.load(f, Loader=yaml.Loader)
 

@@ -9,7 +9,7 @@ from carla import VehicleControl
 
 #from lbc.carla_project.src.map_model import MapModel
 from misc.utils import *
-from dqn.src.agents.map_model import MapModel, fuse_vmaps
+from dqn.src.agents.map_model import MapModel, fuse_logits
 from lbc.carla_project.src.dataset import preprocess_semantic
 #from lbc.carla_project.src.dataset import preprocess_semantic
 from lbc.carla_project.src.converter import Converter
@@ -20,6 +20,12 @@ from lbc.src.map_agent import MapAgent
 from leaderboard.envs.sensor_interface import SensorInterface
 
 HAS_DISPLAY = int(os.environ.get('HAS_DISPLAY', 0))
+text_color = (255,255,255)
+aim_color = (60,179,113) # dark green
+student_color = (65,105,225) # dark blue
+expert_color = (178,34,34) # dark red
+route_colors = [(255,255,255), (112,128,144), (47,79,79), (47,79,79)] 
+
 
 def get_entry_point():
     return 'PrivilegedAgent'
@@ -156,18 +162,18 @@ class PrivilegedAgent(MapAgent):
         target = torch.from_numpy(tick_data['target'])
         target = target[None].cuda()
 
-        points, logits, weights, tmap = self.net.forward(topdown, target)
+        points, tmap, Qmap = self.net.forward(topdown, target, debug=False)
         points = points.clone().cpu().squeeze().numpy()
 
         # 1. is the model using argmax or soft argmax?
         if self.aconfig.waypoint_mode == 'softargmax':
             points_map = (points + 1) / 2 * 256 # (-1,1) to (0,256)
         elif self.aconfig.waypoint_mode == 'argmax':
-            points_map, _ = self.net.get_dqn_actions(vmap, explore=self.burn_in) # (1,4,2),(1,4,1)
+            points_map, _ = self.net.get_dqn_actions(Qmap, explore=self.burn_in) # (1,4,2),(1,4,1)
             points_map = points_map.clone().cpu().squeeze().numpy()
         points_map = np.clip(points_map, 0, 256)
         tick_data['points_map'] = points_map
-        tick_data['maps'] = (logits, weights, tmap)
+        tick_data['maps'] = (tmap, Qmap)
 
         # 2. is there an expert present?
         if self.aconfig.dagger_expert: # dagger and dqn
@@ -212,6 +218,7 @@ class PrivilegedAgent(MapAgent):
         condition = condition and (self.config.save_debug and self.step % 4 == 0)
         if condition or HAS_DISPLAY:
             self.debug_display(tick_data, steer, throttle, brake, desired_speed)
+            pass
 
         if self.config.save_data:
             self.save_data(tick_data)
@@ -220,13 +227,6 @@ class PrivilegedAgent(MapAgent):
 
     def debug_display(self, tick_data, steer, throttle, brake, desired_speed, r=2):
 
-        # 
-        text_color = (255,255,255)
-        aim_color = (65,105,225) # dark blue
-        dqn_color = (60,179,113) # dark green
-        expert_color = (178,34,34) # dark red
-        route_colors = [(255,255,255), (112,128,144), (47,79,79), (47,79,79)] 
-        
 
         # rgb image on left, topdown w/vmap image on right
         # plot Q points instead of LBC version (argmax instead of expectation)
@@ -237,12 +237,12 @@ class PrivilegedAgent(MapAgent):
         
         # (H,W,3) right image
         topdown = tick_data['topdown_pth']
-        logits, weights, tmap = tick_data['maps'] # (1, H, W)
-        fused = fuse_vmaps(topdown, logits, temperature=1, alpha=0.5).squeeze()
+        tmap, Qmap = tick_data['maps'] # (1, H, W)
+        fused = fuse_logits(topdown, Qmap).squeeze()
         fused = Image.fromarray(fused)
         draw = ImageDraw.Draw(fused)
         for x, y in points_map[0:2]:
-            draw.ellipse((x-r, y-r, x+r, y+r), dqn_color)
+            draw.ellipse((x-r, y-r, x+r, y+r), student_color)
         if points_expert is not None:
             for x, y in points_expert:
                 draw.ellipse((x-r, y-r, x+r, y+r), expert_color)
@@ -260,7 +260,7 @@ class PrivilegedAgent(MapAgent):
         rgb = Image.fromarray(tick_data['rgb'])
         draw = ImageDraw.Draw(rgb)
         for x,y in points_cam[0:2]:
-            draw.ellipse((x-r, y-r, x+r, y+r), dqn_color)
+            draw.ellipse((x-r, y-r, x+r, y+r), student_color)
         if points_expert is not None:
             points_expert_cam = self.converter.map_to_cam(torch.Tensor(points_expert)).numpy()
             for x, y in points_expert_cam:

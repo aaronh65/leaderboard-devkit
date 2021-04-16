@@ -41,6 +41,7 @@ def fuse_logits(topdown, logits, alpha=0.5):
     fused = fused.astype(np.uint8) # (N,H,W,3)
     return fused
 
+
 @torch.no_grad()
 def viz_Qmap(batch, meta, alpha=0.5, r=2):
     state, action, reward, next_state, done, info = batch
@@ -204,7 +205,10 @@ class MapModel(pl.LightningModule):
         # points (N,T,2), logits/weights (N,T,H,W)
         points, logits, weights = self.net(input, temperature=self.temperature.item())
         Qmap = logits
-        return points, logits, weights, target_heatmap, Qmap
+        if debug:
+            return points, logits, weights, target_heatmap, Qmap
+        else:
+            return points, target_heatmap, Qmap
 
         # two modes: sample, argmax?
     def get_dqn_actions(self, Qmap, explore=False):

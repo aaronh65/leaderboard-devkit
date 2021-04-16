@@ -21,6 +21,7 @@ parser.add_argument('--data_root', type=str, default='/data/aaronhua')
 parser.add_argument('--id', type=str, default=datetime.now().strftime("%Y%m%d_%H%M%S"))
 parser.add_argument('--save_data', action='store_true')
 parser.add_argument('--save_debug', action='store_true')
+parser.add_argument('--config_path', type=str)
 args = parser.parse_args()
 
 assert args.data_root != '/data/aaronhua', 'should not do heavy I/O to /data'
@@ -54,7 +55,11 @@ save_root.mkdir(parents=True,exist_ok=True)
 (save_root / 'logs').mkdir(exist_ok=True)
 
 # agent-specific config
-config_path = f'{project_root}/team_code/{appr}/config/{algo}.yml'
+if args.config_path is None:
+    config_path = f'{project_root}/team_code/{appr}/config/{algo}.yml'
+else:
+    config_path = f'{project_root}/team_code/{args.config_path}'
+
 print(config_path)
 with open(config_path, 'r') as f:
     config = yaml.load(f, Loader=yaml.Loader)
