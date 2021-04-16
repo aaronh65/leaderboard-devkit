@@ -151,7 +151,7 @@ def viz_td(batch, meta, alpha=0.5, r=2):
         _margin_loss = f'{margin_loss[i].mean().item():.2f}'
         _batch_loss = f'{batch_loss[i].item():.2f}'
         _ndraw.text((5, 30), f'batch_loss = {_td_loss} + {_margin_loss} = {_batch_loss}', text_color)
-
+#
         _combined = np.hstack((np.array(_topdown), np.array(_ntopdown)))
         #_combined = cv2.cvtColor(_combined, cv2.COLOR_BGR2RGB)
         images.append(_combined)
@@ -175,11 +175,10 @@ class MapModel(pl.LightningModule):
     def __init__(self, hparams=None):
         super().__init__()
 
-        if hparams is not None:
+        if hparams is not None: # occurs when restoring from LBC in priv agent
             self.hparams = hparams
             self.to_heatmap = ToHeatmap(hparams.heatmap_radius)
             self.expert_heatmap = ToTemporalHeatmap(hparams.expert_radius)
-            #self.expert_heatmap = ToTemporalHeatmap(5)
             self.register_buffer('temperature', torch.Tensor([self.hparams.temperature]))
         else:
             self.to_heatmap = ToHeatmap(5)
@@ -191,7 +190,7 @@ class MapModel(pl.LightningModule):
         self.td_criterion = torch.nn.MSELoss(reduction='none') # weights? prioritized replay?
         #self.expert_heatmap = ToTemporalHeatmap(2)
         self.margin_criterion = torch.nn.MSELoss(reduction='none')
-        self.margin_weight = 10
+        self.expert_margin = 10
 
     def restore_from_lbc(self, weights_path):
         from lbc.carla_project.src.map_model import MapModel as LBCModel
@@ -410,7 +409,6 @@ def main(args):
             model.restore_from_lbc(args.restore_from)
         elif 'dqn' in args.restore_from:
             model = MapModel.load_from_checkpoint(args.restore_from)
-            pass
     else:
         model = MapModel(args)
 
@@ -468,6 +466,7 @@ if __name__ == '__main__':
     # Model args
     parser.add_argument('--heatmap_radius', type=int, default=5)
     parser.add_argument('--expert_radius', type=int, default=2)
+    parser.add_argument('--expert_margin', type=float, default=10.0)
     parser.add_argument('--temperature', type=float, default=10.0)
     parser.add_argument('--hack', action='store_true', default=False) # what is this again?
         
