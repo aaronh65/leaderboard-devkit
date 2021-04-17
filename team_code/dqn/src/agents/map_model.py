@@ -74,8 +74,9 @@ def viz_Qmap(batch, meta, alpha=0.5, r=2):
             draw = ImageDraw.Draw(img)
             x, y = points_max[n][t] % W, points_max[n][t] // W
             draw.ellipse((x-r,y-r,x+r,y+r), (0,0,255))
-            x, y = points_expert[n][t]
-            draw.ellipse((x-r,y-r,x+r,y+r), expert_color)
+            if 'points_expert' in info.keys():
+                x, y = points_expert[n][t]
+                draw.ellipse((x-r,y-r,x+r,y+r), expert_color)
             x, y = points_min[n][t] % W, points_min[n][t] // W
             draw.ellipse((x-r,y-r,x+r,y+r), (255,255,255))
             draw.text((5,10), f'Q_max: \t{Q_maxs[n][t]:.2f}', text_color)

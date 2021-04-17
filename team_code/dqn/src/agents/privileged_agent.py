@@ -7,11 +7,9 @@ from PIL import Image, ImageDraw
 from pathlib import Path
 from carla import VehicleControl
 
-#from lbc.carla_project.src.map_model import MapModel
 from misc.utils import *
 from dqn.src.agents.map_model import MapModel, fuse_logits
 from lbc.carla_project.src.dataset import preprocess_semantic
-#from lbc.carla_project.src.dataset import preprocess_semantic
 from lbc.carla_project.src.converter import Converter
 from lbc.carla_project.src.common import CONVERTER, COLOR
 from lbc.src.pid_controller import PIDController

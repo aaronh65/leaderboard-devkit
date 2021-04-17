@@ -52,8 +52,6 @@ class PrivilegedAgent(MapAgent):
 
         if self.config.save_data:
             (self.save_path / 'rgb').mkdir()
-            #(self.save_path / 'rgb_left').mkdir()
-            #(self.save_path / 'rgb_right').mkdir()
             (self.save_path / 'topdown').mkdir()
             (self.save_path / 'measurements').mkdir()
 
