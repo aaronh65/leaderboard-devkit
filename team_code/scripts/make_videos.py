@@ -38,7 +38,7 @@ def main(args):
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--target_dir', type=str, required=True)
-    parser.add_argument('--fps', type=int, default=2)
+    parser.add_argument('--fps', type=int, default=5)
     args = parser.parse_args()
     return args
 
