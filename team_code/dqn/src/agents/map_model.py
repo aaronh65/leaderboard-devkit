@@ -51,6 +51,8 @@ def viz_Qmap(batch, meta, alpha=0.5, r=2):
     Qmap, Q_expert = meta['Qmap'], meta['Q_expert']
     batch_loss, td_loss, margin = meta['batch_loss'], meta['td_loss'], meta['margin']
     margin = meta['margin']
+    max_margin = meta['max_margin']
+    mean_margin = meta['mean_margin']
 
     N,T,H,W = Qmap.shape
     Qmap_norm = spatial_norm(Qmap).cpu().numpy() #N,T,H,W
@@ -82,7 +84,9 @@ def viz_Qmap(batch, meta, alpha=0.5, r=2):
             draw.text((5,10), f'Q_max: \t{Q_maxs[n][t]:.2f}', text_color)
             draw.text((5,20), f'Q_exp: \t{Q_expert[n][t]:.2f}', text_color)
             draw.text((5,30), f'Q_min: \t{Q_mins[n][t]:.2f}', text_color)
-            draw.text((5,40), f'loss: \t{margin[n][t]:.2f}', text_color)
+            draw.text((5,40), f'mean_loss: \t{mean_margin[n][t]:.2f}', text_color)
+            draw.text((5,50), f'max_loss: \t{max_margin[n][t]:.2f}', text_color)
+            draw.text((5,60), f'margin_loss: \t{margin[n][t]:.2f}', text_color)
 
             #img = cv2.cvtColor(np.array(img), cv2.COLOR_BGR2RGB)
             fused[n][t] = np.array(img)
@@ -181,6 +185,7 @@ class MapModel(pl.LightningModule):
             self.to_heatmap = ToHeatmap(hparams.heatmap_radius)
             self.expert_heatmap = ToTemporalHeatmap(hparams.expert_radius)
             self.register_buffer('temperature', torch.Tensor([hparams.temperature]))
+            #self.net = SegmentationModel(10, 4, backbone_key=hparams.backbone, batch_norm=True, hack=hparams.hack)
             self.net = SegmentationModel(10, 4, batch_norm=True, hack=hparams.hack)
 
         self.controller = RawController(4)
@@ -245,11 +250,16 @@ class MapModel(pl.LightningModule):
         Q_expert_all = spatial_select(Qmap, info['points_expert']) #N,T,1
 
         margin_map = self.expert_heatmap(points_expert, Qmap) #[0,1] tall at expert points
-        margin_map = (1-margin_map)*self.hparams.expert_margin
-        margin = Qmap + margin_map - Q_expert_all.unsqueeze(-1)
-        margin = F.relu(margin)
-        margin = torch.mean(margin, dim=(-1,-2)) #N,T
-        margin_loss = self.hparams.lambda_margin * margin.mean(dim=1,keepdim=True)
+        margin_map = (1-margin_map)*self.hparams.expert_margin #[0, 8] low at expert points
+        margin_map = Qmap + margin_map - Q_expert_all.unsqueeze(-1)
+        margin_map = F.relu(margin_map)
+
+        mean_margin = torch.mean(margin_map, dim=(-1,-2)) #N,T
+        max_margin = margin_map.view(margin_map.shape[:2] + (-1,)) #N,T,H*W
+        max_margin, _ = torch.max(max_margin, dim=-1) #N,T
+        margin = max_margin + mean_margin
+
+        margin_loss = self.hparams.lambda_margin * margin.mean(dim=1,keepdim=True) #N,1
 
         batch_loss = td_loss + margin_loss #N,1
         loss = torch.mean(batch_loss, dim=0) #1,
@@ -264,6 +274,8 @@ class MapModel(pl.LightningModule):
                 'batch_loss': batch_loss,
                 'td_loss': td_loss,
                 'margin': margin,
+                'max_margin': max_margin,
+                'mean_margin': mean_margin,
                 }
             vQmap, vtd = viz_Qmap(batch, meta), viz_td(batch, meta)
             if HAS_DISPLAY:
@@ -318,9 +330,14 @@ class MapModel(pl.LightningModule):
 
         margin_map = self.expert_heatmap(points_expert, Qmap) #[0,1] tall at expert points
         margin_map = (1-margin_map)*self.hparams.expert_margin #[0, 8] low at expert points
-        margin = Qmap + margin_map - Q_expert_all.unsqueeze(-1)
-        margin = F.relu(margin)
-        margin = torch.mean(margin, dim=(-1,-2)) #N,T
+        margin_map = Qmap + margin_map - Q_expert_all.unsqueeze(-1)
+        margin_map = F.relu(margin_map)
+
+        mean_margin = torch.mean(margin_map, dim=(-1,-2)) #N,T
+        max_margin = margin_map.view(margin_map.shape[:2] + (-1,)) #N,T,H*W
+        max_margin, _ = torch.max(max_margin, dim=-1) #N,T
+        margin = max_margin + mean_margin
+
         margin_loss = self.hparams.lambda_margin * margin.mean(dim=1,keepdim=True)
 
         batch_loss = td_loss + margin_loss
@@ -336,6 +353,8 @@ class MapModel(pl.LightningModule):
                 'batch_loss': batch_loss,
                 'td_loss': td_loss,
                 'margin': margin,
+                'max_margin': max_margin,
+                'mean_margin': mean_margin,
                 }
             vQmap, vtd = viz_Qmap(batch, meta), viz_td(batch, meta)
             if HAS_DISPLAY:
@@ -477,6 +496,8 @@ if __name__ == '__main__':
     parser.add_argument('--weight_decay', type=float, default=0.0)
 
     # Model args
+    #parser.add_argument('--backbone', type=str, default='deeplabv3_resnet50',
+    #        choices=['deeplabv3_resnet50', 'fcn_resnet50'])
     parser.add_argument('--heatmap_radius', type=int, default=5)
     parser.add_argument('--expert_radius', type=int, default=2)
     parser.add_argument('--expert_margin', type=float, default=10.0)
