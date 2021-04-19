@@ -276,23 +276,21 @@ def main(hparams):
     if hparams.restore_from is None:
         model = MapModel(hparams)
         model_hparams = copy.copy(vars(model.hparams))
-        model_hparams['dataset_dir'] = str(hparams.dataset_dir)
-        model_hparams['save_dir'] = str(hparams.save_dir)
-        del model_hparams['data_root']
     else:
         model = MapModel.load_from_checkpoint(hparams.restore_from)
-
         new_hparams = vars(hparams)
         model_hparams = vars(model.hparams)
         
         print(hparams.overwrite_hparams)
-        for param in hparams.overwrite_hparams + ['save_dir']:
+        for param in hparams.overwrite_hparams + ['save_dir', 'log']:
             model_hparams[param] = new_hparams[param]
         model.hparams = dict_to_sns(model_hparams)
 
-        # copy and postprocess for saving
-        model_hparams['dataset_dir'] = str(hparams.dataset_dir)
-        model_hparams['save_dir'] = str(hparams.save_dir)
+    # copy and postprocess for saving
+    model_hparams['dataset_dir'] = str(hparams.dataset_dir)
+    model_hparams['save_dir'] = str(hparams.save_dir)
+    del model_hparams['data_root']
+    del model_hparams['id']
 
 
     with open(hparams.save_dir / 'config.yml', 'w') as f:
@@ -347,13 +345,14 @@ if __name__ == '__main__':
     parser.add_argument('--lr', type=float, default=1e-4)
     parser.add_argument('--weight_decay', type=float, default=0.0)
 
-    parsed = parser.parse_args()
-    suffix = f'debug/{parsed.id}' if parsed.debug else parsed.id
-    save_dir = parsed.data_root / 'leaderboard/training/lbc/map_model' / suffix
-    parsed.save_dir = save_dir
-    parsed.save_dir.mkdir(parents=True, exist_ok=True)
+    args = parser.parse_args()
 
-    if parsed.dataset_dir is None:
-        parsed.dataset_dir = Path('/data/aaronhua/leaderboard/data/lbc/auto_pilot/20210323_203108')
+    if args.dataset_dir is None:
+        args.dataset_dir = Path('/data/aaronhua/leaderboard/data/lbc/auto_pilot/20210323_203108')
 
-    main(parsed)
+    suffix = f'debug/{args.id}' if args.debug else args.id
+    save_dir = args.data_root / 'leaderboard/training/lbc/map_model' / suffix
+    args.save_dir = save_dir
+    args.save_dir.mkdir(parents=True, exist_ok=True)
+    
+    main(args)

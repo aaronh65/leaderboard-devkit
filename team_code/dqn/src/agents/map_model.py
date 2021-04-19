@@ -391,36 +391,52 @@ class MapModel(pl.LightningModule):
 
 # offline training
 
-def main(args):
+def main(hparams):
     
-    logger = False
-    if args.log:
-        logger = WandbLogger(id=args.id, save_dir=str(args.save_dir), project='dqn_test')
-        #wandb.init(project='dqn_test')
-    checkpoint_callback = ModelCheckpoint(args.save_dir, save_top_k=3) # figure out what's up with this
-    # resume and add a couple arguments
-    if args.restore_from is not None:
-        if 'lbc' in args.restore_from:
-            model = MapModel(args)
-            model.restore_from_lbc(args.restore_from)
-        elif 'dqn' in args.restore_from:
-            model = MapModel.load_from_checkpoint(args.restore_from)
+    if hparams.log:
+        logger = WandbLogger(id=hparams.id, save_dir=str(hparams.save_dir), project='dqn_test')
     else:
-        model = MapModel(args)
+        logger = False
+    checkpoint_callback = ModelCheckpoint(hparams.save_dir, save_top_k=3)
 
-    with open(args.save_dir / 'config.yml', 'w') as f:
-        hparams_copy = copy.copy(vars(model.hparams))
-        hparams_copy['dataset_dir'] = str(model.hparams.dataset_dir)
-        hparams_copy['save_dir'] = str(model.hparams.save_dir)
-        del hparams_copy['id']
-        del hparams_copy['data_root']
-        yaml.dump(hparams_copy, f, default_flow_style=False, sort_keys=False)
-    shutil.copyfile(args.dataset_dir / 'config.yml', args.save_dir / 'data_config.yml')
+    # resume and add a couple arguments
+    if hparams.restore_from is None:
+        model = MapModel(hparams)
+        model_hparams = copy.copy(vars(model.hparams))
+    else:
+        model = MapModel.load_from_checkpoint(hparams.restore_from)
+        new_hparams = vars(hparams)
+        model_hparams = vars(model.hparams)
 
+        print(hparams.overwrite_hparams)
+        for param in hparams.overwrite_hparams + ['save_dir', 'log']:
+            model_hparams[param] = new_hparams[param]
+        model.hparams = dict_to_sns(model_hparams)
+
+    # copy and postprocess for saving
+    model_hparams['dataset_dir'] = str(hparams.dataset_dir)
+    model_hparams['save_dir'] = str(hparams.save_dir)
+    del model_hparams['data_root']
+    del model_hparams['id']
+
+    with open(hparams.save_dir / 'config.yml', 'w') as f:
+        yaml.dump(model_hparams, f, default_flow_style=False, sort_keys=False)
+    shutil.copyfile(hparams.dataset_dir / 'config.yml', hparams.save_dir / 'data_config.yml')
+
+    #if hparams.restore_from is not None:
+    #    if 'lbc' in hparams.restore_from:
+    #        model = MapModel(hparams)
+    #        model.restore_from_lbc(hparams.restore_from)
+    #    elif 'dqn' in hparams.restore_from:
+    #        model = MapModel.load_from_checkpoint(hparams.restore_from)
+    #else:
+    #    model = MapModel(hparams)
+
+    
     # offline trainer can use all gpus
     # when resuming, the network starts at epoch 36
     trainer = pl.Trainer(
-        gpus=args.gpus, max_epochs=args.max_epochs,
+        gpus=hparams.gpus, max_epochs=hparams.max_epochs,
         #resume_from_checkpoint=RESUME,
         logger=logger,
         checkpoint_callback=checkpoint_callback,
@@ -428,8 +444,8 @@ def main(args):
 
     trainer.fit(model)
 
-    if args.log:
-        wandb.save(str(args.save_dir / '*.ckpt'))
+    if hparams.log:
+        wandb.save(str(hparams.save_dir / '*.ckpt'))
 
 
 
@@ -444,6 +460,7 @@ if __name__ == '__main__':
     parser.add_argument('--id', type=str, default=datetime.now().strftime("%Y%m%d_%H%M%S")) 
     parser.add_argument('--data_root', type=Path, default='/data/aaronhua')
     parser.add_argument('--log', action='store_true')
+    parser.add_argument('-ow', '--overwrite_hparams', nargs='+')
 
     # Trainer args
     parser.add_argument('--dataset_dir', type=Path)
@@ -472,9 +489,8 @@ if __name__ == '__main__':
         args.dataset_dir = Path('/data/aaronhua/leaderboard/data/dqn/20210407_024101')
 
     suffix = f'debug/{args.id}' if args.debug else args.id
-    save_root = args.data_root / f'leaderboard/training/dqn/offline/{suffix}'
-
-    args.save_dir = save_root
+    save_dir = args.data_root / f'leaderboard/training/dqn/offline/{suffix}'
+    args.save_dir = save_dir
     args.save_dir.mkdir(parents=True, exist_ok=True)
 
     main(args)
