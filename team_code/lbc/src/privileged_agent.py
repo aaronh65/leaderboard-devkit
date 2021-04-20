@@ -164,8 +164,7 @@ class PrivilegedAgent(MapAgent):
         #print(tick_data['target'])
         target = target[None].cuda()
 
-        points, weights, target_heatmap = self.net.forward(topdown, target) # world frame
-
+        points, target_heatmap, logits = self.net.forward(topdown, target) # world frame
 
         points_map = points.clone().cpu().squeeze()
         points_map = points_map + 1
@@ -204,7 +203,7 @@ class PrivilegedAgent(MapAgent):
             self.debug_display(
                     tick_data, steer, throttle, brake, desired_speed)
         if DEBUG:    
-            images = plot_weights(topdown, target, points, weights)
+            images = plot_weights(topdown, target, points, logits)
             cv2.imshow('heatmaps', images[0])
         return control
 

@@ -65,7 +65,7 @@ class SegmentationModel(torch.nn.Module):
                 kernel_size=old.kernel_size, stride=old.stride,
                 padding=old.padding, bias=old.bias)
 
-    def forward(self, input, temperature=10, get_weights=False):
+    def forward(self, input, temperature=10):
         # downsampling input for smaller network?
         if self.hack:
             input = torch.nn.functional.interpolate(input, scale_factor=0.5, mode='bilinear')
@@ -77,6 +77,4 @@ class SegmentationModel(torch.nn.Module):
         # extract 
         points, weights = self.extract(logits, temperature)
 
-        if get_weights:
-            return points, weights
-        return points
+        return points, logits

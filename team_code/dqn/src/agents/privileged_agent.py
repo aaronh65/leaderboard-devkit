@@ -8,6 +8,7 @@ from pathlib import Path
 from carla import VehicleControl
 
 from misc.utils import *
+from lbc.carla_project.src.map_model import MapModel as LBCModel
 from dqn.src.agents.map_model import MapModel, fuse_logits
 from lbc.carla_project.src.dataset import preprocess_semantic
 from lbc.carla_project.src.converter import Converter
@@ -40,8 +41,7 @@ class PrivilegedAgent(MapAgent):
 
         weights_path = self.aconfig.weights_path
         if 'lbc' in weights_path:
-            self.net = MapModel()
-            self.net.restore_from_lbc(weights_path)
+            self.net = LBCModel.load_from_checkpoint(weights_path)
         else:
             self.net = MapModel.load_from_checkpoint(weights_path)
         self.net.cuda()
@@ -50,12 +50,7 @@ class PrivilegedAgent(MapAgent):
         if self.aconfig.dagger_expert:
             expert_path = Path(self.aconfig.expert_path)
             if 'lbc' in str(expert_path):
-                from lbc.carla_project.src.map_model import MapModel as LBCModel
                 self.expert = LBCModel.load_from_checkpoint(expert_path)
-                #self.expert = MapModel()
-                #self.expert.net.load_state_dict(lbc_model.net.state_dict())
-                #self.expert.temperature = lbc_model.temperature
-                #self.expert.to_heatmap = lbc_model.to_heatmap
             else:
                 self.expert = MapModel.load_from_checkpoint(expert_path)
             self.expert.cuda()
@@ -160,7 +155,7 @@ class PrivilegedAgent(MapAgent):
         target = torch.from_numpy(tick_data['target'])
         target = target[None].cuda()
 
-        points, tmap, Qmap = self.net.forward(topdown, target, debug=False)
+        points, tmap, Qmap = self.net.forward(topdown, target)
         points = points.clone().cpu().squeeze().numpy()
 
         # 1. is the model using argmax or soft argmax?
@@ -175,7 +170,7 @@ class PrivilegedAgent(MapAgent):
 
         # 2. is there an expert present?
         if self.aconfig.dagger_expert: # dagger and dqn
-            points_expert, _, _ = self.expert.forward(topdown, target, debug=True)
+            points_expert, _, _ = self.expert.forward(topdown, target)
             points_expert = points_expert.clone().cpu().squeeze().numpy()
             points_expert = (points_expert + 1) / 2 * 256
             points_expert = np.clip(points_expert, 0, 256)
@@ -216,7 +211,6 @@ class PrivilegedAgent(MapAgent):
         condition = condition and (self.config.save_debug and self.step % 4 == 0)
         if condition or HAS_DISPLAY:
             self.debug_display(tick_data, steer, throttle, brake, desired_speed)
-            pass
 
         if self.config.save_data:
             self.save_data(tick_data)
@@ -298,7 +292,6 @@ class PrivilegedAgent(MapAgent):
         if HAS_DISPLAY:
             cv2.imshow('debug', _combined)
             cv2.waitKey(1)
-        
 
     def destroy(self):
         self.sensor_interface = SensorInterface()

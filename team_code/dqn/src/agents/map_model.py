@@ -398,11 +398,11 @@ class MapModel(pl.LightningModule):
         return [optim], [scheduler]
 
     def train_dataloader(self):
-        return get_dataloader(self.hparams, is_train=True)
+        return get_dataloader(self.hparams, self.hparams.train_dataset, is_train=True)
 
     # online val dataloaders spoof a length of N batches, and do N episode rollouts
     def val_dataloader(self):
-        return get_dataloader(self.hparams, is_train=False)
+        return get_dataloader(self.hparams, self.hparams.val_dataset, is_train=False)
 
 
 # offline training
@@ -430,25 +430,17 @@ def main(hparams):
         model.hparams = dict_to_sns(model_hparams)
 
     # copy and postprocess for saving
-    model_hparams['dataset_dir'] = str(hparams.dataset_dir)
+    model_hparams['train_dataset'] = str(hparams.train_dataset)
+    model_hparams['val_dataset'] = str(hparams.val_dataset)
     model_hparams['save_dir'] = str(hparams.save_dir)
     del model_hparams['data_root']
     del model_hparams['id']
 
     with open(hparams.save_dir / 'config.yml', 'w') as f:
         yaml.dump(model_hparams, f, default_flow_style=False, sort_keys=False)
-    shutil.copyfile(hparams.dataset_dir / 'config.yml', hparams.save_dir / 'data_config.yml')
+    shutil.copyfile(hparams.train_dataset / 'config.yml', hparams.save_dir / 'train_data_config.yml')
+    shutil.copyfile(hparams.val_dataset / 'config.yml', hparams.save_dir / 'val_data_config.yml')
 
-    #if hparams.restore_from is not None:
-    #    if 'lbc' in hparams.restore_from:
-    #        model = MapModel(hparams)
-    #        model.restore_from_lbc(hparams.restore_from)
-    #    elif 'dqn' in hparams.restore_from:
-    #        model = MapModel.load_from_checkpoint(hparams.restore_from)
-    #else:
-    #    model = MapModel(hparams)
-
-    
     # offline trainer can use all gpus
     # when resuming, the network starts at epoch 36
     trainer = pl.Trainer(
@@ -462,7 +454,6 @@ def main(hparams):
 
     if hparams.log:
         wandb.save(str(hparams.save_dir / '*.ckpt'))
-
 
 
 if __name__ == '__main__':
@@ -479,7 +470,8 @@ if __name__ == '__main__':
     parser.add_argument('-ow', '--overwrite_hparams', nargs='+')
 
     # Trainer args
-    parser.add_argument('--dataset_dir', type=Path)
+    parser.add_argument('--train_dataset', type=Path)
+    parser.add_argument('--val_dataset', type=Path)
     parser.add_argument('--max_epochs', type=int, default=50)
     parser.add_argument('--num_workers', type=int, default=4)
     parser.add_argument('--gamma', type=float, default=0.99)
@@ -503,8 +495,10 @@ if __name__ == '__main__':
         
     args = parser.parse_args()
 
-    if args.dataset_dir is None:
-        args.dataset_dir = Path('/data/aaronhua/leaderboard/data/dqn/20210407_024101')
+    if args.train_dataset is None:
+        args.train_dataset = Path('/data/aaronhua/leaderboard/data/dqn/20210407_024101')
+    if args.val_dataset is None:
+        args.val_dataset = Path('/data/aaronhua/leaderboard/data/dqn/debug/20210420_111906')
 
     suffix = f'debug/{args.id}' if args.debug else args.id
     save_dir = args.data_root / f'leaderboard/training/dqn/offline/{suffix}'

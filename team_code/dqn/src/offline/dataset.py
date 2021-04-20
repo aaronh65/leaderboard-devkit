@@ -40,7 +40,7 @@ def get_weights(data, key='speed', bins=4):
 
     return class_weights[classes]
 
-def get_dataloader(hparams, is_train=True, sample_by='even', **kwargs):
+def get_dataloader(hparams, dataset_dir, is_train=True, sample_by='even', **kwargs):
     data = list()
 
     #transform = transforms.Compose([
@@ -50,7 +50,7 @@ def get_dataloader(hparams, is_train=True, sample_by='even', **kwargs):
     transform = lambda x:x
 
     episodes = list()
-    dataset_dir = Path(hparams.dataset_dir) / 'data'
+    dataset_dir = dataset_dir / 'data'
     routes = dataset_dir.glob('*')
     routes = sorted([path for path in routes if path.is_dir() and 'logs' not in str(path)])
     for route in routes:
@@ -62,11 +62,7 @@ def get_dataloader(hparams, is_train=True, sample_by='even', **kwargs):
         if dataset_len <= GAP*STEPS:
             print(f'{_dataset_dir} invalid, skipping...')
             continue
-        add = False
-        add |= (is_train and i % 10 < 9)
-        add |= (not is_train and i % 10 >= 9)
-        if add:
-            data.append(CarlaDataset(_dataset_dir, hparams))
+        data.append(CarlaDataset(_dataset_dir, hparams))
     
     print('%d frames.' % sum(map(len, data)))
 

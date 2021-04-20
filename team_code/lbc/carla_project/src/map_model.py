@@ -157,13 +157,12 @@ class MapModel(pl.LightningModule):
 
         target_heatmap = self.to_heatmap(target, topdown)[:, None]
         input = torch.cat((topdown, target_heatmap), 1)
-        points, weights = self.net(input, temperature=self.temperature.item(), get_weights=True)
-        #points, weights = self.net(input, temperature=self.temperature[0], get_weights=True)
-        return points, weights, target_heatmap
+        points, logits = self.net(input, temperature=self.temperature.item())
+        return points, target_heatmap, logits
 
     def training_step(self, batch, batch_nb):
         img, topdown, points, target, actions, meta = batch
-        points_lbc, weights, target_heatmap = self.forward(topdown, target)
+        points_lbc, target_heatmap, logits = self.forward(topdown, target)
 
         alpha = torch.rand(points_lbc.shape).type_as(points_lbc)
         between = alpha * points_lbc + (1-alpha) * points
@@ -186,8 +185,7 @@ class MapModel(pl.LightningModule):
 
         if batch_nb % 250 == 0:
             metrics['train_image'] = visualize(batch, points_lbc, between, out_cmd, loss_point, loss_cmd)
-
-            metrics['train_heatmap'] = plot_weights(topdown, target, points_lbc, weights, loss_point, use_wandb=True)
+            metrics['train_heatmap'] = plot_weights(topdown, target, points_lbc, logits, loss_point, use_wandb=True)
 
         if self.logger != None:
             self.logger.log_metrics(metrics, self.global_step)
@@ -196,7 +194,7 @@ class MapModel(pl.LightningModule):
 
     def validation_step(self, batch, batch_nb):
         img, topdown, points, target, actions, meta = batch
-        points_lbc, weights, target_heatmap = self.forward(topdown, target)
+        points_lbc, target_heatmap, logits = self.forward(topdown, target)
 
         alpha = 0.0
         between = alpha * points_lbc + (1-alpha) * points
@@ -208,14 +206,13 @@ class MapModel(pl.LightningModule):
         loss_cmd_pred_raw = torch.nn.functional.l1_loss(out_cmd_pred, actions, reduction='none')
 
         loss_cmd = loss_cmd_raw.mean(1)
-        #loss = (loss_point + self.hparams.command_coefficient * loss_cmd).mean()
         loss = loss_point.mean()
 
         img = visualize(batch, points_lbc, between, out_cmd, loss_point, loss_cmd)
         if batch_nb == 0 and self.logger != None:
             self.logger.log_metrics({
                 'val_image': visualize(batch, points_lbc, between, out_cmd, loss_point, loss_cmd),
-                'val_heatmap': plot_weights(topdown, target, points_lbc, weights, loss_point, use_wandb=True)
+                'val_heatmap': plot_weights(topdown, target, points_lbc, logits, loss_point, use_wandb=True)
                 }, self.global_step)
 
         result = {
