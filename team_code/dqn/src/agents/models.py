@@ -88,12 +88,11 @@ class SegmentationModel(torch.nn.Module):
             input = torch.nn.functional.interpolate(input, scale_factor=0.5, mode='bilinear')
         x = self.norm(input)
         logits = self.network(x)['out']
+        if self.hack:
+            logits = torch.nn.functional.interpolate(logits, scale_factor=2.0, mode='bilinear')
         logits = self.block1(logits)
         logits = self.block2(logits)
         logits = self.block3(logits, relu=False)
-
-        if self.hack:
-            logits = torch.nn.functional.interpolate(logits, scale_factor=2.0, mode='bilinear')
 
         # extract 
         points, weights = self.extract(logits, temperature)
