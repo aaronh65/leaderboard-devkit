@@ -41,6 +41,7 @@ try:
     CARLA_ROOT = os.environ['CARLA_ROOT']
 
     carla_procs = list()
+    worker_procs = list()
     gpus=list(range(args.gpus))
     port_map = {gpu: (get_open_port(), get_open_port()) for gpu in gpus}
     for gpu in gpus:
@@ -61,7 +62,6 @@ try:
     gpu_proc = [None] * len(gpus)
 
     # routes left or gpus busy
-    worker_procs = list()
     while len(routes) > 0 or not all(gpu_free):
 
         for i, (free, proc) in enumerate(zip(gpu_free, gpu_proc)):

@@ -60,6 +60,7 @@ try:
         
     # launch CARLA servers
     carla_procs = list()
+    worker_procs = list()
     gpus = list(range(args.gpus))
     port_map = {gpu: (get_open_port(), get_open_port()) for gpu in gpus}
     for gpu in gpus:
@@ -122,7 +123,6 @@ try:
     gpu_proc = [None] * len(gpus) # tracks which gpu has which process
 
     # main testing loop
-    worker_procs = list()
     while len(routes) > 0 or not all(gpu_free):
 
         # check for finished leaderboard runs
