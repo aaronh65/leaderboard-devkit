@@ -28,7 +28,7 @@ actions = torch.Tensor(actions).unsqueeze(0)
 
 input = torch.zeros((n,c,h,w))
 input_hmap = hmap(actions, input) 
-noise = torch.rand(input_hmap.shape)*0.1
+noise = torch.rand(input_hmap.shape)*0.0
 Qmap = input_hmap + noise
 noisy_actions, _ = get_dqn_actions(Qmap)
 Q_actions = spatial_select(Qmap, actions)
@@ -36,7 +36,7 @@ print(Q_actions.numpy().flatten())
 
 
 off = np.ones_like(actions)*1
-#noisy_actions += off
+noisy_actions += off
 #actions_off1 = actions + off
 #actions_off2 = actions - off
 #Qo1 = spatial_select(Qmap, actions_off1)

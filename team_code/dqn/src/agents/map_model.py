@@ -74,19 +74,17 @@ def viz_Qmap(batch, meta, alpha=0.5, r=2):
 
             img = Image.fromarray(img)
             draw = ImageDraw.Draw(img)
-            x, y = points_max[n][t] % W, points_max[n][t] // W
-            draw.ellipse((x-r,y-r,x+r,y+r), (0,0,255))
-            if 'points_expert' in info.keys():
-                x, y = points_expert[n][t]
-                draw.ellipse((x-r,y-r,x+r,y+r), expert_color)
+            draw.text((5,10), f'Q max/exp/min: {Q_maxs[n][t]:.2f}/{Q_expert[n][t]:.2f}/{Q_mins[n][t]:.2f}', text_color)
+            draw.text((5,20), f'mgn mean/max:  {mean_margin[n][t]:.2f}/{max_margin[n][t]:.2f}', text_color)
             x, y = points_min[n][t] % W, points_min[n][t] // W
             draw.ellipse((x-r,y-r,x+r,y+r), (255,255,255))
-            draw.text((5,10), f'Q_max: \t{Q_maxs[n][t]:.2f}', text_color)
-            draw.text((5,20), f'Q_exp: \t{Q_expert[n][t]:.2f}', text_color)
-            draw.text((5,30), f'Q_min: \t{Q_mins[n][t]:.2f}', text_color)
-            draw.text((5,40), f'mean_loss: \t{mean_margin[n][t]:.2f}', text_color)
-            draw.text((5,50), f'max_loss: \t{max_margin[n][t]:.2f}', text_color)
-            draw.text((5,60), f'margin_loss: \t{margin[n][t]:.2f}', text_color)
+            x, y = points_max[n][t] % W, points_max[n][t] // W
+            draw.ellipse((x-r,y-r,x+r,y+r), (0,0,255))
+            draw.text((5,30), f'max_action: {x:.2f},{y:.2f}', text_color)
+            if 'points_expert' in info.keys():
+                x, y= points_expert[n][t]
+                draw.ellipse((x-r,y-r,x+r,y+r), expert_color)
+                draw.text((5,40), f'exp_action: {x:.2f},{y:.2f}', text_color)
 
             #img = cv2.cvtColor(np.array(img), cv2.COLOR_BGR2RGB)
             fused[n][t] = np.array(img)
@@ -156,9 +154,7 @@ def viz_td(batch, meta, alpha=0.5, r=2):
         _margin_loss = f'{margin_loss[i].mean().item():.2f}'
         _batch_loss = f'{batch_loss[i].item():.2f}'
         _ndraw.text((5, 30), f'batch_loss = {_td_loss} + {_margin_loss} = {_batch_loss}', text_color)
-#
         _combined = np.hstack((np.array(_topdown), np.array(_ntopdown)))
-        #_combined = cv2.cvtColor(_combined, cv2.COLOR_BGR2RGB)
         images.append(_combined)
     
     result = [torch.ByteTensor(x.transpose(2,0,1)) for x in images]
@@ -240,6 +236,8 @@ class MapModel(pl.LightningModule):
         naction, nQ_all = self.get_dqn_actions(nQmap)
         nQ = torch.mean(nQ_all, axis=1, keepdim=False)
 
+
+        
         # td loss
         discount = info['discount']
         td_target = reward + discount * nQ * (1-done)
@@ -326,7 +324,6 @@ class MapModel(pl.LightningModule):
         points_expert = info['points_expert']
         Q_expert_all = spatial_select(Qmap, points_expert) #N,T,1
 
-        # DEBUG
 
         margin_map = self.expert_heatmap(points_expert, Qmap) #[0,1] tall at expert points
         margin_map = (1-margin_map)*self.hparams.expert_margin #[0, 8] low at expert points
