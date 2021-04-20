@@ -50,6 +50,19 @@ class SpatialSoftmax(torch.nn.Module):
 
         return torch.stack((x, y), -1), weights
 
+class ConvBlock(torch.nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size, padding, bias=False):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(in_channels, out_channels, kernel_size, padding=padding, bias=bias)
+        self.norm = torch.nn.BatchNorm2d(out_channels)
+
+    def forward(self, x, relu=True):
+        x = self.conv(x)
+        x = self.norm(x)
+        if relu:
+            x = F.relu(x)
+        return x
+
 class SegmentationModel(torch.nn.Module):
     def __init__(self, input_channels=3, n_steps=4, batch_norm=True, hack=False):
         super().__init__()
@@ -58,6 +71,9 @@ class SegmentationModel(torch.nn.Module):
 
         self.norm = torch.nn.BatchNorm2d(input_channels) if batch_norm else lambda x: x
         self.network = deeplabv3_resnet50(pretrained=False, num_classes=n_steps)
+        self.block1 = ConvBlock(4, 4, 3, 1, bias=False)
+        self.block2 = ConvBlock(4, 4, 3, 1, bias=False)
+        self.block3 = ConvBlock(4, 4, 3, 1, bias=False)
         self.extract = SpatialSoftmax()
 
         old = self.network.backbone.conv1
@@ -72,6 +88,10 @@ class SegmentationModel(torch.nn.Module):
             input = torch.nn.functional.interpolate(input, scale_factor=0.5, mode='bilinear')
         x = self.norm(input)
         logits = self.network(x)['out']
+        logits = self.block1(logits)
+        logits = self.block2(logits)
+        logits = self.block3(logits, relu=False)
+
         if self.hack:
             logits = torch.nn.functional.interpolate(logits, scale_factor=2.0, mode='bilinear')
 
