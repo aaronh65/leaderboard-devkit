@@ -33,7 +33,7 @@ def get_open_port():
     return port
 
 suffix = f'debug/{args.id}' if args.debug else args.id
-save_root = Path(f'{args.data_root}/leaderboard/data/rl/dspred/{suffix}')
+save_root = Path(f'{args.data_root}/leaderboard/data/dqn/{suffix}')
 save_root.mkdir(parents=True, exist_ok=True)
 (save_root / 'logs').mkdir()
 
