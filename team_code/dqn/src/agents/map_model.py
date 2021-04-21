@@ -488,8 +488,8 @@ if __name__ == '__main__':
     #parser.add_argument('--backbone', type=str, default='deeplabv3_resnet50',
     #        choices=['deeplabv3_resnet50', 'fcn_resnet50'])
     parser.add_argument('--heatmap_radius', type=int, default=5)
-    parser.add_argument('--expert_radius', type=int, default=2)
-    parser.add_argument('--expert_margin', type=float, default=10.0)
+    parser.add_argument('--expert_radius', type=int, default=5)
+    parser.add_argument('--expert_margin', type=float, default=1.0)
     parser.add_argument('--temperature', type=float, default=10.0)
     parser.add_argument('--hack', action='store_true')
         

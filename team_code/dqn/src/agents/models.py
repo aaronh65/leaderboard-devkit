@@ -71,9 +71,11 @@ class SegmentationModel(torch.nn.Module):
 
         self.norm = torch.nn.BatchNorm2d(input_channels) if batch_norm else lambda x: x
         self.network = deeplabv3_resnet50(pretrained=False, num_classes=n_steps)
-        self.block1 = ConvBlock(4, 4, 3, 1, bias=False)
-        self.block2 = ConvBlock(4, 4, 3, 1, bias=False)
-        self.block3 = ConvBlock(4, 4, 3, 1, bias=False)
+        self.block1 = ConvBlock(4, 4, 3, 1)
+        self.block2 = ConvBlock(4, 4, 3, 1)
+        self.block3 = ConvBlock(4, 4, 3, 1)
+        self.block4 = ConvBlock(4, 4, 3, 1)
+
         self.extract = SpatialSoftmax()
 
         old = self.network.backbone.conv1
@@ -90,9 +92,13 @@ class SegmentationModel(torch.nn.Module):
         logits = self.network(x)['out']
         if self.hack:
             logits = torch.nn.functional.interpolate(logits, scale_factor=2.0, mode='bilinear')
-        logits = self.block1(logits)
-        logits = self.block2(logits)
-        logits = self.block3(logits, relu=False)
+            logits = self.block1(logits)
+            logits = self.block2(logits)
+            logits = self.block3(logits)
+            logits = self.block4(logits, relu=False)
+        else:
+            logits = self.block1(logits)
+            logits = self.block2(logits, relu=False)
 
         # extract 
         points, weights = self.extract(logits, temperature)
