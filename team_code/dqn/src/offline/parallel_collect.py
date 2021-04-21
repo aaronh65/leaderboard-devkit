@@ -104,6 +104,6 @@ for proc in carla_procs + worker_procs:
     try:
         kill(proc.pid)
     except Exception as e:
-        traceback.print_exc()
+        #traceback.print_exc()
         continue
 print('done')
