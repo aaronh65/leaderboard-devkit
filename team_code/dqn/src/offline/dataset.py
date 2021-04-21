@@ -70,7 +70,7 @@ def get_dataloader(hparams, dataset_dir, is_train=True, sample_by='even', **kwar
     sampler = torch.utils.data.sampler.WeightedRandomSampler(weights, len(weights))
     data = torch.utils.data.ConcatDataset(data)
 
-    return Wrap(data, sampler, hparams.batch_size, 1000 if is_train else 100, hparams.num_workers)
+    return Wrap(data, sampler, hparams.batch_size, 1000 if is_train else 250, hparams.num_workers)
 
 
 def preprocess_semantic(semantic_np):
