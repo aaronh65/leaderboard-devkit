@@ -93,9 +93,6 @@ class CarlaDataset(Dataset):
         self.transform = transform
         self.measurements = pd.DataFrame([eval(x.read_text()) for x in measurements])
 
-        #self.pixel_jitter = self.hparams.pixel_jitter
-        #self.angle_jitter = self.hparams.angle_jitter
-
         # n-step returns
         self.discount = [self.hparams.gamma**i for i in range(hparams.n+1)]
 

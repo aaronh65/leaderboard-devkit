@@ -16,10 +16,12 @@ from misc.utils import *
 from dqn.src.agents.models import SegmentationModel, RawController, SpatialSoftmax
 from dqn.src.agents.heatmap import ToHeatmap, ToTemporalHeatmap
 from dqn.src.offline.dataset import get_dataloader
+from dqn.src.offline.prioritized_dataset import get_dataloader
 from lbc.carla_project.src.common import CONVERTER, COLOR
 from lbc.carla_project.src.map_model import plot_weights
  
 HAS_DISPLAY = int(os.environ['HAS_DISPLAY'])
+
 text_color = (255,255,255)
 aim_color = (60,179,113) # dark green
 student_color = (65,105,225) # dark blue
@@ -40,7 +42,6 @@ def fuse_logits(topdown, logits, alpha=0.5):
         fused[i] = cv2.addWeighted(logits_mask, alpha, fused[i], 1, 0)
     fused = fused.astype(np.uint8) # (N,H,W,3)
     return fused
-
 
 @torch.no_grad()
 def viz_Qmap(batch, meta, alpha=0.5, r=2):
@@ -235,8 +236,6 @@ class MapModel(pl.LightningModule):
             npoints, nlogits, nweights, ntmap, nQmap = self.forward(ntopdown, ntarget, debug=True)
         naction, nQ_all = self.get_dqn_actions(nQmap)
         nQ = torch.mean(nQ_all, axis=1, keepdim=False)
-
-
         
         # td loss
         discount = info['discount']
@@ -326,7 +325,6 @@ class MapModel(pl.LightningModule):
         points_expert = info['points_expert']
         Q_expert_all = spatial_select(Qmap, points_expert) #N,T,1
 
-
         margin_map = self.expert_heatmap(points_expert, Qmap) #[0,1] tall at expert points
         margin_map = (1-margin_map)*self.hparams.expert_margin #[0,M] low at expert points
         margin_map = Qmap + margin_map - Q_expert_all.unsqueeze(-1)
@@ -400,11 +398,13 @@ class MapModel(pl.LightningModule):
         return [optim], [scheduler]
 
     def train_dataloader(self):
-        return get_dataloader(self.hparams, self.hparams.train_dataset, is_train=True)
+        self.train_dataloader = get_dataloader(self.hparams,self.hparams.train_dataset,is_train=True)
+        return self.train_dataloader
 
     # online val dataloaders spoof a length of N batches, and do N episode rollouts
     def val_dataloader(self):
-        return get_dataloader(self.hparams, self.hparams.val_dataset, is_train=False)
+        self.val_dataloader = get_dataloader(self.hparams,self.hparams.val_dataset,is_train=False)
+        return self.val_dataloader
 
 
 # offline training
@@ -508,3 +508,5 @@ if __name__ == '__main__':
     args.save_dir.mkdir(parents=True, exist_ok=True)
 
     main(args)
+
+

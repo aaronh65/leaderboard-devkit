@@ -71,6 +71,7 @@ class SegmentationModel(torch.nn.Module):
 
         self.norm = torch.nn.BatchNorm2d(input_channels) if batch_norm else lambda x: x
         self.network = deeplabv3_resnet50(pretrained=False, num_classes=n_steps)
+
         self.block1 = ConvBlock(4, 4, 3, 1)
         self.block2 = ConvBlock(4, 4, 3, 1)
         self.block3 = ConvBlock(4, 4, 3, 1)
