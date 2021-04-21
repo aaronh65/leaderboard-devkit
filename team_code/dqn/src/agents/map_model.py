@@ -242,10 +242,11 @@ class MapModel(pl.LightningModule):
         discount = info['discount']
         td_target = reward + discount * nQ * (1-done)
         td_loss = self.hparams.lambda_td * self.td_criterion(Q, td_target) # TD(n) error Nx1
+        td_loss = torch.clamp(td_loss, 0, 100)
 
         # expert margin loss
         points_expert = info['points_expert']
-        Q_expert_all = spatial_select(Qmap, info['points_expert']) #N,T,1
+        Q_expert_all = spatial_select(Qmap, points_expert) #N,T,1
 
         margin_map = self.expert_heatmap(points_expert, Qmap) #[0,1] tall at expert points
         margin_map = (1-margin_map)*self.hparams.expert_margin #[0, 8] low at expert points
