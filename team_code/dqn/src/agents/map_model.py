@@ -412,7 +412,7 @@ class MapModel(pl.LightningModule):
 def main(hparams):
     
     if hparams.log:
-        logger = WandbLogger(id=hparams.id, save_dir=str(hparams.save_dir), project='dqn_test')
+        logger = WandbLogger(id=hparams.id, save_dir=str(hparams.save_dir), project='dqn_offline')
     else:
         logger = False
     checkpoint_callback = ModelCheckpoint(hparams.save_dir, save_top_k=3)
