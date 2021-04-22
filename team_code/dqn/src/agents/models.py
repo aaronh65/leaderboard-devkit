@@ -4,7 +4,7 @@ import torch
 import torch.nn.functional as F
 
 from torchvision.models.segmentation import deeplabv3_resnet50
-from dqn.src.agents.deeplabv3 import ASPP
+from dqn.src.agents.deeplabv3 import ASPP, DeepLabHead
 #from torchvision.models.segmentation.deeplabv3 import ASPP
 
 HAS_DISPLAY = int(os.environ.get('HAS_DISPLAY', 0))
@@ -75,14 +75,15 @@ class SegmentationModel(torch.nn.Module):
         #self.network = deeplabv3_resnet50(pretrained=False, num_classes=n_steps)
         self.network = deeplabv3_resnet50(pretrained=False, num_classes=256)
 
-        self.block1 = ASPP(in_channels=256, atrous_rates=[1,2,3,4,5], out_channels=64)
-        self.block2 = ASPP(in_channels=64, atrous_rates=[1,2,3,4,5], out_channels=n_steps)
+        #self.block1 = ASPP(in_channels=256, atrous_rates=[1,2,3,4,5], out_channels=128)
+        #self.block2 = ASPP(in_channels=128, atrous_rates=[1,2,3,4,5], out_channels=64)
+        self.extract = DeepLabHead(in_channels=256, num_classes=n_steps)
         #self.block1 = ConvBlock(4, 4, 3, 1)
         #self.block2 = ConvBlock(4, 4, 3, 1)
         #self.block3 = ConvBlock(4, 4, 3, 1)
         #self.block4 = ConvBlock(4, 4, 3, 1)
 
-        self.extract = SpatialSoftmax()
+        self.spatial_softmax = SpatialSoftmax()
 
         old = self.network.backbone.conv1
         self.network.backbone.conv1 = torch.nn.Conv2d(
@@ -100,15 +101,16 @@ class SegmentationModel(torch.nn.Module):
             logits = torch.nn.functional.interpolate(logits, scale_factor=2.0, mode='bilinear')
 
         # conv blocks to smooth out backbone upsampling artifacts
-        logits = self.block1(logits)
-        logits = self.block2(logits)
-        print(logits.shape)
+        logits = self.extract(logits)
+        #logits = self.block1(logits)
+        #logits = self.block2(logits)
+        #print(logits.shape)
         #logits = self.block1(logits)
         #logits = self.block2(logits)
         #logits = self.block3(logits)
         #logits = self.block4(logits, relu=False)
 
         # extract 
-        points, weights = self.extract(logits, temperature)
+        points, weights = self.spatial_softmax(logits, temperature)
 
         return points, logits, weights
