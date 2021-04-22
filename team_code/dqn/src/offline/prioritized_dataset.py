@@ -49,7 +49,7 @@ def get_dataloader(hparams, is_train=False):
     #routes = sorted([path for path in routes if path.is_dir() and 'logs' not in str(path)])
     for route in routes:
         episodes.extend(sorted(route.glob('*')))
-    dataset = CarlaDataset(hparams, episodes)
+    dataset = CarlaDataset(hparams, episodes, is_train)
     dataloader = DataLoader(
             dataset, 
             batch_size=hparams.batch_size, 
@@ -69,7 +69,7 @@ def preprocess_semantic(semantic_np):
 
 
 class CarlaDataset(Dataset):
-    def __init__(self, hparams, episodes):
+    def __init__(self, hparams, episodes, is_train):
 
         self.topdown_frames = []
         self.measurements = pd.DataFrame()
@@ -92,14 +92,15 @@ class CarlaDataset(Dataset):
 
         # n-step returns
         self.discount = [self.hparams.gamma**i for i in range(hparams.n+1)]
+        self.dataset_len = 1000 if is_train else 250
+        self.dataset_len = self.dataset_len * hparams.batch_size
 
     def __len__(self):
-        return len(self.topdown_frames)
+        return self.dataset_len
 
     def __getitem__(self, i):
         #path = self.dataset_dir
         topdown_frame = self.topdown_frames[i]
-        print(topdown_frame)
         route, rep, _, frame = topdown_frame.parts[-4:]
         frame = frame[:-4]
         meta = '%s/%s/%s' % (route, rep, frame)
@@ -108,10 +109,9 @@ class CarlaDataset(Dataset):
         ni = i + self.hparams.n + 1
         ni = min(ni, len(self.topdown_frames)-1)
         # check if episode terminated prematurely
-        done_list = self.measurements.loc[i:ni-1, 'done'].to_numpy() # slicing end-inclusive
+        done_list = self.measurements.loc[i:ni-1, 'done'].to_numpy().tolist() # slicing end-inclusive
         done = int(1 in done_list)
         if done:
-            print('done')
             ni = i + done_list.index(1) + 1
         done = torch.FloatTensor(np.float32([done]))
         
@@ -141,18 +141,12 @@ class CarlaDataset(Dataset):
 
         # next state, next target
         ntopdown_frame = self.topdown_frames[ni]
-        print(ntopdown_frame)
-        print()
         ntopdown = Image.open(ntopdown_frame)
         ntopdown = ntopdown.crop((128,0,128+256,256))
         ntopdown = preprocess_semantic(np.array(ntopdown))
 
         ntick_data = self.measurements.iloc[ni]
         ntarget = torch.FloatTensor(np.float32((ntick_data['x_tgt'], ntick_data['y_tgt'])))
-
-        # LBC data augs
-        #topdown, ntopdown, (points_student, points_expert) = self.augment_and_crop(
-                #topdown, ntopdown, (points_student, points_expert))
 
         info = {'discount': discount, 
                 'points_student': points_student,
@@ -175,12 +169,13 @@ if __name__ == '__main__':
     parser.add_argument('--n', type=int, default=20)
     parser.add_argument('--batch_size', type=int, default=16)
     parser.add_argument('--gamma', type=float, default=0.99)
-    parser.add_argument('--num_workers', type=int, default=1)
+    parser.add_argument('--num_workers', type=int, default=4)
 
     args = parser.parse_args()
 
     dataloader = get_dataloader(args, is_train=False)
+    print(len(dataloader))
 
-    for batch_nb, batch in dataloader:
+    for batch_nb, batch in enumerate(dataloader):
         break
 
