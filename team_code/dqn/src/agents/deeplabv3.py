@@ -3,16 +3,42 @@ from torch import nn
 from torch.nn import functional as F
 
 
-class DeepLabHead(nn.Sequential):
+class ValueHead(nn.Sequential):
     def __init__(self, in_channels, num_classes):
-        super(DeepLabHead, self).__init__(
-            ASPP(in_channels, [1,3,5,7], out_channels=16),
-            nn.Conv2d(16, 16, 3, padding=1, bias=False),
+        super(ValueHead, self).__init__(
+            #ASPP(in_channels, [1,3,5], out_channels=16),
+            nn.Conv2d(64, 16, 3, padding=1),
             nn.BatchNorm2d(16),
             nn.ReLU(),
-            nn.Conv2d(16, num_classes, 1)
+            nn.Conv2d(16, 16, 3, padding=1),
+            nn.BatchNorm2d(16),
+            nn.ReLU(),
+            nn.Conv2d(16, 16, 3, padding=1),
+            nn.BatchNorm2d(16),
+            nn.ReLU(),
+            nn.Conv2d(16, num_classes, 3, padding=1),
         )
 
+
+class ASPPExtract(nn.Module):
+    def __init__(self, in_channels, latent_dim, num_classes, rates=list(range(1,10))):
+        super().__init__()
+        self.convs = []
+        for i, rate in enumerate(rates):
+            self.convs.append(ASPPConv(in_channels, latent_dim, rate))
+        self.convs = nn.ModuleList(self.convs)
+        self.smooth = ASPPConv(len(self.convs)*latent_dim, latent_dim, dilation=1)
+        self.project = nn.Conv2d(latent_dim, num_classes, 1, bias=False)
+
+
+    def forward(self, x):
+        features = []
+        for conv in self.convs:
+            features.append(conv(x))
+        features = torch.cat(features, dim=1)
+        features = self.smooth(features)
+        out = self.project(features)
+        return out
 
 class ASPPConv(nn.Sequential):
     def __init__(self, in_channels, out_channels, dilation):

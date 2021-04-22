@@ -4,7 +4,7 @@ import torch
 import torch.nn.functional as F
 
 from torchvision.models.segmentation import deeplabv3_resnet50
-from dqn.src.agents.deeplabv3 import ASPP, DeepLabHead
+from dqn.src.agents.deeplabv3 import ValueHead, ASPPExtract
 #from torchvision.models.segmentation.deeplabv3 import ASPP
 
 HAS_DISPLAY = int(os.environ.get('HAS_DISPLAY', 0))
@@ -73,11 +73,11 @@ class SegmentationModel(torch.nn.Module):
 
         self.norm = torch.nn.BatchNorm2d(input_channels) if batch_norm else lambda x: x
         #self.network = deeplabv3_resnet50(pretrained=False, num_classes=n_steps)
-        self.network = deeplabv3_resnet50(pretrained=False, num_classes=16)
+        self.network = deeplabv3_resnet50(pretrained=False, num_classes=64)
 
         #self.block1 = ASPP(in_channels=256, atrous_rates=[1,2,3,4,5], out_channels=128)
         #self.block2 = ASPP(in_channels=128, atrous_rates=[1,2,3,4,5], out_channels=64)
-        self.extract = DeepLabHead(in_channels=16, num_classes=n_steps)
+        self.extract = ASPPExtract(in_channels=64, latent_dim=16, num_classes=n_steps)
         #self.block1 = ConvBlock(4, 4, 3, 1)
         #self.block2 = ConvBlock(4, 4, 3, 1)
         #self.block3 = ConvBlock(4, 4, 3, 1)
