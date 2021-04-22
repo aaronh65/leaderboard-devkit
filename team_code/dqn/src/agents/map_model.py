@@ -15,7 +15,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from misc.utils import *
 from dqn.src.agents.models import SegmentationModel, RawController, SpatialSoftmax
 from dqn.src.agents.heatmap import ToHeatmap, ToTemporalHeatmap
-from dqn.src.offline.dataset import get_dataloader
+#from dqn.src.offline.dataset import get_dataloader
 from dqn.src.offline.prioritized_dataset import get_dataloader
 from lbc.carla_project.src.common import CONVERTER, COLOR
 from lbc.carla_project.src.map_model import plot_weights
@@ -242,6 +242,8 @@ class MapModel(pl.LightningModule):
         td_target = reward + discount * nQ * (1-done)
         td_loss = self.hparams.lambda_td * self.td_criterion(Q, td_target) # TD(n) error Nx1
         td_loss = torch.clamp(td_loss, 0, 100)
+        #self.train_data.dataset.weights[batch_nb] = td_loss.mean().item()
+        #print(self.train_data.dataset.weights[batch_nb])
 
         # expert margin loss
         points_expert = info['points_expert']
@@ -398,13 +400,13 @@ class MapModel(pl.LightningModule):
         return [optim], [scheduler]
 
     def train_dataloader(self):
-        self.train_dataloader = get_dataloader(self.hparams,self.hparams.train_dataset,is_train=True)
-        return self.train_dataloader
+        self.train_data = get_dataloader(self.hparams,self.hparams.train_dataset,is_train=True)
+        return self.train_data
 
     # online val dataloaders spoof a length of N batches, and do N episode rollouts
     def val_dataloader(self):
-        self.val_dataloader = get_dataloader(self.hparams,self.hparams.val_dataset,is_train=False)
-        return self.val_dataloader
+        self.val_data = get_dataloader(self.hparams,self.hparams.val_dataset,is_train=False)
+        return self.val_data
 
 
 # offline training
@@ -500,7 +502,7 @@ if __name__ == '__main__':
     if args.train_dataset is None:
         args.train_dataset = Path('/data/aaronhua/leaderboard/data/dqn/20210407_024101')
     if args.val_dataset is None:
-        args.val_dataset = Path('/data/aaronhua/leaderboard/data/dqn/debug/20210420_111906')
+        args.val_dataset = Path('/data/aaronhua/leaderboard/data/dqn/20210420_111906')
 
     suffix = f'debug/{args.id}' if args.debug else args.id
     save_dir = args.data_root / f'leaderboard/training/dqn/offline/{suffix}'
