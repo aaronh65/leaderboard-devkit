@@ -6,11 +6,11 @@ from torch.nn import functional as F
 class DeepLabHead(nn.Sequential):
     def __init__(self, in_channels, num_classes):
         super(DeepLabHead, self).__init__(
-            ASPP(in_channels, [1,3,5,7], out_channels=64),
-            nn.Conv2d(64, 64, 3, padding=1, bias=False),
-            nn.BatchNorm2d(64),
+            ASPP(in_channels, [1,3,5,7], out_channels=16),
+            nn.Conv2d(16, 16, 3, padding=1, bias=False),
+            nn.BatchNorm2d(16),
             nn.ReLU(),
-            nn.Conv2d(64, num_classes, 1)
+            nn.Conv2d(16, num_classes, 1)
         )
 
 

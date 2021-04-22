@@ -15,8 +15,8 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from misc.utils import *
 from dqn.src.agents.models import SegmentationModel, RawController, SpatialSoftmax
 from dqn.src.agents.heatmap import ToHeatmap, ToTemporalHeatmap
-#from dqn.src.offline.dataset import get_dataloader
-from dqn.src.offline.prioritized_dataset import get_dataloader
+from dqn.src.offline.dataset import get_dataloader
+#from dqn.src.offline.prioritized_dataset import get_dataloader
 from lbc.carla_project.src.common import CONVERTER, COLOR
 from lbc.carla_project.src.map_model import plot_weights
  
