@@ -21,7 +21,7 @@ class ValueHead(nn.Sequential):
 
 
 class ASPPExtract(nn.Module):
-    def __init__(self, in_channels, latent_dim, num_classes, rates=list(range(1,10))):
+    def __init__(self, in_channels, latent_dim, num_classes, rates=list(range(1,10,1))):
         super().__init__()
         self.convs = []
         for i, rate in enumerate(rates):

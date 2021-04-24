@@ -111,7 +111,9 @@ try:
         else:
             wpath = Path(config['agent']['weights_path']).parent
         shutil.copyfile(wpath / 'config.yml', save_root / 'train_config.yml')
-        shutil.copyfile(wpath / 'data_config.yml', save_root / 'data_config.yml')
+        shutil.copyfile(wpath / 'train_data_config.yml', save_root / 'train_data_config.yml')
+        shutil.copyfile(wpath / 'val_data_config.yml', save_root / 'val_data_config.yml')
+
 
     # route paths
     route_dir = f'{project_root}/leaderboard/data/routes_{args.split}'

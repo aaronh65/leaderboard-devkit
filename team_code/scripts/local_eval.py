@@ -59,7 +59,8 @@ with open(config_path, 'w') as f:
 if 'weights_path' in config.keys():
     wpath = Path(config['weights_path']).parent
     shutil.copyfile(wpath / 'config.yml', save_root / 'train_config.yml')
-    shutil.copyfile(wpath / 'data_config.yml', save_root / 'data_config.yml')
+    shutil.copyfile(wpath / 'train_data_config.yml', save_root / 'train_data_config.yml')
+    shutil.copyfile(wpath / 'val_data_config.yml', save_root / 'val_data_config.yml')
 
 # environ variables
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
