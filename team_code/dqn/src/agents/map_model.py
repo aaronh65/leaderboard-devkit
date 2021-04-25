@@ -1,4 +1,4 @@
-import os, argparse, copy, shutil, yaml
+import os, argparse, copy, shutil, yaml, time
 from pathlib import Path
 from datetime import datetime
 
@@ -279,12 +279,16 @@ class MapModel(pl.LightningModule):
 
         # update prioritized experience weights
         indices = info['data_index'].cpu().numpy().flatten()
-        for i, loss in zip(indices, batch_loss.flatten()):
-            self.train_losses[int(i)] = loss
+        for i, _loss in zip(indices, batch_loss.flatten()):
+            item = float(_loss.item())
+            self.train_losses[int(i)] = item
         if self.global_step % self.weight_update_rate == 0:
             weight_path = self.hparams.save_dir / 'train_losses.npy'
+            #print('saving weights')
             with open(weight_path, 'wb') as f:
-                np.save(f, self.train_losses)
+                np.save(f, np.float32(self.train_losses))
+            #time.sleep(5) 
+            #print('done saving weights')
 
         if batch_nb % 250 == 0:
             meta = {
@@ -367,12 +371,12 @@ class MapModel(pl.LightningModule):
 
 
         indices = info['data_index'].cpu().numpy().flatten()
-        for i, loss in zip(indices, batch_loss.flatten()):
-            self.val_losses[int(i)] = loss
+        for i, _loss in zip(indices, batch_loss.flatten()):
+            self.val_losses[int(i)] = float(_loss.item())
         if self.global_step % self.weight_update_rate == 0:
             weight_path = self.hparams.save_dir / 'val_losses.npy'
             with open(weight_path, 'wb') as f:
-                np.save(f, self.val_losses)
+                np.save(f, np.float32(self.val_losses))
         
         if batch_nb == 0 and self.logger != None:
             meta = {
@@ -445,7 +449,7 @@ class MapModel(pl.LightningModule):
         val_data = get_dataloader(self.hparams,self.hparams.val_dataset,is_train=False)
         self.val_data_len = val_data.dataset.dataset_len
         self.val_losses = np.ones(self.val_data_len)*10
-        self.weight_update_rate = val_data.dataset.weight_update_rate
+        self.weight_update_rate = val_data.dataset.base_update_rate
 
 
         return val_data

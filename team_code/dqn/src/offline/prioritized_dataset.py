@@ -1,5 +1,5 @@
 from pathlib import Path
-
+import time
 import numpy as np
 import pandas as pd
 import torch
@@ -55,7 +55,7 @@ def get_dataloader(hparams, dataset_dir, is_train=False):
             dataset, 
             batch_size=hparams.batch_size, 
             num_workers=hparams.num_workers, 
-            shuffle=True, 
+            #shuffle=True, 
             pin_memory=True, 
             drop_last=True)
     return dataloader
@@ -73,7 +73,7 @@ class CarlaDataset(Dataset):
     def __init__(self, hparams, episodes, is_train):
         self.hparams = hparams
         self.transform = lambda x: x
-        self.discount = [self.hparams.gamma**i for i in range(hparams.n+1)]
+        self.discount = [hparams.gamma**i for i in range(hparams.n+1)]
 
         self.topdown_frames = []
         self.measurements = pd.DataFrame()
@@ -90,7 +90,7 @@ class CarlaDataset(Dataset):
             measurements = pd.DataFrame([eval(x.read_text()) for x in measure_frames])
             self.measurements = self.measurements.append(measurements, ignore_index=True)
 
-        self.dataset_len = len(self.topdown_frames)
+        self.dataset_len = len(self.topdown_frames) - hparams.n - hparams.batch_size
         print('%d frames.' % self.dataset_len)
 
         # n-step returns
@@ -99,13 +99,14 @@ class CarlaDataset(Dataset):
 
         weights = np.ones(self.dataset_len)*10
         prefix = 'train' if is_train else 'val'
-        self.weight_path = self.hparams.save_dir / f'{prefix}_losses.npy'
+        self.weight_path = hparams.save_dir / f'{prefix}_losses.npy'
         #self.weight_path.mkdir(exist_ok=True, parents=True)
         with open(self.weight_path, 'wb') as f:
             np.save(f, weights)
 
         self.step = 0
-        self.weight_update_rate = 50
+        self.base_update_rate = 100
+        self.weight_update_rate = self.base_update_rate * hparams.batch_size // hparams.num_workers
         #self.beta = 1e-2
 
     def __len__(self):
@@ -113,9 +114,11 @@ class CarlaDataset(Dataset):
 
     def _recompute_weights(self):
 
-        #eps = 1e-3
+        # buffer time in case map model is still saving weights
         with open(self.weight_path, 'rb') as f:
             weights = np.load(f)
+
+        print(f'recomputing weights at dataset step {self.step}, {sum(weights !=10)} changed elements')
         weights = np.clip(weights, 0, 10)
         weights = np.exp(weights)
         weights = weights / np.sum(weights)
@@ -130,7 +133,8 @@ class CarlaDataset(Dataset):
         #self.beta = min(self.beta + 1e-2, 1)
 
     def __getitem__(self, i):
-        if self.step % self.weight_update_rate == 0:
+        #print('dataset step', self.step)
+        if self.step % self.weight_update_rate == 50 or self.step == 0:
             self._recompute_weights()
 
         i = self.indices[i]

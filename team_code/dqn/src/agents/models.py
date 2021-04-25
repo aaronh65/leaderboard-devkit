@@ -102,13 +102,6 @@ class SegmentationModel(torch.nn.Module):
 
         # conv blocks to smooth out backbone upsampling artifacts
         logits = self.extract(logits)
-        #logits = self.block1(logits)
-        #logits = self.block2(logits)
-        #print(logits.shape)
-        #logits = self.block1(logits)
-        #logits = self.block2(logits)
-        #logits = self.block3(logits)
-        #logits = self.block4(logits, relu=False)
 
         # extract 
         points, weights = self.spatial_softmax(logits, temperature)
