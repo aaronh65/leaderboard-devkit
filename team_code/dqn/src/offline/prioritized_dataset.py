@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import torch
 
+from datetime import datetime
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 from PIL import Image
@@ -40,8 +41,8 @@ def get_weights(data, key='speed', bins=4):
 
     return class_weights[classes]
 
-def get_dataloader(hparams, is_train=False):
-    dataset_dir = Path(hparams.dataset_dir) / 'data'
+def get_dataloader(hparams, dataset_dir, is_train=False):
+    dataset_dir = Path(dataset_dir) / 'data'
 
     episodes = list()
 
@@ -70,6 +71,9 @@ def preprocess_semantic(semantic_np):
 
 class CarlaDataset(Dataset):
     def __init__(self, hparams, episodes, is_train):
+        self.hparams = hparams
+        self.transform = lambda x: x
+        self.discount = [self.hparams.gamma**i for i in range(hparams.n+1)]
 
         self.topdown_frames = []
         self.measurements = pd.DataFrame()
@@ -86,19 +90,51 @@ class CarlaDataset(Dataset):
             measurements = pd.DataFrame([eval(x.read_text()) for x in measure_frames])
             self.measurements = self.measurements.append(measurements, ignore_index=True)
 
-        print('%d frames.' % len(self.topdown_frames))
-        self.hparams = hparams
-        self.transform = lambda x: x
+        self.dataset_len = len(self.topdown_frames)
+        print('%d frames.' % self.dataset_len)
 
         # n-step returns
-        self.discount = [self.hparams.gamma**i for i in range(hparams.n+1)]
-        self.dataset_len = 1000 if is_train else 250
-        self.dataset_len = self.dataset_len * hparams.batch_size
+        self.epoch_len = 1000 if is_train else 250
+        self.epoch_len = self.epoch_len * hparams.batch_size
+
+        weights = np.ones(self.dataset_len)*10
+        prefix = 'train' if is_train else 'val'
+        self.weight_path = self.hparams.save_dir / f'{prefix}_losses.npy'
+        #self.weight_path.mkdir(exist_ok=True, parents=True)
+        with open(self.weight_path, 'wb') as f:
+            np.save(f, weights)
+
+        self.step = 0
+        self.weight_update_rate = 50
+        #self.beta = 1e-2
 
     def __len__(self):
-        return self.dataset_len
+        return self.epoch_len
+
+    def _recompute_weights(self):
+
+        #eps = 1e-3
+        with open(self.weight_path, 'rb') as f:
+            weights = np.load(f)
+        weights = np.clip(weights, 0, 10)
+        weights = np.exp(weights)
+        weights = weights / np.sum(weights)
+        #weights = weights + eps
+        #weights /= np.sum(weights)
+        #weights /= np.sum(weights)
+
+        # regen weights
+        np.random.seed()
+        self.indices = np.random.choice(
+                np.arange(self.dataset_len), size=self.epoch_len, p=weights)
+        #self.beta = min(self.beta + 1e-2, 1)
 
     def __getitem__(self, i):
+        if self.step % self.weight_update_rate == 0:
+            self._recompute_weights()
+
+        i = self.indices[i]
+
         #path = self.dataset_dir
         topdown_frame = self.topdown_frames[i]
         route, rep, _, frame = topdown_frame.parts[-4:]
@@ -147,13 +183,14 @@ class CarlaDataset(Dataset):
 
         ntick_data = self.measurements.iloc[ni]
         ntarget = torch.FloatTensor(np.float32((ntick_data['x_tgt'], ntick_data['y_tgt'])))
-
+        itensor = torch.FloatTensor(np.float32([i]))
         info = {'discount': discount, 
                 'points_student': points_student,
                 'points_expert': points_expert,
-                'metadata': torch.Tensor(encode_str(meta))
+                'metadata': torch.Tensor(encode_str(meta)),
+                'data_index': itensor,
                 }
-        
+        self.step += 1 
         # state, action, reward, next_state, done, info
         return (topdown, target), points_student, reward, (ntopdown, ntarget), done, info
         
@@ -170,12 +207,28 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', type=int, default=16)
     parser.add_argument('--gamma', type=float, default=0.99)
     parser.add_argument('--num_workers', type=int, default=4)
+    parser.add_argument('--train_dataset', type=Path)
+    parser.add_argument('--val_dataset', type=Path)
+    parser.add_argument('--id', type=str, default=datetime.now().strftime("%Y%m%d_%H%M%S")) 
+    parser.add_argument('--save_dir', type=Path)
+    parser.add_argument('--data_root', type=Path, default='/data/aaronhua')
 
     args = parser.parse_args()
 
-    dataloader = get_dataloader(args, is_train=False)
+    suffix = f'debug/{args.id}' 
+    save_dir = args.data_root / f'leaderboard/training/dqn/offline/{suffix}'
+    args.save_dir = save_dir
+    args.save_dir.mkdir(parents=True, exist_ok=True)
+    
+    if args.train_dataset is None:
+        args.train_dataset = Path('/data/aaronhua/leaderboard/data/dqn/20210407_024101')
+    if args.val_dataset is None:
+        args.val_dataset = Path('/data/aaronhua/leaderboard/data/dqn/20210420_111906')
+
+    dataloader = get_dataloader(args, args.train_dataset, is_train=True)
     print(len(dataloader))
 
     for batch_nb, batch in enumerate(dataloader):
+        print('peepoHey')
         break
 

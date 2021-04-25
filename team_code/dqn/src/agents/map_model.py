@@ -15,8 +15,8 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from misc.utils import *
 from dqn.src.agents.models import SegmentationModel, RawController, SpatialSoftmax
 from dqn.src.agents.heatmap import ToHeatmap, ToTemporalHeatmap
-from dqn.src.offline.dataset import get_dataloader
-#from dqn.src.offline.prioritized_dataset import get_dataloader
+#from dqn.src.offline.dataset import get_dataloader
+from dqn.src.offline.prioritized_dataset import get_dataloader
 from lbc.carla_project.src.common import CONVERTER, COLOR
 from lbc.carla_project.src.map_model import plot_weights
  
@@ -189,6 +189,8 @@ class MapModel(pl.LightningModule):
         self.td_criterion = torch.nn.MSELoss(reduction='none')
         self.margin_criterion = torch.nn.MSELoss(reduction='none')
 
+
+        
     def restore_from_lbc(self, weights_path):
         from lbc.carla_project.src.map_model import MapModel as LBCModel
 
@@ -242,8 +244,6 @@ class MapModel(pl.LightningModule):
         td_target = reward + discount * nQ * (1-done)
         td_loss = self.hparams.lambda_td * self.td_criterion(Q, td_target) # TD(n) error Nx1
         td_loss = torch.clamp(td_loss, 0, 100)
-        #self.train_data.dataset.weights[batch_nb] = td_loss.mean().item()
-        #print(self.train_data.dataset.weights[batch_nb])
 
         # expert margin loss
         points_expert = info['points_expert']
@@ -263,6 +263,15 @@ class MapModel(pl.LightningModule):
 
         batch_loss = td_loss + margin_loss #N,1
         loss = torch.mean(batch_loss, dim=0) #1,
+
+        # update prioritized experience weights
+        indices = info['data_index'].cpu().numpy().flatten()
+        for i, loss in zip(indices, batch_loss.flatten()):
+            self.train_losses[int(i)] = loss
+        if self.global_step % self.weight_update_rate == 0:
+            weight_path = self.hparams.save_dir / 'train_losses.npy'
+            with open(weight_path, 'wb') as f:
+                np.save(f, self.train_losses)
 
         if batch_nb % 250 == 0:
             meta = {
@@ -341,6 +350,15 @@ class MapModel(pl.LightningModule):
 
         batch_loss = td_loss + margin_loss
         val_loss = torch.mean(batch_loss, axis=0)
+
+
+        indices = info['data_index'].cpu().numpy().flatten()
+        for i, loss in zip(indices, batch_loss.flatten()):
+            self.val_losses[int(i)] = loss
+        if self.global_step % self.weight_update_rate == 0:
+            weight_path = self.hparams.save_dir / 'val_losses.npy'
+            with open(weight_path, 'wb') as f:
+                np.save(f, self.val_losses)
         
         if batch_nb == 0 and self.logger != None:
             meta = {
@@ -400,13 +418,20 @@ class MapModel(pl.LightningModule):
         return [optim], [scheduler]
 
     def train_dataloader(self):
-        self.train_data = get_dataloader(self.hparams,self.hparams.train_dataset,is_train=True)
-        return self.train_data
+
+        train_data = get_dataloader(self.hparams,self.hparams.train_dataset,is_train=True)
+        self.train_data_len = train_data.dataset.dataset_len
+        self.train_losses = np.ones(self.train_data_len)*10
+        return train_data
 
     # online val dataloaders spoof a length of N batches, and do N episode rollouts
     def val_dataloader(self):
-        self.val_data = get_dataloader(self.hparams,self.hparams.val_dataset,is_train=False)
-        return self.val_data
+
+        val_data = get_dataloader(self.hparams,self.hparams.val_dataset,is_train=False)
+        self.val_data_len = val_data.dataset.dataset_len
+        self.val_losses = np.ones(self.val_data_len)*10
+        self.weight_update_rate = val_data.dataset.weight_update_rate
+        return val_data
 
 
 # offline training
