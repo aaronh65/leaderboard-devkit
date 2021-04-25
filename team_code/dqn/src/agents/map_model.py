@@ -105,6 +105,7 @@ def viz_td(batch, meta, alpha=0.5, r=2):
     hparams = meta['hparams']
     batch_loss, td_loss, margin = meta['batch_loss'], meta['td_loss'], meta['margin']
     margin_loss = margin.mean(1).detach().cpu().numpy()
+    margin_switch = meta['margin_switch'].detach().cpu().numpy().flatten()
 
 
     state, action, reward, next_state, done, info = batch
@@ -155,6 +156,8 @@ def viz_td(batch, meta, alpha=0.5, r=2):
         _margin_loss = f'{margin_loss[i].mean().item():.2f}'
         _batch_loss = f'{batch_loss[i].item():.2f}'
         _ndraw.text((5, 30), f'batch_loss = {_td_loss} + {_margin_loss} = {_batch_loss}', text_color)
+        _switch = int(margin_switch[i])
+        _ndraw.text((5, 40), f'margin_switch = {_switch}', text_color)
         _combined = np.hstack((np.array(_topdown), np.array(_ntopdown)))
         images.append(_combined)
     
@@ -272,7 +275,8 @@ class MapModel(pl.LightningModule):
         max_margin, _ = torch.max(max_margin, dim=-1) #N,T
         margin = max_margin + mean_margin
 
-        margin_loss = self.hparams.lambda_margin * margin.mean(dim=1,keepdim=True) #N,1
+        margin_switch = info['margin_switch']
+        margin_loss = self.hparams.lambda_margin * margin.mean(dim=1,keepdim=True)*margin_switch #N,1
 
         batch_loss = td_loss + margin_loss #N,1
         loss = torch.mean(batch_loss, dim=0) #1,
@@ -302,6 +306,7 @@ class MapModel(pl.LightningModule):
                 'margin': margin,
                 'max_margin': max_margin,
                 'mean_margin': mean_margin,
+                'margin_switch': margin_switch,
                 }
             vQmap, vtd = viz_Qmap(batch, meta), viz_td(batch, meta)
             if HAS_DISPLAY:
@@ -364,7 +369,9 @@ class MapModel(pl.LightningModule):
         max_margin, _ = torch.max(max_margin, dim=-1) #N,T
         margin = max_margin + mean_margin
 
-        margin_loss = self.hparams.lambda_margin * margin.mean(dim=1,keepdim=True)
+        margin_switch = info['margin_switch']
+        margin_loss = self.hparams.lambda_margin * margin.mean(dim=1,keepdim=True) * margin_switch
+
 
         batch_loss = td_loss + margin_loss
         val_loss = torch.mean(batch_loss, axis=0)
@@ -390,6 +397,7 @@ class MapModel(pl.LightningModule):
                 'margin': margin,
                 'max_margin': max_margin,
                 'mean_margin': mean_margin,
+                'margin_switch': margin_switch
                 }
             vQmap, vtd = viz_Qmap(batch, meta), viz_td(batch, meta)
             if HAS_DISPLAY:

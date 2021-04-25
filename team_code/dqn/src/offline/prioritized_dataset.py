@@ -118,7 +118,7 @@ class CarlaDataset(Dataset):
         with open(self.weight_path, 'rb') as f:
             weights = np.load(f)
 
-        print(f'recomputing weights at dataset step {self.step}, {sum(weights !=10)} changed elements')
+        #print(f'recomputing weights at dataset step {self.step}, {sum(weights !=10)} changed elements')
         weights = np.clip(weights, 0, 10)
         weights = np.exp(weights)
         weights = weights / np.sum(weights)
@@ -164,6 +164,8 @@ class CarlaDataset(Dataset):
 
         reward = route_reward - penalty
         reward = np.dot(reward, discounts) # discounted sum of rewards
+        margin_switch = 0 if reward < 0 else 1
+        margin_switch = torch.FloatTensor(np.float32([margin_switch]))
         reward = torch.FloatTensor(np.float32([reward]))
 
         # topdown, target, points
@@ -193,6 +195,7 @@ class CarlaDataset(Dataset):
                 'points_expert': points_expert,
                 'metadata': torch.Tensor(encode_str(meta)),
                 'data_index': itensor,
+                'margin_switch': margin_switch
                 }
         self.step += 1 
         # state, action, reward, next_state, done, info
