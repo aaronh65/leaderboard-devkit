@@ -172,6 +172,19 @@ def make_histogram(tensor, in_type, b_i=0, c_i=0):
     hist = wandb.Histogram(data)
     return hist
 
+def make_PER_histogram(save_dir, is_train=False):
+    prefix = 'train' if is_train else 'val'
+    weight_path = save_dir / f'{prefix}_losses.npy'
+    with open(weight_path, 'rb') as f:
+        weights = np.load(f)
+    weights = np.clip(weights, 0, 10)
+    weights = np.exp(weights)
+    weights = weights / np.sum(weights)
+    weights.sort()
+    weights = weights[-10000:]
+    hist = wandb.Histogram(weights)
+    return hist
+
 # just needs to know if it's rolling out or nah
 class MapModel(pl.LightningModule):
     def __init__(self, hparams=None):
@@ -302,6 +315,7 @@ class MapModel(pl.LightningModule):
             if batch_nb % 250 == 0:
                 metrics['train_td'] = wandb.Image(vtd)
                 metrics['train_Qmap'] = wandb.Image(vQmap)
+                metrics['train_weights'] = make_PER_histogram(self.hparams.save_dir, is_train=True)
                 to_hist = {'Qmap': Qmap}
                 for key, item in to_hist.items():
                     metrics[f'train/{key}_hist'] = make_histogram(item, key)
@@ -382,6 +396,7 @@ class MapModel(pl.LightningModule):
             metrics = {
                         'val_td': wandb.Image(vtd),
                         'val_Qmap': wandb.Image(vQmap),
+                        'val_weights': make_PER_histogram(self.hparams.save_dir, is_train=False)
                         }
 
             to_hist = {'Qmap': Qmap}
@@ -431,6 +446,8 @@ class MapModel(pl.LightningModule):
         self.val_data_len = val_data.dataset.dataset_len
         self.val_losses = np.ones(self.val_data_len)*10
         self.weight_update_rate = val_data.dataset.weight_update_rate
+
+
         return val_data
 
 
