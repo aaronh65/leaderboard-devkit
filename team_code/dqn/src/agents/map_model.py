@@ -259,7 +259,7 @@ class MapModel(pl.LightningModule):
         discount = info['discount']
         td_target = reward + discount * nQ * (1-done)
         td_loss = self.hparams.lambda_td * self.td_criterion(Q, td_target) # TD(n) error Nx1
-        td_loss = torch.clamp(td_loss, 0, 100)
+        td_loss = torch.clamp(td_loss, 0, 1000)
 
         # expert margin loss
         points_expert = info['points_expert']
@@ -288,11 +288,8 @@ class MapModel(pl.LightningModule):
             self.train_losses[int(i)] = item
         if self.global_step % self.weight_update_rate == 0:
             weight_path = self.hparams.save_dir / 'train_losses.npy'
-            #print('saving weights')
             with open(weight_path, 'wb') as f:
                 np.save(f, np.float32(self.train_losses))
-            #time.sleep(5) 
-            #print('done saving weights')
 
         if batch_nb % 250 == 0:
             meta = {
@@ -353,7 +350,7 @@ class MapModel(pl.LightningModule):
         discount = info['discount']
         td_target = reward + discount * nQ * (1-done)
         td_loss = self.hparams.lambda_td * self.td_criterion(Q, td_target) # TD(n) error Nx1
-        td_loss = torch.clamp(td_loss, 0, 100)
+        td_loss = torch.clamp(td_loss, 0, 1000)
 
         # expert margin loss
         points_expert = info['points_expert']
