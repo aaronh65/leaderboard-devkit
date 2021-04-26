@@ -125,6 +125,9 @@ class CarlaEnv(BaseEnv):
         data['x_tgt'] = x
         data['y_tgt'] = y
         data['done'] = int(done)
+        data['steer'] = self.hero_agent.control.steer
+        data['throttle'] = self.hero_agent.control.throttle
+        data['brake'] = self.hero_agent.control.brake
         if 'infraction' not in data.keys():
             data['infraction'] = 'none'
         else:

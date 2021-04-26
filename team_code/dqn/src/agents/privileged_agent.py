@@ -205,6 +205,7 @@ class PrivilegedAgent(MapAgent):
         control.steer = steer
         control.throttle = throttle
         control.brake = float(brake)
+        self.control = control
         #print(timestamp) # GAMETIME
 
         condition = not self.burn_in and not self.aconfig.mode == 'forward' # not random
