@@ -112,11 +112,10 @@ class CarlaDataset(Dataset):
 
 
         infractions = set(self.measurements['infraction'].to_numpy().tolist())
-        print(infractions)
 
     def __len__(self):
-        #return self.epoch_len
-        return self.dataset_len
+        return self.epoch_len
+        #return self.dataset_len
 
     def _recompute_weights(self):
 
@@ -170,8 +169,14 @@ class CarlaDataset(Dataset):
 
         reward = route_reward - penalty
         reward = np.dot(reward, discounts) # discounted sum of rewards
+
+        # turn off margin if expert action is bad?
         margin_switch = 0 if reward < 0 else 1
         margin_switch = torch.FloatTensor(np.float32([margin_switch]))
+
+        # transform to log scale (DQfD)
+        sign = -1 if reward < 0 else 1
+        reward = sign * np.log(1+np.abs(reward))
         reward = torch.FloatTensor(np.float32([reward]))
 
         # topdown, target, points
@@ -206,10 +211,8 @@ class CarlaDataset(Dataset):
         self.step += 1 
 
 
-        if tick_data['infraction'] != 'none':
-            print(tick_data['infraction'])
-
         # state, action, reward, next_state, done, info
+
         return (topdown, target), points_student, reward, (ntopdown, ntarget), done, info
         
 

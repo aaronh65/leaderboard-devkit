@@ -276,7 +276,8 @@ class MapModel(pl.LightningModule):
         margin = max_margin + mean_margin
 
         margin_switch = info['margin_switch']
-        margin_loss = self.hparams.lambda_margin * margin.mean(dim=1,keepdim=True)*margin_switch #N,1
+        margin_loss = self.hparams.lambda_margin * margin.mean(dim=1,keepdim=True) #N,1
+        #margin_loss = margin_switch * margin_loss
 
         batch_loss = td_loss + margin_loss #N,1
         loss = torch.mean(batch_loss, dim=0) #1,
@@ -367,7 +368,8 @@ class MapModel(pl.LightningModule):
         margin = max_margin + mean_margin
 
         margin_switch = info['margin_switch']
-        margin_loss = self.hparams.lambda_margin * margin.mean(dim=1,keepdim=True) * margin_switch
+        margin_loss = self.hparams.lambda_margin * margin.mean(dim=1,keepdim=True) #N,1
+        #margin_loss = margin_switch * margin_loss
 
 
         batch_loss = td_loss + margin_loss
