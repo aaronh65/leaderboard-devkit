@@ -100,7 +100,14 @@ except Exception as e:
     traceback.print_exc()
 
 print('shutting down processes...')
-for proc in carla_procs + worker_procs:
+for proc in carla_procs:
+    try:
+        kill(proc.pid)
+    except Exception as e:
+        #traceback.print_exc()
+        continue
+
+for proc in worker_procs:
     try:
         kill(proc.pid)
     except Exception as e:

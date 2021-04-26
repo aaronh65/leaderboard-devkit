@@ -179,7 +179,7 @@ class PrivilegedAgent(MapAgent):
             tick_data['points_expert'] = points_map
 
         # 3. is the model using random waypoint selection/burning in?
-        if self.aconfig.mode == 'forward' or self.burn_in:
+        if self.aconfig.forward == True or self.burn_in:
             #points_map = np.random.randint(0, 256, size=(4,2)) 
             x = np.random.randint(128 - 56, 128 + 56, (4,1))
             y = np.random.randint(256 - 128, 256, (4,1))

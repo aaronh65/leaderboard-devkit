@@ -127,7 +127,8 @@ class CarlaEnv(BaseEnv):
         data['done'] = int(done)
         if 'infraction' not in data.keys():
             data['infraction'] = 'none'
-        data['infraction'] = str(data['infraction'])
+        else:
+            data['infraction'] = str(data['infraction'].get_type())
 
         save_path = self.hero_agent.save_path / 'measurements'
         (save_path / f'{self.hero_agent.step:06d}.json').write_text(str(data))

@@ -25,5 +25,5 @@ agent:
   batch_size: 32
   n: 20
   epsilon: 0.1
-  forward: false
+  forward: true
 

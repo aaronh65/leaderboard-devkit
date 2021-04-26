@@ -8,6 +8,7 @@ from datetime import datetime
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 from PIL import Image
+from tqdm import tqdm
 
 from lbc.carla_project.src.converter import PIXELS_PER_WORLD
 from lbc.carla_project.src.dataset_wrapper import Wrap
@@ -109,8 +110,13 @@ class CarlaDataset(Dataset):
         self.weight_update_rate = self.base_update_rate * hparams.batch_size // hparams.num_workers
         #self.beta = 1e-2
 
+
+        infractions = set(self.measurements['infraction'].to_numpy().tolist())
+        print(infractions)
+
     def __len__(self):
-        return self.epoch_len
+        #return self.epoch_len
+        return self.dataset_len
 
     def _recompute_weights(self):
 
@@ -198,6 +204,11 @@ class CarlaDataset(Dataset):
                 'margin_switch': margin_switch
                 }
         self.step += 1 
+
+
+        if tick_data['infraction'] != 'none':
+            print(tick_data['infraction'])
+
         # state, action, reward, next_state, done, info
         return (topdown, target), points_student, reward, (ntopdown, ntarget), done, info
         
@@ -232,10 +243,9 @@ if __name__ == '__main__':
     if args.val_dataset is None:
         args.val_dataset = Path('/data/aaronhua/leaderboard/data/dqn/20210420_111906')
 
-    dataloader = get_dataloader(args, args.train_dataset, is_train=True)
+    dataloader = get_dataloader(args, args.train_dataset, is_train=False)
     print(len(dataloader))
 
-    for batch_nb, batch in enumerate(dataloader):
-        print('peepoHey')
+    for batch_nb, batch in tqdm(enumerate(dataloader)):
         break
 
