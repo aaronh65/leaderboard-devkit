@@ -326,7 +326,8 @@ class MapModel(pl.LightningModule):
             if batch_nb % 250 == 0:
                 metrics['train_td'] = wandb.Image(vtd)
                 metrics['train_Qmap'] = wandb.Image(vQmap)
-                metrics['train_weights'] = make_PER_histogram(self.hparams.save_dir, is_train=True)
+                if PRIORITY:
+                    metrics['train_weights'] = make_PER_histogram(self.hparams.save_dir, is_train=True)
                 to_hist = {'Qmap': Qmap}
                 for key, item in to_hist.items():
                     metrics[f'train/{key}_hist'] = make_histogram(item, key)
@@ -412,8 +413,9 @@ class MapModel(pl.LightningModule):
             metrics = {
                         'val_td': wandb.Image(vtd),
                         'val_Qmap': wandb.Image(vQmap),
-                        'val_weights': make_PER_histogram(self.hparams.save_dir, is_train=False)
                         }
+            if PRIORITY:
+                metrics['val_weights'] = make_PER_histogram(self.hparams.save_dir, is_train=False)
 
             to_hist = {'Qmap': Qmap}
             for key, item in to_hist.items():
