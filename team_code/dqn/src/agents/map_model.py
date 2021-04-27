@@ -15,12 +15,15 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from misc.utils import *
 from dqn.src.agents.models import SegmentationModel, RawController, SpatialSoftmax
 from dqn.src.agents.heatmap import ToHeatmap, ToTemporalHeatmap
-#from dqn.src.offline.dataset import get_dataloader
-from dqn.src.offline.prioritized_dataset import get_dataloader
 from lbc.carla_project.src.common import CONVERTER, COLOR
 from lbc.carla_project.src.map_model import plot_weights
  
 HAS_DISPLAY = int(os.environ['HAS_DISPLAY'])
+PRIORITY = False
+if PRIORITY:
+    from dqn.src.offline.prioritized_dataset import get_dataloader
+else:
+    from dqn.src.offline.dataset import get_dataloader
 
 text_color = (255,255,255)
 aim_color = (60,179,113) # dark green
@@ -283,14 +286,15 @@ class MapModel(pl.LightningModule):
         loss = torch.mean(batch_loss, dim=0) #1,
 
         # update prioritized experience weights
-        indices = info['data_index'].cpu().numpy().flatten()
-        for i, _loss in zip(indices, batch_loss.flatten()):
-            item = float(_loss.item())
-            self.train_losses[int(i)] = item
-        if self.global_step % self.weight_update_rate == 0:
-            weight_path = self.hparams.save_dir / 'train_losses.npy'
-            with open(weight_path, 'wb') as f:
-                np.save(f, np.float32(self.train_losses))
+        if PRIORITY:
+            indices = info['data_index'].cpu().numpy().flatten()
+            for i, _loss in zip(indices, batch_loss.flatten()):
+                item = float(_loss.item())
+                self.train_losses[int(i)] = item
+            if self.global_step % self.weight_update_rate == 0:
+                weight_path = self.hparams.save_dir / 'train_losses.npy'
+                with open(weight_path, 'wb') as f:
+                    np.save(f, np.float32(self.train_losses))
 
         if batch_nb % 250 == 0:
             meta = {
@@ -376,13 +380,14 @@ class MapModel(pl.LightningModule):
         val_loss = torch.mean(batch_loss, axis=0)
 
 
-        indices = info['data_index'].cpu().numpy().flatten()
-        for i, _loss in zip(indices, batch_loss.flatten()):
-            self.val_losses[int(i)] = float(_loss.item())
-        if self.global_step % self.weight_update_rate == 0:
-            weight_path = self.hparams.save_dir / 'val_losses.npy'
-            with open(weight_path, 'wb') as f:
-                np.save(f, np.float32(self.val_losses))
+        if PRIORITY:
+            indices = info['data_index'].cpu().numpy().flatten()
+            for i, _loss in zip(indices, batch_loss.flatten()):
+                self.val_losses[int(i)] = float(_loss.item())
+            if self.global_step % self.weight_update_rate == 0:
+                weight_path = self.hparams.save_dir / 'val_losses.npy'
+                with open(weight_path, 'wb') as f:
+                    np.save(f, np.float32(self.val_losses))
         
         if batch_nb == 0 and self.logger != None:
             meta = {
@@ -446,18 +451,19 @@ class MapModel(pl.LightningModule):
     def train_dataloader(self):
 
         train_data = get_dataloader(self.hparams,self.hparams.train_dataset,is_train=True)
-        self.train_data_len = train_data.dataset.dataset_len
-        self.train_losses = np.ones(self.train_data_len)*10
+        if PRIORITY:
+            self.train_data_len = train_data.dataset.dataset_len
+            self.train_losses = np.ones(self.train_data_len)*10
         return train_data
 
     # online val dataloaders spoof a length of N batches, and do N episode rollouts
     def val_dataloader(self):
 
         val_data = get_dataloader(self.hparams,self.hparams.val_dataset,is_train=False)
-        self.val_data_len = val_data.dataset.dataset_len
-        self.val_losses = np.ones(self.val_data_len)*10
-        self.weight_update_rate = val_data.dataset.base_update_rate
-
+        if PRIORITY:
+            self.val_data_len = val_data.dataset.dataset_len
+            self.val_losses = np.ones(self.val_data_len)*10
+            self.weight_update_rate = val_data.dataset.base_update_rate
 
         return val_data
 
@@ -553,9 +559,9 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if args.train_dataset is None:
-        args.train_dataset = Path('/data/aaronhua/leaderboard/data/dqn/20210407_024101')
+        args.train_dataset = Path('/data/aaronhua/leaderboard/data/dqn/dqn_offline_debug')
     if args.val_dataset is None:
-        args.val_dataset = Path('/data/aaronhua/leaderboard/data/dqn/20210420_111906')
+        args.val_dataset = Path('/data/aaronhua/leaderboard/data/dqn/dqn_offline_debug')
 
     suffix = f'debug/{args.id}' if args.debug else args.id
     save_dir = args.data_root / f'leaderboard/training/dqn/offline/{suffix}'

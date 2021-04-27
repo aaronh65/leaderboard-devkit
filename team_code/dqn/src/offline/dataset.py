@@ -175,6 +175,14 @@ class CarlaDataset(Dataset):
 
         reward = route_reward - penalty
         reward = np.dot(reward, discounts) # discounted sum of rewards
+
+        # turn off margin if expert action is bad?
+        margin_switch = 0 if reward < 0 else 1
+        margin_switch = torch.FloatTensor(np.float32([margin_switch]))
+
+        # transform to log scale (DQfD)
+        sign = -1 if reward < 0 else 1
+        reward = sign * np.log(1+np.abs(reward))
         reward = torch.FloatTensor(np.float32([reward]))
 
         # topdown, target, points
@@ -206,7 +214,8 @@ class CarlaDataset(Dataset):
         info = {'discount': discount, 
                 'points_student': points_student,
                 'points_expert': points_expert,
-                'metadata': torch.Tensor(encode_str(meta))
+                'metadata': torch.Tensor(encode_str(meta)),
+                'margin_switch': margin_switch,
                 }
         
         # state, action, reward, next_state, done, info
@@ -284,20 +293,9 @@ if __name__ == '__main__':
         margin_map = torch.ones_like(logits)*1 # N,C,H,W
         points_expert = info['points_expert']
         margin_map[points_expert.long()] = 0
-        #print(logits.shape)
-        #print(points_expert.shape)
-        #print(torch.min(points_expert,dim=-1)[0])
-        #print(torch.max(points_expert,dim=-1)[0])
         Q_expert = model.get_Q_values(logits, points_expert.cuda())
-        #Q_expert = model.get_Q_values(logits, points_expert)
         margin = logits + margin_map - Q_expert
         margin_loss = model.margin_weight*torch.mean(margin)
-
-        #expert_heatmap = model.expert_heatmap(info['points_expert'], logits)
-        #margin = logits + (1 - expert_heatmap)
-        #_, Q_margin = model.get_dqn_actions(margin)
-        #margin_loss = Q_margin - Q_expert # Nx4
-        #margin_loss = model.margin_weight*torch.mean(margin_loss, axis=1, keepdim=False) # Nx1
 
         meta = {
                 'Q': Q, 'nQ': nQ, 'hparams': model.hparams,
