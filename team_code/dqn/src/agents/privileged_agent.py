@@ -179,11 +179,11 @@ class PrivilegedAgent(MapAgent):
             tick_data['points_expert'] = points_map
 
         # 3. is the model using random waypoint selection/burning in?
-        if self.aconfig.forward == True or self.burn_in:
-            #points_map = np.random.randint(0, 256, size=(4,2)) 
-            x = np.random.randint(128 - 56, 128 + 56, (4,1))
-            y = np.random.randint(256 - 128, 256, (4,1))
-            points_map = np.hstack((x,y))
+        #if self.aconfig.forward == True or self.burn_in:
+        #    #points_map = np.random.randint(0, 256, size=(4,2)) 
+        #    x = np.random.randint(128 - 56, 128 + 56, (4,1))
+        #    y = np.random.randint(256 - 128, 256, (4,1))
+        #    points_map = np.hstack((x,y))
 
         # get aim and controls
         points_world = self.converter.map_to_world(torch.Tensor(points_map)).numpy()
@@ -205,7 +205,14 @@ class PrivilegedAgent(MapAgent):
         control.steer = steer
         control.throttle = throttle
         control.brake = float(brake)
+
+        if self.aconfig.forward == True:
+            control.steer=0
+            control.throttle=1
+            control.brake = 0
+
         self.control = control
+
         #print(timestamp) # GAMETIME
 
         condition = not self.burn_in and not self.aconfig.mode == 'forward' # not random

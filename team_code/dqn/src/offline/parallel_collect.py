@@ -81,6 +81,7 @@ try:
 
         env = os.environ.copy()
         env["CUDA_VISIBLE_DEVICES"] = str(gpu)
+        env["DQN_COLLECT"] = "1"
         cmd = f'python collect_data.py --data_root {args.data_root} --id {args.id} --split {args.split} --routenum {routenum} --repetitions {args.repetitions} -WP {wp} -TP {tp} --save_data'
         if args.debug:
             cmd += ' --debug'

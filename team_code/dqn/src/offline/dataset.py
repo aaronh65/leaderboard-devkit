@@ -195,7 +195,26 @@ if __name__ == '__main__':
     meas = loader.dataset.measurements
     infractions = meas['infraction'].to_numpy()
     infractions_b = infractions != 'none'
-    indices = np.arange(infractions_b.shape[0])
+    indices = np.arange(infractions_b.shape[0]).astype(int)
     indices = indices[infractions_b]
-    print(indices)
-    print(infractions[indices])
+
+    history_size = 100
+    start_indices = indices  - history_size
+
+    frames = loader.dataset.topdown_frames
+
+    hard_frames = []
+    for start, end in zip(start_indices, indices):
+        hard_frames.extend(frames[start:end+1])
+
+    for frame in hard_frames:
+        topdown = Image.open(str(frame))
+        topdown = topdown.crop((128,0,128+256,256))
+        topdown = COLOR[CONVERTER[topdown]]
+        cv2.imshow('topdown', topdown)
+        cv2.waitKey(50)
+
+
+
+
+

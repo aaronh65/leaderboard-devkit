@@ -67,6 +67,7 @@ def parse_args():
     parser.add_argument('--repetitions', type=int, default=1)
     parser.add_argument('--empty', action='store_true') # other agents present?
     parser.add_argument('--random', action='store_true')
+    parser.add_argument('--forward', action='store_true')
 
     args = parser.parse_args()
 
@@ -91,6 +92,8 @@ def parse_args():
     config_path = f'{project_root}/team_code/dqn/config/privileged_agent.yml'
     with open(config_path, 'r') as f:
         config = yaml.load(f, Loader=yaml.Loader)
+
+    os.environ["DQN_COLLECT"] = "1"
     
     # setup config
     config['project_root'] = project_root
@@ -114,6 +117,7 @@ def parse_args():
     aconf['mode'] = 'data'
     aconf['dagger_expert'] = args.dagger_expert
     aconf['data_hack'] = args.data_hack
+    aconf['forward'] = args.forward
  
     # save new config
     with open(f'{save_root}/config.yml', 'w') as f:
