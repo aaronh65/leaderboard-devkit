@@ -180,7 +180,7 @@ if __name__ == '__main__':
     
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset_dir', type=Path,
-            default='/data/aaronhua/leaderboard/data/dqn/dqn_offline_debug')
+            default='/data/aaronhua/leaderboard/data/dqn/dqn_offline_debug_aug')
     parser.add_argument('--weights_path', type=str,
             default='/data/aaronhua/leaderboard/training/lbc/20210405_225046/epoch=22.ckpt')
     parser.add_argument('--n', type=int, default=20)
@@ -204,15 +204,18 @@ if __name__ == '__main__':
     frames = loader.dataset.topdown_frames
 
     hard_frames = []
+    count = {}
     for start, end in zip(start_indices, indices):
         hard_frames.extend(frames[start:end+1])
+    print(frames[indices[0]])
 
-    for frame in hard_frames:
-        topdown = Image.open(str(frame))
-        topdown = topdown.crop((128,0,128+256,256))
-        topdown = COLOR[CONVERTER[topdown]]
-        cv2.imshow('topdown', topdown)
-        cv2.waitKey(50)
+    if False:
+        for frame in hard_frames:
+            topdown = Image.open(str(frame))
+            topdown = topdown.crop((128,0,128+256,256))
+            topdown = COLOR[CONVERTER[topdown]]
+            cv2.imshow('topdown', topdown)
+            cv2.waitKey(50)
 
 
 
