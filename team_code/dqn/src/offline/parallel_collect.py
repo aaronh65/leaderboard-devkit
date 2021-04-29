@@ -52,7 +52,7 @@ try:
         carla_procs.append(subprocess.Popen(cmd, env=env, shell=True))
         print(f'{cmd}')
 
-    timeout = max(args.gpus*3, 10)
+    timeout = max(args.gpus*5, 10)
     print(f'opened {len(gpus)} CARLA servers, warming up for {timeout} seconds')
     time.sleep(timeout)
 
