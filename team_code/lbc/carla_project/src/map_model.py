@@ -21,11 +21,11 @@ from misc.utils import *
 #aim_color = (60,179,113) # dark green
 #lbc_color = (178,34,34) # dark red
 route_colors = [(255,255,255), (112,128,144), (47,79,79), (47,79,79)] 
-
+DISPLAY=True
 
 @torch.no_grad()
 # N,C,H,W
-def plot_weights(topdown, target, points, weights, loss_point=None, alpha=0.5, use_wandb=False):
+def viz_weights(topdown, target, points, weights, loss_point=None, alpha=0.5, use_wandb=False):
     n,c,_ = points.shape
     points = points.clone().detach().cpu().numpy() # N,C,2
     points = (points + 1) / 2 * 256
@@ -60,19 +60,23 @@ def plot_weights(topdown, target, points, weights, loss_point=None, alpha=0.5, u
 
         out = cv2.addWeighted(_wgts_tiled, alpha, _topdown_tiled, 1, 0)
         out = np.array(out)
-        images.append((loss_point[i], out))
+        images.append((loss_point[i], out.transpose(2,0,1)))
 
     images.sort(key=lambda x: x[0], reverse=True)
     images = [x[1] for x in images]
+    images = torchvision.utils.make_grid(
+                [torch.ByteTensor(x) for x in images], nrow=1)
+    images = images.numpy().transpose(1,2,0)
     if use_wandb:
-        images = torchvision.utils.make_grid([torch.ByteTensor(x.transpose(2,0,1)) for x in images], nrow=1)
-        images = wandb.Image(images.numpy().transpose(1, 2, 0))
-    else:
-        images = [cv2.cvtColor(x, cv2.COLOR_BGR2RGB) for x in images]
+        images = wandb.Image(images)
+    elif DISPLAY:
+        #images = cv2.cvtColor(images, cv2.COLOR_RGB2BGR)
+        cv2.imshow('debug', images)
+        cv2.waitKey(1000)
     return images
 
 @torch.no_grad()
-def visualize(batch, out, between, out_cmd, loss_point, loss_cmd):
+def viz_td(batch, out, between, out_cmd, loss_point, loss_cmd, use_wandb=False):
     images = list()
 
     for i in range(out.shape[0]):
@@ -126,13 +130,17 @@ def visualize(batch, out, between, out_cmd, loss_point, loss_cmd):
         images.append((_loss_cmd, torch.ByteTensor(image)))
 
     images.sort(key=lambda x: x[0], reverse=True)
+    images = [x[1] for x in images]
+    images = torchvision.utils.make_grid([torch.ByteTensor(x) for x in images], nrow=4)
+    images = images.numpy().transpose(1, 2, 0)
 
-    result = torchvision.utils.make_grid([torch.ByteTensor(x[1]) for x in images], nrow=4)
-    result = result.numpy().transpose(1, 2, 0)
-    print(result.shape)
-    result = wandb.Image(result)
+    if use_wandb:
+        images = wandb.Image(images)
+    elif DISPLAY:
+        cv2.imshow('debug', images)
+        cv2.waitKey(1000)
 
-    return result
+    return images
 
 
 class MapModel(pl.LightningModule):
@@ -144,16 +152,9 @@ class MapModel(pl.LightningModule):
         self.to_heatmap = ToHeatmap(hparams.heatmap_radius)
         self.net = SegmentationModel(10, 4, batch_norm=True, hack=hparams.hack)
         self.controller = RawController(4)
-        self.factor = hparams.temperature_decay_factor
-        self.interval = hparams.temperature_decay_interval
         self.register_buffer('temperature', torch.Tensor([self.hparams.temperature]))
 
     def forward(self, topdown, target): # save global step?
-
-        # decay temperature if necessary
-        if self.hparams.waypoint_mode != 'expectation' and self.global_step % self.interval == 0 and self.global_step != 0:
-            self.temperature[0] = max(self.temperature[0] / self.factor, self.hparams.temperature_minimum)
-            #print(self.temperature[0])
 
         target_heatmap = self.to_heatmap(target, topdown)[:, None]
         input = torch.cat((topdown, target_heatmap), 1)
@@ -172,20 +173,18 @@ class MapModel(pl.LightningModule):
         loss_cmd_raw = torch.nn.functional.l1_loss(out_cmd, actions, reduction='none')
 
         loss_cmd = loss_cmd_raw.mean(1)
-        #loss = (loss_point + self.hparams.command_coefficient * loss_cmd).mean()
-        loss = loss_point.mean()
-        #temperature = self.temperature / self.factor**(max(self.global_step // self.interval, 0))
-        #temperature = max(temperature, 1e-7)
+        loss = (loss_point + self.hparams.command_coefficient * loss_cmd).mean()
+        #loss = loss_point.mean()
         metrics = {
                 'point_loss': loss_point.mean().item(),
-                #'cmd_loss': loss_cmd.mean().item(),
-                #'loss_steer': loss_cmd_raw[:, 0].mean().item(),
-                #'loss_speed': loss_cmd_raw[:, 1].mean().item(),
+                'cmd_loss': loss_cmd.mean().item(),
+                'loss_steer': loss_cmd_raw[:, 0].mean().item(),
+                'loss_speed': loss_cmd_raw[:, 1].mean().item(),
                 'temperature': self.temperature.item()}
 
         if batch_nb % 250 == 0:
-            metrics['train_image'] = visualize(batch, points_lbc, between, out_cmd, loss_point, loss_cmd)
-            metrics['train_heatmap'] = plot_weights(topdown, target, points_lbc, logits, loss_point, use_wandb=True)
+            metrics['train_image'] = viz_td(batch, points_lbc, between, out_cmd, loss_point, loss_cmd)
+            metrics['train_heatmap'] = viz_weights(topdown, target, points_lbc, logits, loss_point, use_wandb=args.log)
 
         if self.logger != None:
             self.logger.log_metrics(metrics, self.global_step)
@@ -208,24 +207,24 @@ class MapModel(pl.LightningModule):
         loss_cmd = loss_cmd_raw.mean(1)
         loss = loss_point.mean()
 
-        img = visualize(batch, points_lbc, between, out_cmd, loss_point, loss_cmd)
+        img = viz_td(batch, points_lbc, between, out_cmd, loss_point, loss_cmd)
         if batch_nb == 0 and self.logger != None:
             self.logger.log_metrics({
-                'val_image': visualize(batch, points_lbc, between, out_cmd, loss_point, loss_cmd),
-                'val_heatmap': plot_weights(topdown, target, points_lbc, logits, loss_point, use_wandb=True)
+                'val_image': img,
+                'val_heatmap': viz_weights(topdown, target, points_lbc, logits, loss_point, use_wandb=args.log)
                 }, self.global_step)
 
         result = {
                 'val_loss': loss,
-                #'val_point_loss': loss_point.mean(),
+                'val_point_loss': loss_point.mean(),
 
-                #'val_cmd_loss': loss_cmd_raw.mean(1).mean(),
-                #'val_steer_loss': loss_cmd_raw[:, 0].mean(),
-                #'val_speed_loss': loss_cmd_raw[:, 1].mean(),
+                'val_cmd_loss': loss_cmd_raw.mean(1).mean(),
+                'val_steer_loss': loss_cmd_raw[:, 0].mean(),
+                'val_speed_loss': loss_cmd_raw[:, 1].mean(),
 
-                #'val_cmd_pred_loss': loss_cmd_pred_raw.mean(1).mean(),
-                #'val_steer_pred_loss': loss_cmd_pred_raw[:, 0].mean(),
-                #'val_speed_pred_loss': loss_cmd_pred_raw[:, 1].mean(),
+                'val_cmd_pred_loss': loss_cmd_pred_raw.mean(1).mean(),
+                'val_steer_pred_loss': loss_cmd_pred_raw[:, 0].mean(),
+                'val_speed_pred_loss': loss_cmd_pred_raw[:, 1].mean(),
                 }
 
         return result
@@ -268,7 +267,7 @@ def main(hparams):
         logger = WandbLogger(id=hparams.id, save_dir=str(hparams.save_dir), project='lbc')
     else:
         logger = False
-    checkpoint_callback = ModelCheckpoint(hparams.save_dir, save_top_k=1)
+    checkpoint_callback = ModelCheckpoint(hparams.save_dir, save_top_k=3)
 
     if hparams.restore_from is None:
         model = MapModel(hparams)
@@ -311,7 +310,7 @@ if __name__ == '__main__':
     parser.add_argument('-D', '--debug', action='store_true')
     parser.add_argument('-G', '--gpus', type=int, default=-1)
     parser.add_argument('--data_root', type=Path, default='/data/aaronhua')
-    parser.add_argument('--max_epochs', type=int, default=25)
+    parser.add_argument('--max_epochs', type=int, default=50)
     parser.add_argument('--steps_per_epoch', type=int, default=1000)
     parser.add_argument('--save_dir', type=Path)
     parser.add_argument('--id', type=str, default=datetime.now().strftime("%Y%m%d_%H%M%S")) 
@@ -319,21 +318,19 @@ if __name__ == '__main__':
     parser.add_argument('--restore_from', type=str)
     parser.add_argument('-ow', '--overwrite_hparams', nargs='+')
 
-    parser.add_argument('--waypoint_mode', type=str, default='expectation', choices=['expectation', 'argmax'])
+    parser.add_argument('--waypoint_mode', type=str, 
+            default='expectation', choices=['expectation', 'argmax'])
     parser.add_argument('--heatmap_radius', type=int, default=5)
-    parser.add_argument('--sample_by', type=str, choices=['none', 'even', 'speed', 'steer'], default='even')
-    parser.add_argument('--command_coefficient', type=float, default=0.0)
+    parser.add_argument('--sample_by', type=str, 
+            default='even', choices=['none', 'even', 'speed', 'steer'])
+    parser.add_argument('--command_coefficient', type=float, default=0.01)
     parser.add_argument('--temperature', type=float, default=10.0)
     parser.add_argument('--hack', action='store_true', default=True)
-    parser.add_argument('--temperature_decay_interval', type=int, default=1000)
-    parser.add_argument('--temperature_decay_factor', type=float, default=2)
-    parser.add_argument('--temperature_minimum', type=float, default=1e-9)
 
 
     # Data args.
     parser.add_argument('--dataset_dir', type=Path)
     parser.add_argument('--batch_size', type=int, default=4)
-    parser.add_argument('--augment_data', action='store_true')
     parser.add_argument('--angle_jitter', type=float, default=5)
     parser.add_argument('--pixel_jitter', type=int, default=5.5) # 3 meters
 
