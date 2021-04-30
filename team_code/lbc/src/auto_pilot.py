@@ -85,6 +85,7 @@ class AutoPilot(MapAgent):
         super().setup(path_to_conf_file)
         
         self.save_path = None
+        self.save_freq = 1
         self.converter = Converter()
         
         # if block is untested
@@ -137,6 +138,7 @@ class AutoPilot(MapAgent):
     def _get_control(self, target, far_target, tick_data):
         pos = self._get_position(tick_data)
         theta = tick_data['compass']
+        tick_data['theta'] = 0.0 if np.isnan(theta) else theta
         speed = tick_data['speed']
 
         # Steering.
@@ -191,23 +193,22 @@ class AutoPilot(MapAgent):
         control.throttle = throttle
         control.brake = float(brake)
 
-        if HAS_DISPLAY or self.config.save_data:
+        if HAS_DISPLAY or self.config.save_debug:
             self.debug_display(data, steer, throttle, brake, target_speed, cmd_cmds, cmd_nodes, gps)
                 
         #if self.step % 10 == 0 and self.config.save_data:
         #if self.step % 10 == 0 and self.config.save_data:
-        if self.config.save_data:
+        if self.config.save_data and self.step % self.save_freq == 0:
             self.save(far_node, near_command, steer, throttle, brake, target_speed, data)
 
         
         return control
 
     def save(self, far_node, near_command, steer, throttle, brake, target_speed, tick_data):
-        frame = self.step
+        frame = self.step // self.save_freq
 
         pos = self._get_position(tick_data)
-        theta = tick_data['compass']
-        theta = 0.0 if np.isnan(theta) else theta
+        theta = tick_data['theta']
         speed = tick_data['speed']
 
         data = {
@@ -241,8 +242,7 @@ class AutoPilot(MapAgent):
         _rgb = Image.fromarray(data['rgb'])
         _rgb_draw = ImageDraw.Draw(_rgb)
 
-        theta = data['compass']
-        theta = 0.0 if np.isnan(theta) else theta
+        theta = data['theta']
         theta = theta + np.pi / 2
         R = np.array([
             [np.cos(theta), -np.sin(theta)],

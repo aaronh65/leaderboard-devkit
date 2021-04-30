@@ -94,6 +94,7 @@ try:
             cmd += ' --short_stop'
         worker_procs.append(subprocess.Popen(cmd, env=env, shell=True))
         print(cmd)
+        time.sleep(1)
         gpu_free[gpu] = False
         gpu_proc[gpu] = worker_procs[-1]
 
