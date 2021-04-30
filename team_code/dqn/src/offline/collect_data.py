@@ -7,23 +7,23 @@ from tqdm import tqdm
 from carla import Client
 from pathlib import Path
 from dqn.src.env.env import CarlaEnv
-from dqn.src.agents.privileged_agent import PrivilegedAgent
+from dqn.src.agents.privileged_agent import PrivilegedAgent as DQNPrivAgent
+from lbc.src.privileged_agent import PrivilegedAgent as LBCPrivAgent
+from lbc.src.auto_pilot import AutoPilot
 
 from misc.utils import dict_to_sns, port_in_use
 
-#def collect(config, agent, env):
-#
-#    # start environment and run
-#    status = env.reset()
-#    while status != 'done':
-#        reward, done, info = env.step()
-#        if done:
-#            env.cleanup()
-#            status = env.reset()
-
 def main(args, config):
-
-    agent = PrivilegedAgent(f'{config.save_root}/config.yml')
+    config_path = f'{config.save_root}/config.yml'
+    if 'dqn' in args.agent and 'privileged' in args.agent:
+        agent = DQNPrivAgent(config_path)
+    elif 'lbc' in args.agent and 'privileged' in args.agent:
+        agent = LBCPrivAgent(config_path)
+    elif 'autopilot' in args.agent:
+        agent = AutoPilot(config_path)
+    else:
+        print('ERROR: agent type not understood')
+        raise Exception
 
     client = Client('localhost', args.world_port)
     client.set_timeout(600)
@@ -47,12 +47,9 @@ def parse_args():
     parser.add_argument('-D', '--debug', action='store_true')
     parser.add_argument('--data_root', type=str, default='/data/aaronhua')
     parser.add_argument('--id', type=str, default=datetime.now().strftime("%Y%m%d_%H%M%S"))
-    parser.add_argument('--save_debug', action='store_true')
+    parser.add_argument('--save_debug', action='store_true', default=False)
     parser.add_argument('--save_data', action='store_true', default=True)
     parser.add_argument('--short_stop', action='store_true')
-    parser.add_argument('--dagger_expert', action='store_true')
-    parser.add_argument('--data_hack', action='store_true', default=True)
-
 
     # server/client stuff
     parser.add_argument('-WP', '--world_port', type=int, default=2000)
@@ -60,13 +57,15 @@ def parse_args():
     parser.add_argument('-TS', '--traffic_seed', type=int, default=0)
 
     # setup
+    parser.add_argument('--agent', type=str, required=True)
+    parser.add_argument('--config_path', type=str, required=True)
     parser.add_argument('--split', type=str, default='devtest', 
             choices=['debug', 'devtest', 'testing', 'training'])
     parser.add_argument('--routenum', type=int) # optional
-    parser.add_argument('--scenarios', action='store_true', default=True) # leaderboard scenarios
+    parser.add_argument('--scenarios', action='store_true', default=True)
     parser.add_argument('--repetitions', type=int, default=1)
-    parser.add_argument('--empty', action='store_true') # other agents present?
-    parser.add_argument('--random', action='store_true')
+    parser.add_argument('--empty', action='store_true', default=False) # other agents present?
+    parser.add_argument('--random', action='store_true') # randomly go through routes?
     parser.add_argument('--forward', action='store_true')
 
     args = parser.parse_args()
@@ -89,15 +88,18 @@ def parse_args():
             else 'no_traffic_scenarios.json'
 
     # get template config
-    config_path = f'{project_root}/team_code/dqn/config/privileged_agent.yml'
+    #config_path = f'{project_root}/team_code/dqn/config/privileged_agent.yml'
+    config_path = f'{project_root}/team_code/{args.config_path}.yml'
     with open(config_path, 'r') as f:
         config = yaml.load(f, Loader=yaml.Loader)
 
+    # look in scenario_runner/.../atomic_criteria.py for where this is used
     os.environ["DQN_COLLECT"] = "1"
     
     # setup config
     config['project_root'] = project_root
     config['save_root'] = str(save_root)
+    config['agent_type'] = args.agent
     config['save_data'] = args.save_data
     config['save_debug'] = args.save_debug
 
@@ -114,10 +116,11 @@ def parse_args():
     econf['short_stop'] = args.short_stop
 
     aconf = config['agent']
-    aconf['mode'] = 'data'
-    aconf['dagger_expert'] = args.dagger_expert
-    aconf['data_hack'] = args.data_hack
-    aconf['forward'] = args.forward
+    #aconf['save_data'] = str(args.save_data)
+    #aconf['mode'] = 'data'
+    #aconf['dagger_expert'] = args.dagger_expert
+    #aconf['data_hack'] = args.data_hack
+    #aconf['forward'] = args.forward
  
     # save new config
     with open(f'{save_root}/config.yml', 'w') as f:

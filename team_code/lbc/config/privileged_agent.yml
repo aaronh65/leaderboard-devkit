@@ -2,5 +2,5 @@ project_root: /home/aaron/workspace/carla/leaderboard-devkit
 save_root: /data/leaderboard/results/lbc/privileged/debug/template
 save_images: False
 split: devtest
-#weights_path: /data/aaronhua/leaderboard/training/lbc/20210403_235158/epoch=44.ckpt # expectation
-weights_path: /data/aaronhua/leaderboard/training/lbc/20210405_225046/epoch=22.ckpt # argmax
+weights_path: /data/aaronhua/leaderboard/training/lbc/20210403_235158/epoch=44.ckpt # expectation
+#weights_path: /data/aaronhua/leaderboard/training/lbc/20210405_225046/epoch=22.ckpt # argmax

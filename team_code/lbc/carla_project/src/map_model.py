@@ -69,10 +69,11 @@ def viz_weights(topdown, target, points, weights, loss_point=None, alpha=0.5, us
     images = images.numpy().transpose(1,2,0)
     if use_wandb:
         images = wandb.Image(images)
-    elif HAS_DISPLAY:
-        #images = cv2.cvtColor(images, cv2.COLOR_RGB2BGR)
-        cv2.imshow('debug', images)
-        cv2.waitKey(1000)
+    else:
+        images = cv2.cvtColor(images, cv2.COLOR_RGB2BGR)
+        if HAS_DISPLAY:
+            cv2.imshow('debug', images)
+            cv2.waitKey(1000)
     return images
 
 @torch.no_grad()

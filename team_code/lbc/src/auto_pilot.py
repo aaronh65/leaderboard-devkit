@@ -199,6 +199,7 @@ class AutoPilot(MapAgent):
 
         pos = self._get_position(tick_data)
         theta = tick_data['compass']
+        theta = 0.0 if np.isnan(theta) else theta
         speed = tick_data['speed']
 
         data = {

@@ -9,7 +9,8 @@ import carla
 from PIL import Image, ImageDraw
 from pathlib import Path
 
-from lbc.carla_project.src.map_model import MapModel, plot_weights
+from misc.utils import *
+from lbc.carla_project.src.map_model import MapModel, viz_weights
 from lbc.carla_project.src.dataset import preprocess_semantic
 from lbc.carla_project.src.converter import Converter
 from lbc.carla_project.src.common import CONVERTER, COLOR
@@ -17,6 +18,7 @@ from lbc.src.map_agent import MapAgent
 from lbc.src.pid_controller import PIDController
 
 from srunner.scenariomanager.carla_data_provider import CarlaDataProvider
+from leaderboard.envs.sensor_interface import SensorInterface
 
 DEBUG = int(os.environ.get('HAS_DISPLAY', 0))
 ROUTE_NAME = os.environ.get('ROUTE_NAME', 0)
@@ -27,12 +29,16 @@ def get_entry_point():
 class PrivilegedAgent(MapAgent):
     def setup(self, path_to_conf_file):
         super().setup(path_to_conf_file)
-        self.converter = Converter()
-        project_root = self.config.project_root
-        weights_path = self.config.weights_path
-        self.net = MapModel.load_from_checkpoint(str(weights_path))
+
+        self.econfig = dict_to_sns(self.config.env)
+        self.aconfig = dict_to_sns(self.config.agent)
+        #self.save_root = Path(self.config.save_root)
+
+        self.net = MapModel.load_from_checkpoint(str(self.aconfig.weights_path))
         self.net.cuda()
         self.net.eval()
+
+        self.converter = Converter()
 
     def _init(self):
         super()._init()
@@ -54,6 +60,12 @@ class PrivilegedAgent(MapAgent):
             (self.save_path / 'rgb').mkdir()
             (self.save_path / 'topdown').mkdir()
             (self.save_path / 'measurements').mkdir()
+            (self.save_path / 'points_lbc').mkdir()
+
+    def reset(self):
+        self.initialized = False
+    def destroy(self):
+        self.sensor_interface = SensorInterface()
 
     def sensors(self):
 
@@ -72,8 +84,6 @@ class PrivilegedAgent(MapAgent):
         theta = result['compass'] # heading angle from forward axis
         theta = 0.0 if np.isnan(theta) else theta
         theta = theta + np.pi / 2
-        result['theta'] = theta
-        #print((theta * 180 / np.pi)%360)
         R = np.array([
             [np.cos(theta), -np.sin(theta)],
             [np.sin(theta),  np.cos(theta)],
@@ -93,6 +103,7 @@ class PrivilegedAgent(MapAgent):
         target = np.clip(nodes[1], 0, 256)
 
         # populate results
+        result['theta'] = theta
         result['num_waypoints'] = len(route)
         result['route_map'] = nodes
         result['commands'] = commands
@@ -146,13 +157,6 @@ class PrivilegedAgent(MapAgent):
         if not self.initialized:
             self._init()
 
-        #rclist = CarlaDataProvider.get_route_completion_list()
-        #iflist = CarlaDataProvider.get_infraction_list()
-
-        #print(f'step {self.step}')
-        #print(f'iflist {iflist}')
-        #print(f'rclist {rclist}')
-
         tick_data = self.tick(input_data)
         topdown = Image.fromarray(tick_data['topdown'])
         topdown = topdown.crop((128, 0, 128+256, 256))
@@ -161,7 +165,6 @@ class PrivilegedAgent(MapAgent):
         topdown = topdown[None].cuda()
 
         target = torch.from_numpy(tick_data['target'])
-        #print(tick_data['target'])
         target = target[None].cuda()
 
         points, target_heatmap, logits = self.net.forward(topdown, target) # world frame
@@ -172,18 +175,13 @@ class PrivilegedAgent(MapAgent):
         points_map = np.clip(points_map, 0, 256)
         points_world = self.converter.map_to_world(points_map).numpy()
 
-        tick_data['points_map'] = points_map
-
-        #img = tick_data['image']
-
         aim = (points_world[1] + points_world[0]) / 2.0
         angle = np.degrees(np.pi / 2 - np.arctan2(aim[1], aim[0])) / 90
         steer = self._turn_controller.step(angle)
         steer = np.clip(steer, -1.0, 1.0)
-        desired_speed = np.linalg.norm(points_world[0] - points_world[1]) * 2.0
-        tick_data['aim_world'] = aim
 
         speed = tick_data['speed']
+        desired_speed = np.linalg.norm(points_world[0] - points_world[1]) * 2.0
         brake = desired_speed < 0.4 or (speed / desired_speed) > 1.1
 
         delta = np.clip(desired_speed - speed, 0.0, 0.25)
@@ -193,19 +191,47 @@ class PrivilegedAgent(MapAgent):
 
         control = carla.VehicleControl()
         control.steer = steer
-        control.throttle = throttle
         control.brake = float(brake)
-        #print(timestamp) # GAMETIME
+        control.throttle = throttle
 
+        tick_data['points_map'] = points_map
+        tick_data['aim_world'] = aim
+
+        if self.config.save_data:
+            self.save_data(tick_data, control)
+            
         if DEBUG or self.config.save_debug and self.step % 4 == 0:
 
             # transform image model cam points to overhead BEV image (spectator frame?)
             self.debug_display(
                     tick_data, steer, throttle, brake, desired_speed)
         if DEBUG:    
-            images = plot_weights(topdown, target, points, logits)
-            cv2.imshow('heatmaps', images[0])
+            images = viz_weights(topdown, target, points, logits)
+            cv2.imshow('heatmaps', images)
+
         return control
+
+
+    def save_data(self, tick_data, control):
+        frame = f'{self.step:06d}'
+
+        Image.fromarray(tick_data['topdown']).save(
+                self.save_path / 'topdown' / f'{frame}.png')
+        with open(self.save_path / 'points_lbc' / f'{frame}.npy', 'wb') as f:
+            np.save(f, tick_data['points_map'])
+
+        # prepare measurements for RL env to save
+        x, y = tick_data['target']
+        measurements = {
+            'x_tgt': x,
+            'y_tgt': y,
+            'steer': control.steer,
+            'brake': control.brake,
+            'throttle': control.throttle,
+            'speed': tick_data['speed'],
+        }
+        self.measurements = measurements
+
 
     def debug_display(self, tick_data, steer, throttle, brake, desired_speed, r=2):
 

@@ -55,7 +55,7 @@ class CarlaEnv(BaseEnv):
         #    ReplayBuffer.add_env_data(reward, done, info)
 
         if self.econfig.short_stop:
-            done = done or self.frame > 200
+            done = done or self.frame > 100
 
         return reward, done, info
 
@@ -86,9 +86,12 @@ class CarlaEnv(BaseEnv):
                     self.cleanup()
                     status = self.reset()
 
-    def compute_reward(self, info, threshold=11):
+    def compute_reward(self, info):
+        # custom code in data provider records route progression per tick
+        route_completion = CarlaDataProvider.get_route_completion_list()
+        route_reward = (route_completion[-1] - route_completion[-2])
 
-        # PULL INFRACTION CHECK INTO BASE ENV
+        # custom code in data provider records infractions per tick
         infractions = CarlaDataProvider.get_infraction_list()
         if self.num_infractions < len(infractions): # new infraction
             self.num_infractions = len(infractions)
@@ -97,51 +100,46 @@ class CarlaEnv(BaseEnv):
             info['infraction'] = infractions[-1]
         else:
             self.itype = None
+
         if self.itype != TrafficEventType.STOP_INFRACTION and self.itype in penalty_dict.keys():
             penalty = 100 * (1 - penalty_dict[self.itype]) # 50 base penalty
         else:
             penalty = 0
-
-        # route reward
-        route_completion = CarlaDataProvider.get_route_completion_list()
-        route_reward = (route_completion[-1] - route_completion[-2])
-
-        # imitation reward - take out this computation?
-        # 0 reward if either point is > 2 meters away
-        points_student = self.hero_agent.tick_data['points_map']
-        points_expert = self.hero_agent.tick_data['points_expert']
-        delta = np.linalg.norm(points_student[:2] - points_expert[:2], axis=1) # (2,1)
-        imitation_reward = max((threshold - np.amax(delta))/threshold, 0)
-
-        info['penalty'] = penalty
-        info['imitation_reward'] = imitation_reward
+        
+        reward = route_reward - penalty
+        
+        info['reward'] = reward
+        info['infraction_penalty'] = penalty
         info['route_reward'] = route_reward
-
-        return imitation_reward - penalty
+        return reward
 
     def save_data(self, reward, done, info):
         data = info
-        x,y = self.hero_agent.tick_data['target']
-        data['x_tgt'] = x
-        data['y_tgt'] = y
-        data['done'] = int(done)
-        data['steer'] = self.hero_agent.control.steer
-        data['throttle'] = self.hero_agent.control.throttle
-        data['brake'] = self.hero_agent.control.brake
+        #print(self.hero_agent.tick_data.keys())
+        measurements = self.hero_agent.measurements
+        measurements.update(data)
+
+        #x,y = self.hero_agent.tick_data['target']
+        #data['x_tgt'] = x
+        #data['y_tgt'] = y
+        #data['done'] = int(done)
+        #data['steer'] = self.hero_agent.control.steer
+        #data['throttle'] = self.hero_agent.control.throttle
+        #data['brake'] = self.hero_agent.control.brake
         if 'infraction' not in data.keys():
             data['infraction'] = 'none'
         else:
             data['infraction'] = str(data['infraction'].get_type())
 
         save_path = self.hero_agent.save_path / 'measurements'
-        (save_path / f'{self.hero_agent.step:06d}.json').write_text(str(data))
+        (save_path / f'{self.hero_agent.step:06d}.json').write_text(str(measurements))
 
 
     def check_blocked(self, info):
 
         if 'infraction' in info.keys() and info['infraction'].get_type() in collision_types:
             self.last_collision_frame = self.frame
-            print('collision at frame', self.last_collision_frame)
+            #print('collision at frame', self.last_collision_frame)
 
         location = CarlaDataProvider.get_transform(self.hero_actor).location
         x, y = location.x, location.y

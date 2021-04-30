@@ -3,16 +3,14 @@ save_root: /data/leaderboard/results/rl/dspred/debug/template
 save_data: False
 save_debug: False
 env:
-    placeholder: 0
+    world_port: 2000
 agent:
-    #weights_path: /data/aaronhua/leaderboard/training/dqn/offline/20210422_194030/epoch=24.ckpt
-    #weights_path: /data/aaronhua/leaderboard/training/dqn/offline/20210423_175643/epoch=11.ckpt
-  weights_path: /ssd1/aaronhua/leaderboard/training/dqn/offline/debug/20210427_141614/epoch=16.ckpt
+  weights_path: /data/aaronhua/leaderboard/training/lbc/map_model/20210403_235158/epoch=44.ckpt
   expert_path: /data/aaronhua/leaderboard/training/lbc/map_model/20210405_225046/epoch=22.ckpt
-  waypoint_mode: argmax # or argmax
+  waypoint_mode: softargmax # or argmax
   dagger_expert: false
   data_hack: false
   forward: false
   n: 20
-  mode: none
+  mode: data
 
