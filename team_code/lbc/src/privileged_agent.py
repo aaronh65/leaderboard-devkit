@@ -17,7 +17,6 @@ from lbc.carla_project.src.common import CONVERTER, COLOR
 from lbc.src.map_agent import MapAgent
 from lbc.src.pid_controller import PIDController
 
-from srunner.scenariomanager.carla_data_provider import CarlaDataProvider
 from leaderboard.envs.sensor_interface import SensorInterface
 
 DEBUG = int(os.environ.get('HAS_DISPLAY', 0))
@@ -92,22 +91,25 @@ class PrivilegedAgent(MapAgent):
         gps = self._get_position(result) # method returns position in meters
         
         # transform route waypoints to overhead map view
-        route = self._command_planner.run_step(gps) # oriented in world frame
-        nodes = np.array([node for node, _ in route]) # (N,2)
+        cmd_route = self._command_planner.run_step(gps)
+        wpt_route = self._command_planner.run_step(gps) # oriented in world frame
+        nodes = np.array([node for node, _ in wpt_route]) # (N,2)
         nodes = nodes - gps # center at agent position and rotate
         nodes = R.T.dot(nodes.T) # (2,2) x (2,N) = (2,N)
         nodes = nodes.T * 5.5 # (N,2) # to map frame (5.5 pixels per meter)
         nodes += [128,256]
         #nodes = np.clip(nodes, 0, 256)
-        commands = [command for _, command in route]
+        commands = [command for _, command in wpt_route]
         target = np.clip(nodes[1], 0, 256)
 
         # populate results
         result['theta'] = theta
-        result['num_waypoints'] = len(route)
+        result['num_waypoints'] = len(wpt_route)
         result['route_map'] = nodes
         result['commands'] = commands
         result['target'] = target
+        result['cmd_route'] = cmd_route
+        result['wpt_route'] = wpt_route
 
         return result
 
@@ -194,6 +196,7 @@ class PrivilegedAgent(MapAgent):
         control.brake = float(brake)
         control.throttle = throttle
 
+        tick_data['desired_speed'] = desired_speed
         tick_data['points_map'] = points_map
         tick_data['aim_world'] = aim
 
@@ -221,15 +224,28 @@ class PrivilegedAgent(MapAgent):
             np.save(f, tick_data['points_map'])
 
         # prepare measurements for RL env to save
+        pos = self._get_position(tick_data)
         x, y = tick_data['target']
+        near_node, near_command = tick_data['wpt_route'][1]
+        far_node, far_command = tick_data['cmd_route'][1]
+
         measurements = {
-            'x_tgt': x,
-            'y_tgt': y,
+            'x_target': x,
+            'y_target': y,
+            'x_position': pos[0],
+            'y_position': pos[1],
+            'x_command': far_node[0],
+            'y_command': far_node[1],
+            'command': near_command.value,
+            'theta': tick_data['theta'],
+            'speed': tick_data['speed'],
+            'desired_speed': tick_data['desired_speed'], 
             'steer': control.steer,
             'brake': control.brake,
             'throttle': control.throttle,
-            'speed': tick_data['speed'],
+            
         }
+        (self.save_path / 'measurements' / f'{self.step:06d}.json').write_text(str(measurements))
         self.measurements = measurements
 
 

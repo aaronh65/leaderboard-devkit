@@ -48,9 +48,10 @@ class CarlaEnv(BaseEnv):
         # driving reward
         reward = self.compute_reward(info)
         done = done or self.check_blocked(info)
+        info['done'] = int(done)
         
         if self.config.save_data:
-            self.save_data(reward, done, info)
+            self.save_data(reward, info)
         #else:
         #    ReplayBuffer.add_env_data(reward, done, info)
 
@@ -113,7 +114,7 @@ class CarlaEnv(BaseEnv):
         info['route_reward'] = route_reward
         return reward
 
-    def save_data(self, reward, done, info):
+    def save_data(self, reward, info):
         data = info
         #print(self.hero_agent.tick_data.keys())
         measurements = self.hero_agent.measurements

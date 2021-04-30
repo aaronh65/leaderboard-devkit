@@ -16,6 +16,7 @@ from lbc.src.map_agent import MapAgent
 from lbc.src.pid_controller import PIDController
 from pathlib import Path
 
+from leaderboard.envs.sensor_interface import SensorInterface
 
 #HAS_DISPLAY = True
 HAS_DISPLAY = int(os.environ.get('HAS_DISPLAY', 0))
@@ -116,6 +117,11 @@ class AutoPilot(MapAgent):
             (self.save_path / 'topdown').mkdir()
             (self.save_path / 'measurements').mkdir()
 
+    def reset(self):
+        self.initialized = False
+    def destroy(self):
+        self.sensor_interface = SensorInterface()
+
     def _get_angle_to(self, pos, theta, target):
         R = np.array([
             [np.cos(theta), -np.sin(theta)],
@@ -188,14 +194,16 @@ class AutoPilot(MapAgent):
         if HAS_DISPLAY or self.config.save_data:
             self.debug_display(data, steer, throttle, brake, target_speed, cmd_cmds, cmd_nodes, gps)
                 
-        if self.step % 10 == 0 and self.config.save_data:
+        #if self.step % 10 == 0 and self.config.save_data:
+        #if self.step % 10 == 0 and self.config.save_data:
+        if self.config.save_data:
             self.save(far_node, near_command, steer, throttle, brake, target_speed, data)
 
         
         return control
 
     def save(self, far_node, near_command, steer, throttle, brake, target_speed, tick_data):
-        frame = self.step // 10
+        frame = self.step
 
         pos = self._get_position(tick_data)
         theta = tick_data['compass']
@@ -203,22 +211,23 @@ class AutoPilot(MapAgent):
         speed = tick_data['speed']
 
         data = {
-                'x': pos[0],
-                'y': pos[1],
-                'theta': theta,
-                'speed': speed,
-                'target_speed': target_speed,
+                'x_position': pos[0],
+                'y_position': pos[1],
                 'x_command': far_node[0],
                 'y_command': far_node[1],
                 'command': near_command.value,
+                'theta': theta,
+                'speed': speed,
+                'target_speed': target_speed,
                 'steer': steer,
                 'throttle': throttle,
                 'brake': brake,
                 }
+        self.measurements = data
 
-        (self.save_path / 'measurements' / ('%04d.json' % frame)).write_text(str(data))
+        (self.save_path / 'measurements' / ('%06d.json' % frame)).write_text(str(data))
 
-        Image.fromarray(tick_data['rgb']).save(self.save_path / 'rgb' / ('%06d.png' % frame))
+        #Image.fromarray(tick_data['rgb']).save(self.save_path / 'rgb' / ('%06d.png' % frame))
         #Image.fromarray(tick_data['rgb_left']).save(self.save_path / 'rgb_left' / ('%06d.png' % frame))
         #Image.fromarray(tick_data['rgb_right']).save(self.save_path / 'rgb_right' / ('%06d.png' % frame))
         Image.fromarray(tick_data['topdown']).save(self.save_path / 'topdown' / ('%06d.png' % frame))
