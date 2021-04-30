@@ -8,6 +8,9 @@ from pathlib import Path
 parser = argparse.ArgumentParser()
 parser.add_argument('-D', '--debug', action='store_true')
 parser.add_argument('-G', '--gpus', type=int, default=1)
+parser.add_argument('--agent', type=str, required=True,
+            choices=['lbc/autopilot', 'lbc/privileged_agent', 'dqn/privileged_agent'])
+parser.add_argument('--config_path', type=str, required=True)
 parser.add_argument('--split', type=str, default='devtest', choices=['devtest','testing','training'])
 parser.add_argument('--data_root', type=str, default='/data/aaronhua')
 parser.add_argument('--repetitions', type=int, default=1)
@@ -33,7 +36,7 @@ def get_open_port():
     return port
 
 suffix = f'debug/{args.id}' if args.debug else args.id
-save_root = Path(f'{args.data_root}/leaderboard/data/dqn/{suffix}')
+save_root = Path(f'{args.data_root}/leaderboard/data/{args.agent}/{suffix}')
 save_root.mkdir(parents=True, exist_ok=True)
 (save_root / 'logs').mkdir()
 
@@ -82,7 +85,7 @@ try:
         env = os.environ.copy()
         env["CUDA_VISIBLE_DEVICES"] = str(gpu)
         env["DQN_COLLECT"] = "1"
-        cmd = f'python collect_data.py --data_root {args.data_root} --id {args.id} --split {args.split} --routenum {routenum} --repetitions {args.repetitions} -WP {wp} -TP {tp} --save_data'
+        cmd = f'python collect_data.py --agent {args.agent} --config_path {args.config_path} --data_root {args.data_root} --id {args.id} --split {args.split} --routenum {routenum} --repetitions {args.repetitions} -WP {wp} -TP {tp} --save_data'
         if args.debug:
             cmd += ' --debug'
         if args.save_debug:

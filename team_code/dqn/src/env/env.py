@@ -55,7 +55,7 @@ class CarlaEnv(BaseEnv):
         #    ReplayBuffer.add_env_data(reward, done, info)
 
         if self.econfig.short_stop:
-            done = done or self.frame > 100
+            done = done or self.frame > 300
 
         return reward, done, info
 

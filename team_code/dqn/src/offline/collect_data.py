@@ -57,7 +57,8 @@ def parse_args():
     parser.add_argument('-TS', '--traffic_seed', type=int, default=0)
 
     # setup
-    parser.add_argument('--agent', type=str, required=True)
+    parser.add_argument('--agent', type=str, required=True,
+            choices=['lbc/autopilot', 'lbc/privileged_agent', 'dqn/privileged_agent'])
     parser.add_argument('--config_path', type=str, required=True)
     parser.add_argument('--split', type=str, default='devtest', 
             choices=['debug', 'devtest', 'testing', 'training'])
@@ -76,7 +77,7 @@ def parse_args():
     # basic setup
     project_root = os.environ['PROJECT_ROOT']
     suffix = f'debug/{args.id}' if args.debug else args.id
-    save_root = Path(f'{args.data_root}/leaderboard/data/dqn/{suffix}')
+    save_root = Path(f'{args.data_root}/leaderboard/data/{args.agent}/{suffix}')
     save_root.mkdir(parents=True, exist_ok=True)
     
     # environment setup
@@ -116,11 +117,6 @@ def parse_args():
     econf['short_stop'] = args.short_stop
 
     aconf = config['agent']
-    #aconf['save_data'] = str(args.save_data)
-    #aconf['mode'] = 'data'
-    #aconf['dagger_expert'] = args.dagger_expert
-    #aconf['data_hack'] = args.data_hack
-    #aconf['forward'] = args.forward
  
     # save new config
     with open(f'{save_root}/config.yml', 'w') as f:
