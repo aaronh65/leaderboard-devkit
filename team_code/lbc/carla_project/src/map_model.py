@@ -21,7 +21,7 @@ from misc.utils import *
 #aim_color = (60,179,113) # dark green
 #lbc_color = (178,34,34) # dark red
 route_colors = [(255,255,255), (112,128,144), (47,79,79), (47,79,79)] 
-DISPLAY=True
+HAS_DISPLAY=False
 
 @torch.no_grad()
 # N,C,H,W
@@ -69,7 +69,7 @@ def viz_weights(topdown, target, points, weights, loss_point=None, alpha=0.5, us
     images = images.numpy().transpose(1,2,0)
     if use_wandb:
         images = wandb.Image(images)
-    elif DISPLAY:
+    elif HAS_DISPLAY:
         #images = cv2.cvtColor(images, cv2.COLOR_RGB2BGR)
         cv2.imshow('debug', images)
         cv2.waitKey(1000)
@@ -136,7 +136,7 @@ def viz_td(batch, out, between, out_cmd, loss_point, loss_cmd, use_wandb=False):
 
     if use_wandb:
         images = wandb.Image(images)
-    elif DISPLAY:
+    elif HAS_DISPLAY:
         cv2.imshow('debug', images)
         cv2.waitKey(1000)
 
@@ -184,7 +184,7 @@ class MapModel(pl.LightningModule):
 
         if batch_nb % 250 == 0:
             metrics['train_image'] = viz_td(batch, points_lbc, between, out_cmd, loss_point, loss_cmd)
-            metrics['train_heatmap'] = viz_weights(topdown, target, points_lbc, logits, loss_point, use_wandb=args.log)
+            metrics['train_heatmap'] = viz_weights(topdown, target, points_lbc, logits, loss_point, use_wandb=self.hparams.log)
 
         if self.logger != None:
             self.logger.log_metrics(metrics, self.global_step)
@@ -207,11 +207,11 @@ class MapModel(pl.LightningModule):
         loss_cmd = loss_cmd_raw.mean(1)
         loss = loss_point.mean()
 
-        img = viz_td(batch, points_lbc, between, out_cmd, loss_point, loss_cmd)
+        img = viz_td(batch, points_lbc, between, out_cmd, loss_point, loss_cmd, use_wandb=self.hparams.log)
         if batch_nb == 0 and self.logger != None:
             self.logger.log_metrics({
                 'val_image': img,
-                'val_heatmap': viz_weights(topdown, target, points_lbc, logits, loss_point, use_wandb=args.log)
+                'val_heatmap': viz_weights(topdown, target, points_lbc, logits, loss_point, use_wandb=self.hparams.log)
                 }, self.global_step)
 
         result = {

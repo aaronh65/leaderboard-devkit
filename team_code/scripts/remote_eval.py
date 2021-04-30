@@ -76,7 +76,7 @@ try:
         print(f'running {cmd}')
 
     # warm up CARLA servers otherwise things start to hang
-    base_timeout = 3
+    base_timeout = 5
     timeout = max(args.gpus*base_timeout, 10)
     print(f'Opened {len(gpus)} CARLA servers, warming up for {timeout} seconds')
     time.sleep(timeout)

@@ -16,7 +16,7 @@ from misc.utils import *
 from dqn.src.agents.models import SegmentationModel, RawController, SpatialSoftmax
 from dqn.src.agents.heatmap import ToHeatmap, ToTemporalHeatmap
 from lbc.carla_project.src.common import CONVERTER, COLOR
-from lbc.carla_project.src.map_model import plot_weights
+from lbc.carla_project.src.map_model import viz_weights
  
 HAS_DISPLAY = int(os.environ['HAS_DISPLAY'])
 PRIORITY = False
