@@ -91,20 +91,19 @@ class PrivilegedAgent(MapAgent):
         gps = self._get_position(result) # method returns position in meters
         
         # transform route waypoints to overhead map view
+        wpt_route = self._waypoint_planner.run_step(gps) # oriented in world frame
         cmd_route = self._command_planner.run_step(gps)
-        wpt_route = self._command_planner.run_step(gps) # oriented in world frame
-        nodes = np.array([node for node, _ in wpt_route]) # (N,2)
-        nodes = nodes - gps # center at agent position and rotate
+        nodes = np.array([node for node, _ in cmd_route]) # (N,2) nodes = nodes - gps # center at agent position and rotate
+        nodes = nodes - gps
         nodes = R.T.dot(nodes.T) # (2,2) x (2,N) = (2,N)
         nodes = nodes.T * 5.5 # (N,2) # to map frame (5.5 pixels per meter)
         nodes += [128,256]
-        #nodes = np.clip(nodes, 0, 256)
-        commands = [command for _, command in wpt_route]
         target = np.clip(nodes[1], 0, 256)
+        commands = [command for _, command in cmd_route]
 
         # populate results
         result['theta'] = theta
-        result['num_waypoints'] = len(wpt_route)
+        result['num_waypoints'] = len(cmd_route)
         result['route_map'] = nodes
         result['commands'] = commands
         result['target'] = target
@@ -239,11 +238,10 @@ class PrivilegedAgent(MapAgent):
             'command': near_command.value,
             'theta': tick_data['theta'],
             'speed': tick_data['speed'],
-            'desired_speed': tick_data['desired_speed'], 
+            'target_speed': tick_data['desired_speed'], 
             'steer': control.steer,
-            'brake': control.brake,
             'throttle': control.throttle,
-            
+            'brake': control.brake,
         }
         (self.save_path / 'measurements' / f'{self.step:06d}.json').write_text(str(measurements))
         self.measurements = measurements

@@ -135,10 +135,24 @@ class AutoPilot(MapAgent):
 
         return angle
 
+    def _get_target(self, tick_data, cmd_route):
+        theta = tick_data['theta']
+        R = np.array([
+            [np.cos(theta), -np.sin(theta)],
+            [np.sin(theta),  np.cos(theta)],
+            ])
+        gps = self._get_position(tick_data) # method returns position in meters
+        nodes = np.array([node for node, _ in cmd_route]) # (N,2)
+        nodes = nodes - gps # center at agent position and rotate
+        nodes = R.T.dot(nodes.T) # (2,2) x (2,N) = (2,N)
+        nodes = nodes.T * 5.5 # (N,2) # to map frame (5.5 pixels per meter)
+        nodes += [128,256]
+        target = np.clip(nodes[1], 0, 256)
+        return target
+
     def _get_control(self, target, far_target, tick_data):
         pos = self._get_position(tick_data)
         theta = tick_data['compass']
-        tick_data['theta'] = 0.0 if np.isnan(theta) else theta
         speed = tick_data['speed']
 
         # Steering.
@@ -167,6 +181,14 @@ class AutoPilot(MapAgent):
 
         return steer, throttle, brake, target_speed
 
+    def tick(self, input_data):
+       data = super().tick(input_data)
+       theta = data['compass']
+       theta = 0.0 if np.isnan(theta) else theta
+       theta = theta + np.pi / 2
+       data['theta'] = theta
+       return data
+
     def run_step(self, input_data, timestamp):
         if not self.initialized:
             self._init()
@@ -188,6 +210,8 @@ class AutoPilot(MapAgent):
         far_node, far_command = cmd_route[1]
         steer, throttle, brake, target_speed = self._get_control(near_node, far_node, data)
 
+        data['target'] = self._get_target(data, cmd_route)
+
         control = carla.VehicleControl()
         control.steer = steer + 1e-2 * np.random.randn()
         control.throttle = throttle
@@ -208,22 +232,25 @@ class AutoPilot(MapAgent):
         frame = self.step // self.save_freq
 
         pos = self._get_position(tick_data)
+        x, y = tick_data['target']
         theta = tick_data['theta']
         speed = tick_data['speed']
 
         data = {
-                'x_position': pos[0],
-                'y_position': pos[1],
-                'x_command': far_node[0],
-                'y_command': far_node[1],
-                'command': near_command.value,
-                'theta': theta,
-                'speed': speed,
-                'target_speed': target_speed,
-                'steer': steer,
-                'throttle': throttle,
-                'brake': brake,
-                }
+            'x_target': x,
+            'y_target': y,
+            'x_position': pos[0],
+            'y_position': pos[1],
+            'x_command': far_node[0],
+            'y_command': far_node[1],
+            'command': near_command.value,
+            'theta': theta,
+            'speed': speed,
+            'target_speed': target_speed,
+            'steer': steer,
+            'throttle': throttle,
+            'brake': brake,
+        }
         self.measurements = data
 
         (self.save_path / 'measurements' / ('%06d.json' % frame)).write_text(str(data))
@@ -243,7 +270,6 @@ class AutoPilot(MapAgent):
         _rgb_draw = ImageDraw.Draw(_rgb)
 
         theta = data['theta']
-        theta = theta + np.pi / 2
         R = np.array([
             [np.cos(theta), -np.sin(theta)],
             [np.sin(theta),  np.cos(theta)]])
