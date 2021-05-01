@@ -60,7 +60,7 @@ def get_dataset(hparams, is_train=True, batch_size=128, num_workers=4, sample_by
 
     data = list()
     for i, _dataset_dir in enumerate(episodes): # 90-10 train/val
-        dataset_len = len(list((Path(_dataset_dir) / 'rgb').glob('*')))
+        dataset_len = len(list((Path(_dataset_dir) / 'topdown').glob('*')))
         if dataset_len <= GAP*STEPS:
             print(f'{_dataset_dir} invalid, skipping...')
             continue
@@ -149,7 +149,7 @@ class CarlaDataset(Dataset):
 
 
         self.frames = list()
-        for image_path in sorted((dataset_dir / 'rgb').glob('*.png')):
+        for image_path in sorted((dataset_dir / 'topdown').glob('*.png')):
             frame = str(image_path.stem)
 
             #assert (dataset_dir / 'rgb_left' / ('%s.png' % frame)).exists()
@@ -170,20 +170,22 @@ class CarlaDataset(Dataset):
         frame = self.frames[i]
         meta = '%s %s %s' % (route, rep, frame)
 
-        rgb = Image.open(path / 'rgb' / ('%s.png' % frame))
-        rgb = transforms.functional.to_tensor(rgb)
+        #rgb = Image.open(path / 'rgb' / ('%s.png' % frame))
+        #rgb = transforms.functional.to_tensor(rgb)
 
         #rgb_left = Image.open(path / 'rgb_left' / ('%s.png' % frame))
         #rgb_left = transforms.functional.to_tensor(rgb_left)
 
         #rgb_right = Image.open(path / 'rgb_right' / ('%s.png' % frame))
         #rgb_right = transforms.functional.to_tensor(rgb_right)
+        #rgb = torch.ones(5)
+        rgb = torch.zeros((3,256,256))
 
         topdown = Image.open(path / 'topdown' / ('%s.png' % frame))
         topdown = topdown.crop((128,0,128+256,256))
         topdown = preprocess_semantic(np.array(topdown))
         
-        u = np.float32(self.measurements.iloc[i][['x', 'y']])
+        u = np.float32(self.measurements.iloc[i][['x_position', 'y_position']])
         theta = self.measurements.iloc[i]['theta']
         if np.isnan(theta):
             theta = 0.0
@@ -197,7 +199,7 @@ class CarlaDataset(Dataset):
 
         for skip in range(1, STEPS+1):
             j = i + GAP * skip
-            v = np.array(self.measurements.iloc[j][['x', 'y']])
+            v = np.array(self.measurements.iloc[j][['x_position', 'y_position']])
 
             target = R.T.dot(v - u)
             target *= PIXELS_PER_WORLD

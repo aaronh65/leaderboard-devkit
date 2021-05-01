@@ -181,13 +181,16 @@ class MapModel(pl.LightningModule):
                 'cmd_loss': loss_cmd.mean().item(),
                 'loss_steer': loss_cmd_raw[:, 0].mean().item(),
                 'loss_speed': loss_cmd_raw[:, 1].mean().item(),
-                'temperature': self.temperature.item()}
+                'temperature': self.temperature.item()
+                }
 
         if batch_nb % 250 == 0:
-            metrics['train_image'] = viz_td(batch, points_lbc, between, out_cmd, loss_point, loss_cmd)
+            metrics['train_image'] = viz_td(batch, points_lbc, between, out_cmd, loss_point, loss_cmd, use_wandb=self.hparams.log)
             metrics['train_heatmap'] = viz_weights(topdown, target, points_lbc, logits, loss_point, use_wandb=self.hparams.log)
-
         if self.logger != None:
+            #for _, item in metrics.items():
+            #    print(_, type(item))
+
             self.logger.log_metrics(metrics, self.global_step)
 
         return {'loss': loss}
@@ -343,7 +346,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if args.dataset_dir is None:
-        args.dataset_dir = Path('/data/aaronhua/leaderboard/data/lbc/auto_pilot/20210323_203108')
+        args.dataset_dir = Path('/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest_toy')
 
     suffix = f'debug/{args.id}' if args.debug else args.id
     save_dir = args.data_root / 'leaderboard/training/lbc/map_model' / suffix
