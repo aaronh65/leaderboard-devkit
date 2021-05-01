@@ -116,21 +116,13 @@ class CarlaEnv(BaseEnv):
 
     def save_data(self, reward, info):
         data = info
-        #print(self.hero_agent.tick_data.keys())
-        measurements = self.hero_agent.measurements
-        measurements.update(data)
-
-        #x,y = self.hero_agent.tick_data['target']
-        #data['x_tgt'] = x
-        #data['y_tgt'] = y
-        #data['done'] = int(done)
-        #data['steer'] = self.hero_agent.control.steer
-        #data['throttle'] = self.hero_agent.control.throttle
-        #data['brake'] = self.hero_agent.control.brake
         if 'infraction' not in data.keys():
             data['infraction'] = 'none'
         else:
             data['infraction'] = str(data['infraction'].get_type())
+
+        measurements = self.hero_agent.measurements
+        measurements.update(data)
 
         save_path = self.hero_agent.save_path / 'measurements'
         (save_path / f'{self.hero_agent.step:06d}.json').write_text(str(measurements))
