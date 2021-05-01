@@ -20,7 +20,7 @@ from misc.utils import *
 #torch.manual_seed(0)
 
 # Data has frame skip of 5.
-GAP = 1
+GAP = 10
 STEPS = 4
 N_CLASSES = len(COLOR)
 
@@ -64,6 +64,7 @@ def get_dataset(hparams, is_train=True, batch_size=128, num_workers=4, sample_by
         if dataset_len <= GAP*STEPS:
             print(f'{_dataset_dir} invalid, skipping...')
             continue
+        print(_dataset_dir)
         add = False
         add |= (is_train and i % 10 < 9)
         add |= (not is_train and i % 10 >= 9)
@@ -189,7 +190,7 @@ class CarlaDataset(Dataset):
         theta = self.measurements.iloc[i]['theta']
         if np.isnan(theta):
             theta = 0.0
-        theta = theta + np.pi / 2
+        #theta = theta + np.pi / 2
         R = np.array([
             [np.cos(theta), -np.sin(theta)],
             [np.sin(theta),  np.cos(theta)],

@@ -21,7 +21,7 @@ from misc.utils import *
 #aim_color = (60,179,113) # dark green
 #lbc_color = (178,34,34) # dark red
 route_colors = [(255,255,255), (112,128,144), (47,79,79), (47,79,79)] 
-HAS_DISPLAY=False
+HAS_DISPLAY=True
 
 @torch.no_grad()
 # N,C,H,W
@@ -346,7 +346,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if args.dataset_dir is None:
-        args.dataset_dir = Path('/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest_toy')
+        args.dataset_dir = Path('/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest')
 
     suffix = f'debug/{args.id}' if args.debug else args.id
     save_dir = args.data_root / 'leaderboard/training/lbc/map_model' / suffix
