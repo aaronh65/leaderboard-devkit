@@ -6,7 +6,7 @@ import torch
 
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from lbc.carla_project.src.converter import PIXELS_PER_WORLD
 from lbc.carla_project.src.dataset_wrapper import Wrap
@@ -18,7 +18,7 @@ from misc.utils import *
 #torch.manual_seed(0)
 
 # Data has frame skip of 5.
-GAP = 1
+GAP = 10
 STEPS = 4
 N_CLASSES = len(COLOR)
 
@@ -68,10 +68,22 @@ def preprocess_semantic(semantic_np):
 
 class CarlaDataset(Dataset):
     def __init__(self, hparams, episodes, is_train):
+
+        # check dataset type
+        if 'autopilot' in str(episodes[0]):
+            self.expert_type = 'autopilot'
+        elif 'privileged' in str(episodes[0]):
+            self.expert_type = 'privileged'
+        else:
+            print('expert type not understood')
+            raise Exception
+        print(self.expert_type)
+
         self.hparams = hparams
         self.transform = lambda x: x
         self.discount = [hparams.gamma**i for i in range(hparams.n+1)]
 
+        self.dataset_root = episodes[0].parent.parent
         self.topdown_frames = []
         self.measurements = pd.DataFrame()
         for i, _dataset_dir in enumerate(episodes): # 90-10 train/val
@@ -89,12 +101,13 @@ class CarlaDataset(Dataset):
 
         self.dataset_len = len(self.topdown_frames) - hparams.n - hparams.batch_size
         print('%d frames.' % self.dataset_len)
+        #print(topdown_frames)
 
         # n-step returns
         self.epoch_len = 1000 if is_train else 250
         self.epoch_len = self.epoch_len * hparams.batch_size
 
-        infractions = set(self.measurements['infraction'].to_numpy().tolist())
+        #infractions = set(self.measurements['infraction'].to_numpy().tolist())
 
     def __len__(self):
         return self.epoch_len
@@ -102,8 +115,11 @@ class CarlaDataset(Dataset):
 
     def __getitem__(self, i):
 
+
         #path = self.dataset_dir
+        #i = np.random.randint(self.dataset_len)
         topdown_frame = self.topdown_frames[i]
+        #print(topdown_frame)
         route, rep, _, frame = topdown_frame.parts[-4:]
         frame = frame[:-4]
         meta = '%s/%s/%s' % (route, rep, frame)
@@ -119,8 +135,7 @@ class CarlaDataset(Dataset):
         done = torch.FloatTensor(np.float32([done]))
         
         # reward calculations
-        penalty = self.measurements.loc[i:ni-1, 'penalty'].to_numpy()
-        imitation_reward = self.measurements.loc[i:ni-1, 'imitation_reward'].to_numpy()
+        penalty = self.measurements.loc[i:ni-1, 'infraction_penalty'].to_numpy()
         route_reward = self.measurements.loc[i:ni-1, 'route_reward'].to_numpy()
         discounts = self.discount[:len(penalty)]
         discount = torch.FloatTensor(np.float32([self.discount[ni-i-1]])) # for Q(ns)
@@ -143,12 +158,14 @@ class CarlaDataset(Dataset):
         topdown = preprocess_semantic(np.array(topdown))
 
         tick_data = self.measurements.iloc[i]
-        target = torch.FloatTensor(np.float32((tick_data['x_tgt'], tick_data['y_tgt'])))
-        path = topdown_frame.parent.parent
-        with open(path / 'points_student' / f'{frame}.npy', 'rb') as f:
-            points_student = torch.clamp(torch.Tensor(np.load(f)),0,255)
-        with open(path / 'points_expert' / f'{frame}.npy', 'rb') as f:
-            points_expert = torch.clamp(torch.Tensor(np.load(f)),0,255)
+        target = torch.FloatTensor(np.float32((tick_data['x_target'], tick_data['y_target'])))
+        steer, throttle = tick_data[['steer', 'throttle']]
+        throttle = 0 if tick_data['brake'] else throttle
+        control_expert = np.float32([steer, throttle])
+        points_expert = self._get_points(frame, i)
+        #suffix = 'brake' if tick_data['brake'] else 'go'
+        #print(control_expert, suffix)
+
 
         # next state, next target
         ntopdown_frame = self.topdown_frames[ni]
@@ -157,65 +174,124 @@ class CarlaDataset(Dataset):
         ntopdown = preprocess_semantic(np.array(ntopdown))
 
         ntick_data = self.measurements.iloc[ni]
-        ntarget = torch.FloatTensor(np.float32((ntick_data['x_tgt'], ntick_data['y_tgt'])))
+        ntarget = torch.FloatTensor(np.float32((ntick_data['x_target'], ntick_data['y_target'])))
         itensor = torch.FloatTensor(np.float32([i]))
         info = {'discount': discount, 
-                'points_student': points_student,
-                'points_expert': points_expert,
+                #'points_student': points_student,
+                #'points_expert': points_expert,
                 'metadata': torch.Tensor(encode_str(meta)),
                 'data_index': itensor,
                 'margin_switch': margin_switch
                 }
-        self.step += 1 
 
 
         # state, action, reward, next_state, done, info
+        return (topdown, target), (points_expert, control_expert), reward, (ntopdown, ntarget), done, info
 
-        return (topdown, target), points_student, reward, (ntopdown, ntarget), done, info
+    def _get_points(self, frame, i):
+        #print(frame)
+        if self.expert_type == 'autopilot':
+            u = np.float32(self.measurements.iloc[i][['x_position', 'y_position']])
+            theta = self.measurements.iloc[i]['theta']
+            R = np.array([
+                [np.cos(theta), -np.sin(theta)],
+                [np.sin(theta),  np.cos(theta)],
+                ])
+
+            points = list()
+            for skip in range(1, STEPS+1):
+                j = i + GAP * skip
+                v = np.array(self.measurements.iloc[j][['x_position', 'y_position']])
+
+                target = R.T.dot(v - u)
+                target *= PIXELS_PER_WORLD
+                target += [128, 256]
+
+                points.append(target)
+
+            points = torch.FloatTensor(points)
+            points = torch.clamp(points, 0, 256)
+            points = (points / 256) * 2 - 1
+        elif self.expert_type == 'privileged':
+            pass
+        else:
+            print('unknown expert type')
+            raise Exception
+        return points
        
 
 if __name__ == '__main__':
     import cv2, argparse
     from dqn.src.agents.map_model import MapModel
+    from dqn.src.agents.heatmap import ToHeatmap
     
+    to_heatmap = ToHeatmap(5)
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset_dir', type=Path,
-            default='/data/aaronhua/leaderboard/data/dqn/dqn_offline_debug_aug')
-    parser.add_argument('--weights_path', type=str,
-            default='/data/aaronhua/leaderboard/training/lbc/20210405_225046/epoch=22.ckpt')
+            default='/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest_toy')
+    #parser.add_argument('--dataset_dir', type=Path, 
+    #        default='/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest')
+    #default='/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest_toy')
+    #parser.add_argument('--weights_path', type=str,
+    #        default='/data/aaronhua/leaderboard/training/lbc/20210405_225046/epoch=22.ckpt')
     parser.add_argument('--n', type=int, default=20)
-    parser.add_argument('--batch_size', type=int, default=16)
+    parser.add_argument('--batch_size', type=int, default=4)
     parser.add_argument('--gamma', type=float, default=0.99)
-    parser.add_argument('--num_workers', type=int, default=1)
+    parser.add_argument('--num_workers', type=int, default=4)
     parser.add_argument('--save_visuals', action='store_true')
 
     args = parser.parse_args()
+    loader = get_dataloader(args, args.dataset_dir, is_train=True)
 
-    loader = get_dataloader(args, args.dataset_dir, is_train=False)
     meas = loader.dataset.measurements
-    infractions = meas['infraction'].to_numpy()
-    infractions_b = infractions != 'none'
-    indices = np.arange(infractions_b.shape[0]).astype(int)
-    indices = indices[infractions_b]
+    #print(meas.iloc[0]['brake'])
+    #target_speed = meas['target_speed'].to_numpy().flatten()
+    #print(np.amax(target_speed))
+    #print(np.amin(target_speed))
+    #print(np.mean(target_speed))
+    #infractions = meas['infraction'].to_numpy()
 
-    history_size = 100
-    start_indices = indices  - history_size
+    for batch_nb, batch in enumerate(loader):
+        state, action, reward, next_state, done, info = batch
+        topdown, target = state
+        break
+    #    points = action
+    #    points = (points + 1)/2 * 256
+    #    points = points[0]
 
-    frames = loader.dataset.topdown_frames
+    #    tmap = to_heatmap(target, topdown)
+    #    topdown = COLOR[topdown.argmax(1).cpu()]
+    #    topdown[tmap > 0.1] = 255
+    #    topdown = topdown[0]
+    #    topdown = Image.fromarray(topdown)
+    #    draw = ImageDraw.Draw(topdown)
+    #    for x,y in points:
+    #        draw.ellipse((x-2,y-2,x+2,y+2), (255,0,0))
+    #    topdown = cv2.cvtColor(np.array(topdown), cv2.COLOR_RGB2BGR)
+    #    cv2.imshow('topdown', topdown)
+    #    cv2.waitKey(0)
 
-    hard_frames = []
-    count = {}
-    for start, end in zip(start_indices, indices):
-        hard_frames.extend(frames[start:end+1])
-    print(frames[indices[0]])
+        #indices = np.arange(infractions_b.shape[0]).astype(int)
+    #indices = indices[infractions_b]
 
-    if False:
-        for frame in hard_frames:
-            topdown = Image.open(str(frame))
-            topdown = topdown.crop((128,0,128+256,256))
-            topdown = COLOR[CONVERTER[topdown]]
-            cv2.imshow('topdown', topdown)
-            cv2.waitKey(50)
+    #history_size = 100
+    #start_indices = indices  - history_size
+
+    #frames = loader.dataset.topdown_frames
+
+    #hard_frames = []
+    #count = {}
+    #for start, end in zip(start_indices, indices):
+    #    hard_frames.extend(frames[start:end+1])
+    #print(frames[indices[0]])
+
+    #if False:
+    #    for frame in hard_frames:
+    #        topdown = Image.open(str(frame))
+    #        topdown = topdown.crop((128,0,128+256,256))
+    #        topdown = COLOR[CONVERTER[topdown]]
+    #        cv2.imshow('topdown', topdown)
+    #        cv2.waitKey(50)
 
 
 

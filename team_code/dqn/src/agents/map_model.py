@@ -17,13 +17,14 @@ from dqn.src.agents.models import SegmentationModel, RawController, SpatialSoftm
 from dqn.src.agents.heatmap import ToHeatmap, ToTemporalHeatmap
 from lbc.carla_project.src.common import CONVERTER, COLOR
 from lbc.carla_project.src.map_model import viz_weights
+from dqn.src.offline.dataset import get_dataloader
  
-HAS_DISPLAY = int(os.environ['HAS_DISPLAY'])
-PRIORITY = False
-if PRIORITY:
-    from dqn.src.offline.prioritized_dataset import get_dataloader
-else:
-    from dqn.src.offline.dataset import get_dataloader
+#HAS_DISPLAY = int(os.environ['HAS_DISPLAY'])
+HAS_DISPLAY = False
+#PRIORITY = False
+#if PRIORITY:
+#    from dqn.src.offline.prioritized_dataset import get_dataloader
+#else:
 
 text_color = (255,255,255)
 aim_color = (60,179,113) # dark green
@@ -50,7 +51,7 @@ def fuse_logits(topdown, logits, alpha=0.5):
 def viz_Qmap(batch, meta, alpha=0.5, r=2):
     state, action, reward, next_state, done, info = batch
     topdown, target = state
-    points_expert = info['points_expert']
+    points_expert, ctrl_expert = action
 
     Qmap, Q_expert = meta['Qmap'], meta['Q_expert']
     batch_loss, td_loss, margin = meta['batch_loss'], meta['td_loss'], meta['margin']
@@ -248,8 +249,9 @@ class MapModel(pl.LightningModule):
 
         state, action, reward, next_state, done, info = batch
         topdown, target = state
+        points_expert, ctrl_expert = action
         points, logits, weights, tmap, Qmap = self.forward(topdown, target, debug=True)
-        Q_all = spatial_select(Qmap, action)
+        Q_all = spatial_select(Qmap, points_expert)
         Q = torch.mean(Q_all, axis=1, keepdim=False)
 
         ntopdown, ntarget = next_state
@@ -265,7 +267,6 @@ class MapModel(pl.LightningModule):
         td_loss = torch.clamp(td_loss, 0, 1000)
 
         # expert margin loss
-        points_expert = info['points_expert']
         Q_expert_all = spatial_select(Qmap, points_expert) #N,T,1
 
         margin_map = self.expert_heatmap(points_expert, Qmap) #[0,1] tall at expert points
@@ -286,15 +287,15 @@ class MapModel(pl.LightningModule):
         loss = torch.mean(batch_loss, dim=0) #1,
 
         # update prioritized experience weights
-        if PRIORITY:
-            indices = info['data_index'].cpu().numpy().flatten()
-            for i, _loss in zip(indices, batch_loss.flatten()):
-                item = float(_loss.item())
-                self.train_losses[int(i)] = item
-            if self.global_step % self.weight_update_rate == 0:
-                weight_path = self.hparams.save_dir / 'train_losses.npy'
-                with open(weight_path, 'wb') as f:
-                    np.save(f, np.float32(self.train_losses))
+        #if PRIORITY:
+        #    indices = info['data_index'].cpu().numpy().flatten()
+        #    for i, _loss in zip(indices, batch_loss.flatten()):
+        #        item = float(_loss.item())
+        #        self.train_losses[int(i)] = item
+        #    if self.global_step % self.weight_update_rate == 0:
+        #        weight_path = self.hparams.save_dir / 'train_losses.npy'
+        #        with open(weight_path, 'wb') as f:
+        #            np.save(f, np.float32(self.train_losses))
 
         if batch_nb % 250 == 0:
             meta = {
@@ -310,11 +311,11 @@ class MapModel(pl.LightningModule):
                 'mean_margin': mean_margin,
                 'margin_switch': margin_switch,
                 }
-            vQmap, vtd = viz_Qmap(batch, meta), viz_td(batch, meta)
-            if HAS_DISPLAY:
-                cv2.imshow('td', cv2.cvtColor(vtd, cv2.COLOR_BGR2RGB))
-                cv2.imshow('Qmap', cv2.cvtColor(vQmap, cv2.COLOR_BGR2RGB))
-                cv2.waitKey(5000)
+            #vQmap, vtd = viz_Qmap(batch, meta), viz_td(batch, meta)
+            #if HAS_DISPLAY:
+            #    cv2.imshow('td', cv2.cvtColor(vtd, cv2.COLOR_BGR2RGB))
+            #    cv2.imshow('Qmap', cv2.cvtColor(vQmap, cv2.COLOR_BGR2RGB))
+            #    cv2.waitKey(5000)
 
         if self.logger != None:
             metrics = {
@@ -326,13 +327,13 @@ class MapModel(pl.LightningModule):
             if batch_nb % 250 == 0:
                 metrics['train_td'] = wandb.Image(vtd)
                 metrics['train_Qmap'] = wandb.Image(vQmap)
-                if PRIORITY:
-                    metrics['train_weights'] = make_PER_histogram(self.hparams.save_dir, is_train=True)
+                #if PRIORITY:
+                #    metrics['train_weights'] = make_PER_histogram(self.hparams.save_dir, is_train=True)
                 to_hist = {'Qmap': Qmap}
                 for key, item in to_hist.items():
                     metrics[f'train/{key}_hist'] = make_histogram(item, key)
             self.logger.log_metrics(metrics, self.global_step)
-
+        print(loss.shape)
         return {'loss': loss}
 
     # make this a validation episode rollout?
@@ -341,9 +342,10 @@ class MapModel(pl.LightningModule):
 
         state, action, reward, next_state, done, info = batch
         topdown, target = state
+        points_expert, ctrl_expert = action
         with torch.no_grad():
             points, logits, weights, tmap, Qmap = self.forward(topdown, target, debug=True)
-        Q_all = spatial_select(Qmap, action).squeeze() #NxT
+        Q_all = spatial_select(Qmap, points_expert).squeeze() #NxT
         Q = torch.mean(Q_all, axis=-1, keepdim=True)
 
         ntopdown, ntarget = next_state
@@ -359,7 +361,6 @@ class MapModel(pl.LightningModule):
         td_loss = torch.clamp(td_loss, 0, 1000)
 
         # expert margin loss
-        points_expert = info['points_expert']
         Q_expert_all = spatial_select(Qmap, points_expert) #N,T,1
 
         margin_map = self.expert_heatmap(points_expert, Qmap) #[0,1] tall at expert points
@@ -381,14 +382,14 @@ class MapModel(pl.LightningModule):
         val_loss = torch.mean(batch_loss, axis=0)
 
 
-        if PRIORITY:
-            indices = info['data_index'].cpu().numpy().flatten()
-            for i, _loss in zip(indices, batch_loss.flatten()):
-                self.val_losses[int(i)] = float(_loss.item())
-            if self.global_step % self.weight_update_rate == 0:
-                weight_path = self.hparams.save_dir / 'val_losses.npy'
-                with open(weight_path, 'wb') as f:
-                    np.save(f, np.float32(self.val_losses))
+        #if PRIORITY:
+        #    indices = info['data_index'].cpu().numpy().flatten()
+        #    for i, _loss in zip(indices, batch_loss.flatten()):
+        #        self.val_losses[int(i)] = float(_loss.item())
+        #    if self.global_step % self.weight_update_rate == 0:
+        #        weight_path = self.hparams.save_dir / 'val_losses.npy'
+        #        with open(weight_path, 'wb') as f:
+        #            np.save(f, np.float32(self.val_losses))
         
         if batch_nb == 0 and self.logger != None:
             meta = {
@@ -414,15 +415,17 @@ class MapModel(pl.LightningModule):
                         'val_td': wandb.Image(vtd),
                         'val_Qmap': wandb.Image(vQmap),
                         }
-            if PRIORITY:
-                metrics['val_weights'] = make_PER_histogram(self.hparams.save_dir, is_train=False)
+            #if PRIORITY:
+            #    metrics['val_weights'] = make_PER_histogram(self.hparams.save_dir, is_train=False)
 
             to_hist = {'Qmap': Qmap}
             for key, item in to_hist.items():
                 metrics[f'val/{key}_hist'] = make_histogram(item, key)
             self.logger.log_metrics(metrics, self.global_step)
+            val_loss = torch.mean(batch_loss,axis=0),
+            print(val_loss.shape)
 
-        return {'val_loss': torch.mean(batch_loss,axis=0),
+        return {'val_loss': val_loss,
                 f'val_TD({self.hparams.n})_loss': torch.mean(td_loss,axis=0),
                 'val_margin_loss': torch.mean(margin_loss,axis=0),}
 
@@ -453,19 +456,19 @@ class MapModel(pl.LightningModule):
     def train_dataloader(self):
 
         train_data = get_dataloader(self.hparams,self.hparams.train_dataset,is_train=True)
-        if PRIORITY:
-            self.train_data_len = train_data.dataset.dataset_len
-            self.train_losses = np.ones(self.train_data_len)*10
+        #if PRIORITY:
+        #    self.train_data_len = train_data.dataset.dataset_len
+        #    self.train_losses = np.ones(self.train_data_len)*10
         return train_data
 
     # online val dataloaders spoof a length of N batches, and do N episode rollouts
     def val_dataloader(self):
 
         val_data = get_dataloader(self.hparams,self.hparams.val_dataset,is_train=False)
-        if PRIORITY:
-            self.val_data_len = val_data.dataset.dataset_len
-            self.val_losses = np.ones(self.val_data_len)*10
-            self.weight_update_rate = val_data.dataset.base_update_rate
+        #if PRIORITY:
+        #    self.val_data_len = val_data.dataset.dataset_len
+        #    self.val_losses = np.ones(self.val_data_len)*10
+        #    self.weight_update_rate = val_data.dataset.base_update_rate
 
         return val_data
 
@@ -561,9 +564,9 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if args.train_dataset is None:
-        args.train_dataset = Path('/data/aaronhua/leaderboard/data/dqn/dqn_offline_debug')
+        args.train_dataset = Path('/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest_toy')
     if args.val_dataset is None:
-        args.val_dataset = Path('/data/aaronhua/leaderboard/data/dqn/dqn_offline_debug')
+        args.val_dataset = Path('/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest_toy')
 
     suffix = f'debug/{args.id}' if args.debug else args.id
     save_dir = args.data_root / f'leaderboard/training/dqn/offline/{suffix}'

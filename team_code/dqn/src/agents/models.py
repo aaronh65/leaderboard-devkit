@@ -21,6 +21,31 @@ def spatial_norm(tensor):
     out = flat.view_as(tensor)
     return out # n,c,h,w
 
+'''
+    outputs values for discrete actions
+    - default throttle: [0.0, 0.1,..., 0.9. 1.0]
+    - default steer:    [-1.0 -.9,...,-.1,0,.1,...,.9,1.0]
+    11 throttle choices * 21 steer choices = 231 actions
+'''
+class DiscreteController(torch.nn.Module):
+    def __init__(self, n_input=4, n_steer=21, n_speed=11, k=128):
+        super().__init__()
+
+        self.layers = torch.nn.Sequential(
+                torch.nn.BatchNorm1d(n_input * 2),
+                torch.nn.Linear(n_input * 2, k), 
+                torch.nn.ReLU(),
+
+                torch.nn.BatchNorm1d(k),
+                torch.nn.Linear(k, k), 
+                torch.nn.ReLU(),
+
+                torch.nn.BatchNorm1d(k),
+                torch.nn.Linear(k, n_steer*n_speed))
+
+    def forward(self, x):
+        return self.layers(torch.flatten(x, 1))
+
 class RawController(torch.nn.Module):
     def __init__(self, n_input=4, k=32):
         super().__init__()
