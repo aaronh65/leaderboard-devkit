@@ -5,4 +5,7 @@ save_debug: False
 env:
     world_port: 2000
 agent:
-    weights_path: /data/aaronhua/leaderboard/training/lbc/map_model/20210403_235158/epoch=44.ckpt # expectation
+    #weights_path: /data/aaronhua/leaderboard/training/lbc/map_model/20210403_235158/epoch=44.ckpt
+    weights_path: /data/aaronhua/leaderboard/training/lbc/map_model/20210501_174236/epoch=49.ckpt
+    control_mode: learned # or pix
+

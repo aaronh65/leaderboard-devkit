@@ -113,22 +113,41 @@ class PrivilegedAgent(MapAgent):
         return result
 
     @torch.no_grad()
-    def run_step_using_learned_controller(self, input_data, timestamp):
+    def run_step(self, input_data, timestamp):
+        if self.aconfig.control_mode == 'learned':
+            return self.run_step_learned_control(input_data, timestamp)
+        elif self.aconfig.control_mode == 'pid':
+            return self.run_step_pid_control(input_data, timestamp)
+        else:
+            raise Exception
+
+    @torch.no_grad()
+    def run_step_learned_control(self, input_data, timestamp):
         if not self.initialized:
             self._init()
 
         tick_data = self.tick(input_data)
 
-        img = torchvision.transforms.functional.to_tensor(tick_data['image'])
-        img = img[None].cuda()
+        #img = torchvision.transforms.functional.to_tensor(tick_data['image'])
+        topdown = Image.fromarray(tick_data['topdown'])
+        topdown = topdown.crop((128, 0, 128+256, 256))
+        topdown = np.array(topdown)
+        topdown = preprocess_semantic(topdown)
+        topdown = topdown[None].cuda()
 
         target = torch.from_numpy(tick_data['target'])
         target = target[None].cuda()
 
         #points, (target_cam, _) = self.net.forward(img, target)
-        points, (target_cam, _) = self.net.forward(img, target)
-        control = self.net.controller(points).cpu().squeeze()
+        points, target_heatmap, logits = self.net.forward(topdown, target) # world frame
+        points_map = points.clone().cpu().squeeze()
+        points_map = points_map + 1
+        points_map = points_map / 2 * 256
+        points_map = np.clip(points_map, 0, 256)
+        points_world = self.converter.map_to_world(points_map).numpy()
+        aim = (points_world[1] + points_world[0]) / 2.0
 
+        control = self.net.controller(points).cpu().squeeze()
         steer = control[0].item()
         desired_speed = control[1].item()
         speed = tick_data['speed']
@@ -145,16 +164,28 @@ class PrivilegedAgent(MapAgent):
         control.throttle = throttle
         control.brake = float(brake)
 
+        tick_data['desired_speed'] = desired_speed
+        tick_data['points_map'] = points_map
+        tick_data['aim_world'] = aim
+
+        if self.config.save_data:
+            self.save_data(tick_data, control)
+
+        if DEBUG or self.config.save_debug and self.step % 4 == 0:
+
+            # transform image model cam points to overhead BEV image (spectator frame?)
+            self.debug_display(
+                    tick_data, steer, throttle, brake, desired_speed)
+
         if DEBUG:
-            debug_display(
-                    tick_data, target_cam.squeeze(), points.cpu().squeeze(),
-                    steer, throttle, brake, desired_speed,
-                    self.step)
+
+            images = viz_weights(topdown, target, points, logits)
+            cv2.imshow('heatmaps', images)
 
         return control
 
     @torch.no_grad()
-    def run_step(self, input_data, timestamp):
+    def run_step_pid_control(self, input_data, timestamp):
         if not self.initialized:
             self._init()
 
