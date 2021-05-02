@@ -146,7 +146,6 @@ class MapModel(pl.LightningModule):
         return action, Q_all # (N,T,2), (N,T,1)
 
     def training_step(self, batch, batch_nb):
-        metrics = {}
 
         state, action, reward, next_state, done, info = batch
         topdown, target = state
@@ -189,14 +188,15 @@ class MapModel(pl.LightningModule):
         margin_map = self.to_heatmap(ctrl_em, Q_ctrl_pm) #N,nSp,nSt
         margin_map = (1 - margin_map) * self.hparams.expert_margin
         margin = margin_map + Q_ctrl_pm.squeeze(1)
-        #print(Q_ctrl_pm)
         margin_loss = self.hparams.lambda_margin * margin.mean((-1,-2))
 
         td_loss = self.hparams.lambda_td * 0
 
         batch_loss = td_loss + margin_loss
 
-        if batch_nb % 50 and (self.logger != None or HAS_DISPLAY):
+        metrics = {}
+        metrics['train_loss'] = batch_loss.mean().item()
+        if batch_nb % 250 and (self.logger != None or HAS_DISPLAY):
             meta = {
                 'topdown': topdown,
                 'tmap': tmap.squeeze(1),
@@ -211,19 +211,19 @@ class MapModel(pl.LightningModule):
             }
 
             images = visualize(meta)
-
+            metrics['train_image'] = wandb.Image(images)
             if HAS_DISPLAY:
                 cv2.imshow('debug', images)
                 cv2.waitKey(100)
-            if self.logger != None:
-                metrics['train_image'] = wandb.Image(images)
+
+        if self.logger != None:
+            self.logger.log_metrics(metrics, self.global_step)
             
         loss = torch.mean(batch_loss, dim=0, keepdim=True)
         return {'loss': loss}
 
     # make this a validation episode rollout?
     def validation_step(self, batch, batch_nb):
-        metrics = {}
 
         state, action, reward, next_state, done, info = batch
         topdown, target = state
@@ -276,6 +276,8 @@ class MapModel(pl.LightningModule):
 
         batch_loss = td_loss + margin_loss
 
+        metrics = {}
+        metrics['val_loss'] = batch_loss.mean().item()
         if batch_nb == 0 and (self.logger != None or HAS_DISPLAY):
             meta = {
                 'topdown': topdown,
@@ -297,8 +299,10 @@ class MapModel(pl.LightningModule):
                 cv2.waitKey(100)
             if self.logger != None:
                 metrics['val_image'] = wandb.Image(images)
+        if self.logger != None:
+            self.logger.log_metrics(metrics, self.global_step)
+
         val_loss =  torch.mean(batch_loss,dim=0, keepdim=True)
-        print(val_loss.shape)
         return {'val_loss': val_loss,
                 #'val_margin_loss': margin_loss,
                 #f'val_TD({self.hparams.n})_loss': torch.mean(td_loss,axis=0),
@@ -434,7 +438,7 @@ if __name__ == '__main__':
     parser.add_argument('--expert_radius', type=int, default=2)
     parser.add_argument('--expert_margin', type=float, default=1.0)
     parser.add_argument('--temperature', type=float, default=10.0)
-    parser.add_argument('--hack', action='store_true')
+    parser.add_argument('--hack', action='store_true', default=True)
         
     args = parser.parse_args()
 
