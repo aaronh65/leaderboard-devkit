@@ -97,16 +97,9 @@ class SegmentationModel(torch.nn.Module):
         self.hack = hack
 
         self.norm = torch.nn.BatchNorm2d(input_channels) if batch_norm else lambda x: x
-        #self.network = deeplabv3_resnet50(pretrained=False, num_classes=n_steps)
-        self.network = deeplabv3_resnet50(pretrained=False, num_classes=64)
+        self.network = deeplabv3_resnet50(pretrained=False, num_classes=n_steps)
 
-        #self.block1 = ASPP(in_channels=256, atrous_rates=[1,2,3,4,5], out_channels=128)
-        #self.block2 = ASPP(in_channels=128, atrous_rates=[1,2,3,4,5], out_channels=64)
-        self.extract = ASPPExtract(in_channels=64, latent_dim=16, num_classes=n_steps)
-        #self.block1 = ConvBlock(4, 4, 3, 1)
-        #self.block2 = ConvBlock(4, 4, 3, 1)
-        #self.block3 = ConvBlock(4, 4, 3, 1)
-        #self.block4 = ConvBlock(4, 4, 3, 1)
+        #self.extract = ASPPExtract(in_channels=64, latent_dim=16, num_classes=n_steps)
 
         self.spatial_softmax = SpatialSoftmax()
 
@@ -126,7 +119,7 @@ class SegmentationModel(torch.nn.Module):
             logits = torch.nn.functional.interpolate(logits, scale_factor=2.0, mode='bilinear')
 
         # conv blocks to smooth out backbone upsampling artifacts
-        logits = self.extract(logits)
+        #logits = self.extract(logits)
 
         # extract 
         points, weights = self.spatial_softmax(logits, temperature)
