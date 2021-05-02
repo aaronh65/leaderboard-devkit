@@ -210,7 +210,8 @@ class MapModel(pl.LightningModule):
         batch_loss = td_loss + margin_loss + point_loss
 
         metrics = {}
-        metrics['train_loss'] = batch_loss.mean().item()
+        metrics['train_point_loss'] = point_loss.mean().item()
+        metrics['train_margin_loss'] = margin_loss.mean().item()
 
         if batch_nb % 250 and (self.logger != None or HAS_DISPLAY):
             # convert predicted control to control space
@@ -299,7 +300,7 @@ class MapModel(pl.LightningModule):
         batch_loss = td_loss + margin_loss + point_loss
 
         metrics = {}
-        metrics['val_loss'] = batch_loss.mean().item()
+        #metrics['val_loss'] = batch_loss.mean().item()
         if batch_nb == 0 and (self.logger != None or HAS_DISPLAY):
 
             # convert predicted control to control space
@@ -336,10 +337,12 @@ class MapModel(pl.LightningModule):
         if self.logger != None:
             self.logger.log_metrics(metrics, self.global_step)
 
-        val_loss =  torch.mean(batch_loss,dim=0, keepdim=True)
+        val_loss =  torch.mean(batch_loss, dim=0, keepdim=True)
+        val_margin_loss = torch.mean(margin_loss, dim=0, keepdim=True)
+        val_point_loss = torch.mean(point_loss, dim=0, keepdim=True)
         return {'val_loss': val_loss,
-                #'val_margin_loss': margin_loss,
-                #f'val_TD({self.hparams.n})_loss': torch.mean(td_loss,axis=0),
+                'val_margin_loss': val_margin_loss,
+                'val_point_loss': val_point_loss,
                 }
 
     def validation_epoch_end(self, batch_metrics):
