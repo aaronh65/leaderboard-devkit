@@ -199,13 +199,16 @@ class MapModel(pl.LightningModule):
 
         #out_cmd_pred = self.controller(points_lbc)
 
+
+        #Q_ctrl_e = spatial_select(Q_ctrl_pm, points_pred.unsqueeze(1))
+        Q_exp  = spatial_select(Q_ctrl_pm, ctrl_em.unsqueeze(1)).squeeze(-1)
         
         margin_map = self.to_heatmap(ctrl_em, Q_ctrl_pm) #N,nSp,nSt
         margin_map = (1 - margin_map) * self.hparams.expert_margin
-        margin = margin_map + Q_ctrl_pm.squeeze(1)
+        margin = Q_ctrl_pm.squeeze(1) + margin_map - Q_exp.unsqueeze(-1)
+        margin = F.relu(margin)
         margin_loss = self.hparams.lambda_margin * margin.mean((-1,-2))
 
-                
         td_loss = self.hparams.lambda_td * 0
         batch_loss = td_loss + margin_loss + point_loss
 
@@ -289,12 +292,14 @@ class MapModel(pl.LightningModule):
 
         #out_cmd_pred = self.controller(points_lbc)
 
+        #Q_ctrl_e = spatial_select(Q_ctrl_pm, points_pred.unsqueeze(1))
+        Q_exp  = spatial_select(Q_ctrl_pm, ctrl_em.unsqueeze(1)).squeeze(-1)
         
         margin_map = self.to_heatmap(ctrl_em, Q_ctrl_pm) #N,nSp,nSt
         margin_map = (1 - margin_map) * self.hparams.expert_margin
-        margin = margin_map + Q_ctrl_pm.squeeze(1)
+        margin = Q_ctrl_pm.squeeze(1) + margin_map - Q_exp.unsqueeze(-1)
+        margin = F.relu(margin)
         margin_loss = self.hparams.lambda_margin * margin.mean((-1,-2))
-
                 
         td_loss = self.hparams.lambda_td * 0
         batch_loss = td_loss + margin_loss + point_loss
