@@ -37,15 +37,33 @@ def transform_action(action, hparams, to_flat=False, to_spatial=False):
         action = action.squeeze(1).view((-1, hparams.n_throttle*hparams.n_steer))
     return action
 
+# takes (N,C,H,W) topdown and (N,4,H,W) logits
+# averages t=0.5s,1.0s logitss and overlays it on topdown
+@torch.no_grad()
+def fuse_logits(topdown, logits, alpha=0.5):
+    logits_norm = spatial_norm(logits).cpu().numpy() #N,T,H,W
+    fused = np.array(COLOR[topdown.argmax(1).cpu()]).astype(np.uint8) # N,H,W,3
+    for i in range(fused.shape[0]):
+        map1 = cm.inferno(logits_norm[i][0])[...,:3]*255
+        map2 = cm.inferno(logits_norm[i][1])[...,:3]*255
+        logits_mask = cv2.addWeighted(np.uint8(map1), 0.5, np.uint8(map2), 0.5, 0)
+        fused[i] = cv2.addWeighted(logits_mask, alpha, fused[i], 1, 0)
+    fused = fused.astype(np.uint8) # (N,H,W,3)
+    return fused
+
+@torch.no_grad()
 def visualize(meta):
 
-    topdown, tmap = meta['topdown'], meta['tmap']
+    topdown, tmap, logits = meta['topdown'], meta['tmap'], meta['logits']
     pts_em, ctrl_em, ctrl_e = meta['pts_em'], meta['ctrl_em'], meta['ctrl_e']
-    Q_ctrl_pm, ctrl_pm, ctrl_p = meta['Q_ctrl_pm'], meta['ctrl_pm'], meta['ctrl_p']
-    margin_loss, margin_map = meta['margin_loss'], meta['margin_map']
+    pts_pm, ctrl_pm, ctrl_p = meta['pts_pm'], meta['ctrl_pm'], meta['ctrl_p']
+    point_loss, margin_loss = meta['point_loss'], meta['margin_loss'],
+    margin_map = meta['margin_map']
+    Q_ctrl_pm = meta['Q_ctrl_pm']
 
-    tdown = COLOR[topdown.argmax(1).cpu()]
-    tdown[tmap.squeeze(1).cpu() > 0.1] = 255
+    tdown = fuse_logits(topdown, logits)
+    #tdown = COLOR[topdown.argmax(1).cpu()]
+    #tdown[tmap.squeeze(1).cpu() > 0.1] = 255
     Q_norm = spatial_norm(Q_ctrl_pm).cpu().numpy()
     Q_pred = spatial_select(Q_ctrl_pm, ctrl_pm).squeeze(-1)
     Q_exp  = spatial_select(Q_ctrl_pm, ctrl_em.unsqueeze(1)).squeeze(-1)
@@ -62,13 +80,16 @@ def visualize(meta):
         _draw = ImageDraw.Draw(_tdown)
         for x,y in pts_em[i]:
             _draw.ellipse((x-2, y-2, x+2, y+2), expert_color)
-        _draw.text((5,10), f'margin loss: {margin_loss[i]:.4f}', text_color)
+        for x,y in pts_pm[i]:
+            _draw.ellipse((x-2, y-2, x+2, y+2), student_color)
+        _draw.text((5,10), f'points loss: {point_loss[i]:.4f}', text_color)
+        _draw.text((5,20), f'margin loss: {margin_loss[i]:.4f}', text_color)
         steer_e, throttle_e = ctrl_e[i]
-        _draw.text((5,20), f'expert action:  {steer_e:.3f}/{throttle_e:.3f}', text_color)
+        _draw.text((5,30), f'expert action:  {steer_e:.3f}/{throttle_e:.3f}', text_color)
         steer_p, throttle_p = _ctrl_p[i]
-        _draw.text((5,30), f'student action: {steer_p:.3f}/{throttle_p:.3f}', text_color)
-        _draw.text((5,40), f'expert value:  {Q_pred[i].item():.3f}', text_color)
-        _draw.text((5,50), f'student value: {Q_exp[i].item():.3f}', text_color)
+        _draw.text((5,40), f'student action: {steer_p:.3f}/{throttle_p:.3f}', text_color)
+        _draw.text((5,50), f'expert value:  {Q_pred[i].item():.3f}', text_color)
+        _draw.text((5,60), f'student value: {Q_exp[i].item():.3f}', text_color)
         _tdown = np.array(_tdown)
         #_tdown = cv2.cvtColor(np.array(_tdown), cv2.COLOR_RGB2BGR)
 
@@ -90,7 +111,6 @@ def visualize(meta):
         image = Image.fromarray(image)
         image = np.array(image.resize((h,w), resample=0))
         image = np.hstack((_tdown, image))
-        image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
 
         
         images.append(torch.ByteTensor(image.transpose(2,0,1)))
@@ -150,22 +170,17 @@ class MapModel(pl.LightningModule):
         state, action, reward, next_state, done, info = batch
         topdown, target = state
         points_expert, ctrl_expert = action
-        points, logits, tmap = self.forward(topdown, target, debug=True)
-            
+        points_pred, logits, tmap = self.forward(topdown, target, debug=True)
+
+        point_loss = torch.nn.functional.l1_loss(points_pred, points_expert, reduction='none')
+        point_loss = point_loss.mean((-1,-2))
+
         # Q_ctrl_pm = "Q map for control output given predicted points"
-        Q_ctrl_pm = self.controller(points)
+        Q_ctrl_pm = self.controller(points_pred)
         Q_ctrl_pm = transform_action(Q_ctrl_pm, self.hparams, to_spatial=True) #N,1,nSp,nSt
         ctrl_pm, Q_ctrl_p = self.get_argmax_actions(Q_ctrl_pm) # ctrl in map space
         ctrl_pm = ctrl_pm.float() #N,1,2
         #print(ctrl_pm)
-
-        # convert predicted control to control space
-        # x (steer) from [0,20] to (-1,1)
-        # y (throttle) from [0,10] to [0,1]
-        ctrl_p = ctrl_pm.clone().detach().squeeze(1)
-        ctrl_p[:,0] = ctrl_p[:,0] / (self.hparams.n_steer-1) * 2 - 1
-        ctrl_p[:,1] = ctrl_p[:,1] / (self.hparams.n_throttle-1)
-        ctrl_p[:,1] = (1-ctrl_p[:,1])
 
         # convert expert control to map space
         # x (steer) from (-1,1) to [0,20]
@@ -174,87 +189,6 @@ class MapModel(pl.LightningModule):
         ctrl_em = ctrl_e.clone()
         ctrl_em[:,0] = (ctrl_em[:,0]+1) / 2 * (self.hparams.n_steer-1) 
         ctrl_em[:,1] = (1-ctrl_em[:,1]) * (self.hparams.n_throttle-1)
-
-        ## Q_ctrl_bm = "Q map for control output given between points"
-        #alpha = torch.rand(points.shape).type_as(points)
-        #between = alpha * points + (1-alpha) * points_expert
-        #Q_ctrl_bm = self.controller(between)
-        #Q_ctrl_bm = transform_action(Q_ctrl_bm, self.hparams, to_spatial=True) #N,1,nSp,nSt
-        #ctrl_b, Q_ctrl_b = self.get_argmax_actions(Q_ctrl_bm) # this is in pixel space
-
-        #out_cmd_pred = self.controller(points_lbc)
-
-        
-        margin_map = self.to_heatmap(ctrl_em, Q_ctrl_pm) #N,nSp,nSt
-        margin_map = (1 - margin_map) * self.hparams.expert_margin
-        margin = margin_map + Q_ctrl_pm.squeeze(1)
-        margin_loss = self.hparams.lambda_margin * margin.mean((-1,-2))
-
-        td_loss = self.hparams.lambda_td * 0
-
-        batch_loss = td_loss + margin_loss
-
-        metrics = {}
-        metrics['train_loss'] = batch_loss.mean().item()
-        if batch_nb % 250 and (self.logger != None or HAS_DISPLAY):
-            meta = {
-                'topdown': topdown,
-                'tmap': tmap.squeeze(1),
-                'pts_em': (points_expert.clone()+1)/2 * 255,
-                'Q_ctrl_pm': Q_ctrl_pm,
-                'ctrl_e': ctrl_e,
-                'ctrl_em': ctrl_em,
-                'ctrl_p': ctrl_p,
-                'ctrl_pm': ctrl_pm,
-                'margin_loss': margin_loss,
-                'margin_map': margin_map,
-            }
-
-            images = visualize(meta)
-            metrics['train_image'] = wandb.Image(images)
-            if HAS_DISPLAY:
-                cv2.imshow('debug', images)
-                cv2.waitKey(100)
-
-        if self.logger != None:
-            self.logger.log_metrics(metrics, self.global_step)
-            
-        loss = torch.mean(batch_loss, dim=0, keepdim=True)
-        return {'loss': loss}
-
-    # make this a validation episode rollout?
-    def validation_step(self, batch, batch_nb):
-
-        state, action, reward, next_state, done, info = batch
-        topdown, target = state
-        points_expert, ctrl_expert = action
-        with torch.no_grad():
-            points, logits, tmap = self.forward(topdown, target, debug=True)
-            
-        # Q_ctrl_pm = "Q map for control output given predicted points"
-        Q_ctrl_pm = self.controller(points)
-        Q_ctrl_pm = transform_action(Q_ctrl_pm, self.hparams, to_spatial=True) #N,1,nSp,nSt
-        ctrl_pm, Q_ctrl_p = self.get_argmax_actions(Q_ctrl_pm) # ctrl in map space
-        ctrl_pm = ctrl_pm.float() #N,1,2
-        #print(ctrl_pm)
-
-        # convert predicted control to control space
-        # x (steer) from [0,20] to (-1,1)
-        # y (throttle) from [0,10] to [0,1]
-        ctrl_p = ctrl_pm.clone().detach().squeeze(1)
-        ctrl_p[:,0] = ctrl_p[:,0] / (self.hparams.n_steer-1) * 2 - 1
-        ctrl_p[:,1] = ctrl_p[:,1] / (self.hparams.n_throttle-1)
-        ctrl_p[:,1] = (1-ctrl_p[:,1])
-        #print(ctrl_p)
-
-        # convert expert control to map space
-        # x (steer) from (-1,1) to [0,20]
-        # y (throttle) from (0,1) to [0,10]
-        ctrl_e = ctrl_expert
-        ctrl_em = ctrl_e.clone()
-        ctrl_em[:,0] = (ctrl_em[:,0]+1) / 2 * (self.hparams.n_steer-1) 
-        ctrl_em[:,1] = (1-ctrl_em[:,1]) * (self.hparams.n_throttle-1)
-
 
         ## Q_ctrl_bm = "Q map for control output given between points"
         #alpha = torch.rand(points.shape).type_as(points)
@@ -273,32 +207,132 @@ class MapModel(pl.LightningModule):
 
                 
         td_loss = self.hparams.lambda_td * 0
-
-        batch_loss = td_loss + margin_loss
+        batch_loss = td_loss + margin_loss + point_loss
 
         metrics = {}
-        metrics['val_loss'] = batch_loss.mean().item()
-        if batch_nb == 0 and (self.logger != None or HAS_DISPLAY):
+        metrics['train_loss'] = batch_loss.mean().item()
+
+        if batch_nb % 250 and (self.logger != None or HAS_DISPLAY):
+            # convert predicted control to control space
+            # x (steer) from [0,20] to (-1,1)
+            # y (throttle) from [0,10] to [0,1]
+            ctrl_p = ctrl_pm.clone().detach().squeeze(1)
+            ctrl_p[:,0] = ctrl_p[:,0] / (self.hparams.n_steer-1) * 2 - 1
+            ctrl_p[:,1] = ctrl_p[:,1] / (self.hparams.n_throttle-1)
+            ctrl_p[:,1] = (1-ctrl_p[:,1])
+
             meta = {
                 'topdown': topdown,
                 'tmap': tmap.squeeze(1),
-                'pts_em': (points_expert.clone()+1)/2 * 255,
+                'logits': logits,
+                'pts_em': (points_expert.clone()+1)/2*255,
+                'pts_pm': (points_pred.clone()+1)/2*255,
                 'Q_ctrl_pm': Q_ctrl_pm,
                 'ctrl_e': ctrl_e,
                 'ctrl_em': ctrl_em,
                 'ctrl_p': ctrl_p,
                 'ctrl_pm': ctrl_pm,
+                'point_loss': point_loss,
+                'margin_loss': margin_loss,
+                'margin_map': margin_map,
+            }
+
+
+            images = visualize(meta)
+            metrics['train_image'] = wandb.Image(images)
+            if HAS_DISPLAY:
+                images = cv2.cvtColor(images, cv2.COLOR_RGB2BGR)
+                cv2.imshow('debug', images)
+                cv2.waitKey(100)
+
+        if self.logger != None:
+            self.logger.log_metrics(metrics, self.global_step)
+            
+        loss = torch.mean(batch_loss, dim=0, keepdim=True)
+        return {'loss': loss}
+
+    # make this a validation episode rollout?
+    def validation_step(self, batch, batch_nb):
+
+        state, action, reward, next_state, done, info = batch
+        topdown, target = state
+        points_expert, ctrl_expert = action
+        with torch.no_grad():
+            points_pred, logits, tmap = self.forward(topdown, target, debug=True)
+
+        point_loss = torch.nn.functional.l1_loss(points_pred, points_expert, reduction='none')
+        point_loss = point_loss.mean((-1,-2))
+
+        # Q_ctrl_pm = "Q map for control output given predicted points"
+        with torch.no_grad():
+            Q_ctrl_pm = self.controller(points_pred)
+        Q_ctrl_pm = transform_action(Q_ctrl_pm, self.hparams, to_spatial=True) #N,1,nSp,nSt
+        ctrl_pm, Q_ctrl_p = self.get_argmax_actions(Q_ctrl_pm) # ctrl in map space
+        ctrl_pm = ctrl_pm.float() #N,1,2
+        #print(ctrl_pm)
+
+        # convert expert control to map space
+        # x (steer) from (-1,1) to [0,20]
+        # y (throttle) from (0,1) to [0,10]
+        ctrl_e = ctrl_expert
+        ctrl_em = ctrl_e.clone()
+        ctrl_em[:,0] = (ctrl_em[:,0]+1) / 2 * (self.hparams.n_steer-1) 
+        ctrl_em[:,1] = (1-ctrl_em[:,1]) * (self.hparams.n_throttle-1)
+
+        ## Q_ctrl_bm = "Q map for control output given between points"
+        #alpha = torch.rand(points.shape).type_as(points)
+        #between = alpha * points + (1-alpha) * points_expert
+        #Q_ctrl_bm = self.controller(between)
+        #Q_ctrl_bm = transform_action(Q_ctrl_bm, self.hparams, to_spatial=True) #N,1,nSp,nSt
+        #ctrl_b, Q_ctrl_b = self.get_argmax_actions(Q_ctrl_bm) # this is in pixel space
+
+        #out_cmd_pred = self.controller(points_lbc)
+
+        
+        margin_map = self.to_heatmap(ctrl_em, Q_ctrl_pm) #N,nSp,nSt
+        margin_map = (1 - margin_map) * self.hparams.expert_margin
+        margin = margin_map + Q_ctrl_pm.squeeze(1)
+        margin_loss = self.hparams.lambda_margin * margin.mean((-1,-2))
+
+                
+        td_loss = self.hparams.lambda_td * 0
+        batch_loss = td_loss + margin_loss + point_loss
+
+        metrics = {}
+        metrics['val_loss'] = batch_loss.mean().item()
+        if batch_nb == 0 and (self.logger != None or HAS_DISPLAY):
+
+            # convert predicted control to control space
+            # x (steer) from [0,20] to (-1,1)
+            # y (throttle) from [0,10] to [0,1]
+            ctrl_p = ctrl_pm.clone().detach().squeeze(1)
+            ctrl_p[:,0] = ctrl_p[:,0] / (self.hparams.n_steer-1) * 2 - 1
+            ctrl_p[:,1] = ctrl_p[:,1] / (self.hparams.n_throttle-1)
+            ctrl_p[:,1] = (1-ctrl_p[:,1])
+
+            meta = {
+                'topdown': topdown,
+                'tmap': tmap.squeeze(1),
+                'logits': logits,
+                'pts_em': (points_expert.clone()+1)/2*255,
+                'pts_pm': (points_pred.clone()+1)/2*255,
+                'Q_ctrl_pm': Q_ctrl_pm,
+                'ctrl_e': ctrl_e,
+                'ctrl_em': ctrl_em,
+                'ctrl_p': ctrl_p,
+                'ctrl_pm': ctrl_pm,
+                'point_loss': point_loss,
                 'margin_loss': margin_loss,
                 'margin_map': margin_map,
             }
 
             images = visualize(meta)
-
+            metrics['val_image'] = wandb.Image(images)
             if HAS_DISPLAY:
+                images = cv2.cvtColor(images, cv2.COLOR_RGB2BGR)
                 cv2.imshow('debug', images)
-                cv2.waitKey(100)
-            if self.logger != None:
-                metrics['val_image'] = wandb.Image(images)
+                cv2.waitKey(0)
+
         if self.logger != None:
             self.logger.log_metrics(metrics, self.global_step)
 
