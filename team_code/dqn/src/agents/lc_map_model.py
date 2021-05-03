@@ -52,8 +52,9 @@ def fuse_logits(topdown, logits, alpha=0.5):
     return fused
 
 @torch.no_grad()
-def visualize(meta):
+def visualize(batch, meta):
 
+    _, action, reward, ntopdown, done, info = batch
     topdown, tmap, logits = meta['topdown'], meta['tmap'], meta['logits']
     pts_em, ctrl_em, ctrl_e = meta['pts_em'], meta['ctrl_em'], meta['ctrl_e']
     pts_pm, ctrl_pm, ctrl_p = meta['pts_pm'], meta['ctrl_pm'], meta['ctrl_p']
@@ -82,14 +83,18 @@ def visualize(meta):
             _draw.ellipse((x-2, y-2, x+2, y+2), expert_color)
         for x,y in pts_pm[i]:
             _draw.ellipse((x-2, y-2, x+2, y+2), student_color)
-        _draw.text((5,10), f'points loss: {point_loss[i]:.4f}', text_color)
-        _draw.text((5,20), f'margin loss: {margin_loss[i]:.4f}', text_color)
+
+        _metadata = decode_str(info['metadata'][i])
+        _draw.text((5,10), f'meta = {_metadata}', text_color)
+        _draw.text((5,20), 
+                f'points/margin loss:   {point_loss[i]:.3f}/{margin_loss[i]:.3f}', text_color)
+        _draw.text((5,30), 
+                f'student/expert value: {Q_exp[i].item():.3f}/{Q_pred[i].item():.3f}', text_color)
         steer_e, throttle_e = ctrl_e[i]
-        _draw.text((5,30), f'expert action:  {steer_e:.3f}/{throttle_e:.3f}', text_color)
+        _draw.text((5,40), f'expert action:  {steer_e:.3f}/{throttle_e:.3f}', text_color)
         steer_p, throttle_p = _ctrl_p[i]
-        _draw.text((5,40), f'student action: {steer_p:.3f}/{throttle_p:.3f}', text_color)
-        _draw.text((5,50), f'expert value:  {Q_pred[i].item():.3f}', text_color)
-        _draw.text((5,60), f'student value: {Q_exp[i].item():.3f}', text_color)
+        _draw.text((5,50), f'student action: {steer_p:.3f}/{throttle_p:.3f}', text_color)
+        _draw.text((5,60), f'reward = {reward[i].item():.3f}', text_color)
         _tdown = np.array(_tdown)
         #_tdown = cv2.cvtColor(np.array(_tdown), cv2.COLOR_RGB2BGR)
 
@@ -242,7 +247,7 @@ class MapModel(pl.LightningModule):
             }
 
 
-            images = visualize(meta)
+            images = visualize(batch, meta)
             metrics['train_image'] = wandb.Image(images)
             if HAS_DISPLAY:
                 images = cv2.cvtColor(images, cv2.COLOR_RGB2BGR)
@@ -332,7 +337,7 @@ class MapModel(pl.LightningModule):
                 'margin_map': margin_map,
             }
 
-            images = visualize(meta)
+            images = visualize(batch, meta)
             metrics['val_image'] = wandb.Image(images)
             if HAS_DISPLAY:
                 images = cv2.cvtColor(images, cv2.COLOR_RGB2BGR)
@@ -476,6 +481,9 @@ if __name__ == '__main__':
     # Model args
     parser.add_argument('--n_steer', type=int, default=21)
     parser.add_argument('--n_throttle', type=int, default=11)
+    parser.add_argument('--throttle_mode', type=str, default='speed', 
+            choices=['speed', 'throttle'])
+    parser.add_argument('--max_speed', type=int, default=10)
     parser.add_argument('--heatmap_radius', type=int, default=5)
     parser.add_argument('--expert_radius', type=int, default=2)
     parser.add_argument('--expert_margin', type=float, default=1.0)

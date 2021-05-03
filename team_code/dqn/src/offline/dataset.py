@@ -119,7 +119,6 @@ class CarlaDataset(Dataset):
         #path = self.dataset_dir
         #i = np.random.randint(self.dataset_len)
         topdown_frame = self.topdown_frames[i]
-        #print(topdown_frame)
         route, rep, _, frame = topdown_frame.parts[-4:]
         frame = frame[:-4]
         meta = '%s/%s/%s' % (route, rep, frame)
@@ -159,26 +158,28 @@ class CarlaDataset(Dataset):
 
         tick_data = self.measurements.iloc[i]
         target = torch.FloatTensor(np.float32((tick_data['x_target'], tick_data['y_target'])))
-        steer, throttle = tick_data[['steer', 'throttle']]
-        throttle = 0 if tick_data['brake'] else throttle
-        control_expert = np.float32([steer, throttle])
+        control_expert = self._get_control(tick_data)
         points_expert = self._get_points(frame, i)
-        #suffix = 'brake' if tick_data['brake'] else 'go'
-        #print(control_expert, suffix)
-
 
         # next state, next target
         ntopdown_frame = self.topdown_frames[ni]
+        _, _, _, nframe = ntopdown_frame.parts[-4:]
+        nframe = nframe[:-4]
+
         ntopdown = Image.open(ntopdown_frame)
         ntopdown = ntopdown.crop((128,0,128+256,256))
         ntopdown = preprocess_semantic(np.array(ntopdown))
 
         ntick_data = self.measurements.iloc[ni]
         ntarget = torch.FloatTensor(np.float32((ntick_data['x_target'], ntick_data['y_target'])))
+        ncontrol_expert = self._get_control(ntick_data)
+        npoints_expert = self._get_points(nframe, ni)
+
+
         itensor = torch.FloatTensor(np.float32([i]))
         info = {'discount': discount, 
-                #'points_student': points_student,
-                #'points_expert': points_expert,
+                'ncontrol_expert': ncontrol_expert,
+                'npoints_expert': npoints_expert,
                 'metadata': torch.Tensor(encode_str(meta)),
                 'data_index': itensor,
                 'margin_switch': margin_switch
@@ -187,6 +188,20 @@ class CarlaDataset(Dataset):
 
         # state, action, reward, next_state, done, info
         return (topdown, target), (points_expert, control_expert), reward, (ntopdown, ntarget), done, info
+
+    def _get_control(self, tick_data):
+        steer, throttle, target_speed = tick_data[['steer', 'throttle', 'target_speed']]
+        if self.hparams.throttle_mode == 'speed':
+            target_speed = 0 if tick_data['brake'] else target_speed
+            target_speed = min(target_speed / self.hparams.max_speed, 1.0)
+            control_expert = np.float32([steer, target_speed])
+        elif self.hparams.throttle_mode == 'throttle':
+            throttle = 0 if tick_data['brake'] else throttle
+            control_expert = np.float32([steer, throttle])
+        else:
+            raise Exception
+        return control_expert
+
 
     def _get_points(self, frame, i):
         #print(frame)
@@ -219,18 +234,23 @@ class CarlaDataset(Dataset):
             raise Exception
         return points
        
+    
 
 if __name__ == '__main__':
+
     import cv2, argparse
+    import matplotlib as mpl
+    mpl.use('TkAgg')
+    import matplotlib.pyplot as plt
     from dqn.src.agents.map_model import MapModel
     from dqn.src.agents.heatmap import ToHeatmap
     
     to_heatmap = ToHeatmap(5)
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset_dir', type=Path,
-            default='/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest_toy')
-    #parser.add_argument('--dataset_dir', type=Path, 
-    #        default='/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest')
+    #parser.add_argument('--dataset_dir', type=Path,
+    #        default='/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest_toy')
+    parser.add_argument('--dataset_dir', type=Path, 
+            default='/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest')
     #default='/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest_toy')
     #parser.add_argument('--weights_path', type=str,
     #        default='/data/aaronhua/leaderboard/training/lbc/20210405_225046/epoch=22.ckpt')
@@ -239,11 +259,18 @@ if __name__ == '__main__':
     parser.add_argument('--gamma', type=float, default=0.99)
     parser.add_argument('--num_workers', type=int, default=4)
     parser.add_argument('--save_visuals', action='store_true')
+    parser.add_argument('--throttle_mode', type=str, default='speed')
+    parser.add_argument('--max_speed', type=int, default=10)
 
     args = parser.parse_args()
     loader = get_dataloader(args, args.dataset_dir, is_train=True)
 
     meas = loader.dataset.measurements
+    #speed = meas['target_speed'].to_numpy().flatten()
+    #throttle = meas['throttle'].to_numpy().flatten()
+    steer = meas['steer'].to_numpy().flatten()
+    plt.hist(steer)
+    plt.show()
     #print(meas.iloc[0]['brake'])
     #target_speed = meas['target_speed'].to_numpy().flatten()
     #print(np.amax(target_speed))
