@@ -219,7 +219,7 @@ class MapModel(pl.LightningModule):
         metrics['train_point_loss'] = point_loss.mean().item()
         metrics['train_margin_loss'] = margin_loss.mean().item()
 
-        if batch_nb % 250 and (self.logger != None or HAS_DISPLAY):
+        if batch_nb % 250 == 0 and (self.logger != None or HAS_DISPLAY):
             # convert predicted control to control space
             # x (steer) from [0,20] to (-1,1)
             # y (throttle) from [0,10] to [0,1]
