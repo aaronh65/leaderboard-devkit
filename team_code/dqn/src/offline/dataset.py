@@ -51,12 +51,12 @@ def get_dataloader(hparams, dataset_dir, is_train=True, sample_by='even', **kwar
         episodes.extend(sorted(route.glob('*')))
     dataset = CarlaDataset(hparams, episodes, is_train)
     dataloader = DataLoader(
-            dataset, 
-            batch_size=hparams.batch_size, 
-            num_workers=hparams.num_workers, 
-            shuffle=True, 
-            pin_memory=True, 
-            drop_last=True)
+        dataset, 
+        batch_size=hparams.batch_size, 
+        num_workers=hparams.num_workers, 
+        shuffle=True, 
+        pin_memory=True, 
+        drop_last=True)
     return dataloader
 
 def preprocess_semantic(semantic_np):
@@ -77,7 +77,6 @@ class CarlaDataset(Dataset):
         else:
             print('expert type not understood')
             raise Exception
-        print(self.expert_type)
 
         self.hparams = hparams
         self.transform = lambda x: x
@@ -107,17 +106,11 @@ class CarlaDataset(Dataset):
         self.epoch_len = 1000 if is_train else 250
         self.epoch_len = self.epoch_len * hparams.batch_size
 
-        #infractions = set(self.measurements['infraction'].to_numpy().tolist())
-
     def __len__(self):
         return self.epoch_len
-        #return self.dataset_len
 
     def __getitem__(self, i):
 
-
-        #path = self.dataset_dir
-        #i = np.random.randint(self.dataset_len)
         topdown_frame = self.topdown_frames[i]
         route, rep, _, frame = topdown_frame.parts[-4:]
         frame = frame[:-4]
@@ -126,31 +119,30 @@ class CarlaDataset(Dataset):
         # check for n-step return end index
         ni = i + self.hparams.n + 1
         ni = min(ni, len(self.topdown_frames)-1)
-        # check if episode terminated prematurely
-        done_list = self.measurements.loc[i:ni-1, 'done'].to_numpy().tolist() # slicing end-inclusive
+        # check if episode terminated prematurely, pd.df is end-inclusive slicing
+        done_list = self.measurements.loc[i:ni-1, 'done'].to_numpy().tolist() 
         done = int(1 in done_list)
         if done:
             ni = i + done_list.index(1) + 1
         done = torch.FloatTensor(np.float32([done]))
         
         # reward calculations
+        discounts = self.discount[:ni]
+        discount = torch.FloatTensor(np.float32([self.discount[ni-i-1]])) # for Q(ns)
         penalty = self.measurements.loc[i:ni-1, 'infraction_penalty'].to_numpy()
         route_reward = self.measurements.loc[i:ni-1, 'route_reward'].to_numpy()
-        discounts = self.discount[:len(penalty)]
-        discount = torch.FloatTensor(np.float32([self.discount[ni-i-1]])) # for Q(ns)
-
         reward = route_reward - penalty
         reward = np.dot(reward, discounts) # discounted sum of rewards
-
-        # turn off margin if expert action is bad?
-        margin_switch = 0 if reward < 0 else 1
-        margin_switch = torch.FloatTensor(np.float32([margin_switch]))
 
         # transform to log scale (DQfD)
         sign = -1 if reward < 0 else 1
         reward = sign * np.log(1+np.abs(reward))
         reward = torch.FloatTensor(np.float32([reward]))
 
+        # turn off margin if expert action is bad?
+        margin_switch = -1 if reward < 0 else 1
+        margin_switch = torch.FloatTensor(np.float32([margin_switch]))
+        
         # topdown, target, points
         topdown = Image.open(topdown_frame)
         topdown = topdown.crop((128,0,128+256,256))
@@ -158,9 +150,8 @@ class CarlaDataset(Dataset):
 
         tick_data = self.measurements.iloc[i]
         target = torch.FloatTensor(np.float32((tick_data['x_target'], tick_data['y_target'])))
-        control_expert = self._get_control(tick_data)
-        points_expert = self._get_points(frame, i)
-
+        action = self._get_action(tick_data, frame, i)
+        
         # next state, next target
         ntopdown_frame = self.topdown_frames[ni]
         _, _, _, nframe = ntopdown_frame.parts[-4:]
@@ -172,22 +163,35 @@ class CarlaDataset(Dataset):
 
         ntick_data = self.measurements.iloc[ni]
         ntarget = torch.FloatTensor(np.float32((ntick_data['x_target'], ntick_data['y_target'])))
-        ncontrol_expert = self._get_control(ntick_data)
-        npoints_expert = self._get_points(nframe, ni)
+        naction = self._get_action(ntick_data, nframe, ni)
+        #ncontrol_expert = self._get_control(ntick_data)
+        #npoints_expert = self._get_points(nframe, ni)
 
 
         itensor = torch.FloatTensor(np.float32([i]))
-        info = {'discount': discount, 
-                'ncontrol_expert': ncontrol_expert,
-                'npoints_expert': npoints_expert,
-                'metadata': torch.Tensor(encode_str(meta)),
-                'data_index': itensor,
-                'margin_switch': margin_switch
-                }
+        info = {
+            'discount': discount, 
+            'naction': naction,
+            #'ncontrol_expert': ncontrol_expert,
+            #'npoints_expert': npoints_expert,
+            'metadata': torch.Tensor(encode_str(meta)),
+            'data_index': itensor,
+            'margin_switch': margin_switch
+        }
 
 
         # state, action, reward, next_state, done, info
-        return (topdown, target), (points_expert, control_expert), reward, (ntopdown, ntarget), done, info
+        return (topdown, target), action, reward, (ntopdown, ntarget), done, info
+
+
+    def _get_action(self, tick_data, frame, i):
+        points_expert = self._get_points(frame, i)
+        if hasattr(self.hparams, 'throttle_mode'):
+            control_expert = self._get_control(tick_data)
+            action = (points_expert, control_expert)
+        else:
+            action = points_expert
+        return action
 
     def _get_control(self, tick_data):
         steer, throttle, target_speed = tick_data[['steer', 'throttle', 'target_speed']]
@@ -204,7 +208,6 @@ class CarlaDataset(Dataset):
 
 
     def _get_points(self, frame, i):
-        #print(frame)
         if self.expert_type == 'autopilot':
             u = np.float32(self.measurements.iloc[i][['x_position', 'y_position']])
             theta = self.measurements.iloc[i]['theta']

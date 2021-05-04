@@ -1,4 +1,4 @@
-import os
+import os, yaml
 import cv2
 import numpy as np
 import torch
@@ -40,21 +40,19 @@ class PrivilegedAgent(MapAgent):
         self.converter = Converter()
 
         weights_path = self.aconfig.weights_path
-        if 'lbc' in weights_path:
-            self.net = LBCModel.load_from_checkpoint(weights_path)
-        else:
-            self.net = MapModel.load_from_checkpoint(weights_path)
+        self.net = MapModel.load_from_checkpoint(weights_path)
         self.net.cuda()
         self.net.eval()
 
         if self.aconfig.dagger_expert:
             expert_path = Path(self.aconfig.expert_path)
-            if 'lbc' in str(expert_path):
-                self.expert = LBCModel.load_from_checkpoint(expert_path)
-            else:
-                self.expert = MapModel.load_from_checkpoint(expert_path)
+            self.expert = LBCModel.load_from_checkpoint(expert_path)
             self.expert.cuda()
             self.expert.eval()
+
+        with open(f'{self.config.save_root}/train_config.yml', 'r') as f:
+            self.train_config = yaml.load(f, Loader=yaml.Loader)
+
 
         self.burn_in = False
 
@@ -140,6 +138,15 @@ class PrivilegedAgent(MapAgent):
 
     @torch.no_grad()
     def run_step(self, input_data, timestamp):
+        if self.aconfig.control_mode == 'learned':
+            return self.run_step_learned_control(input_data, timestamp)
+        elif self.aconfig.control_mode == 'points':
+            return self.run_step_pid_control(input_data, timestamp)
+        else:
+            raise Exception
+
+    @torch.no_grad()
+    def run_step(self, input_data, timestamp):
         if not self.initialized:
             self._init()
 
@@ -155,7 +162,7 @@ class PrivilegedAgent(MapAgent):
         target = torch.from_numpy(tick_data['target'])
         target = target[None].cuda()
 
-        points, tmap, Qmap = self.net.forward(topdown, target)
+        points, logits, tmap = self.net.forward(topdown, target)
         points = points.clone().cpu().squeeze().numpy()
 
         # 1. is the model using argmax or soft argmax?
