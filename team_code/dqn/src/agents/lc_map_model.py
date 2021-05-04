@@ -128,11 +128,10 @@ class MapModel(pl.LightningModule):
     def __init__(self, hparams=None):
         super().__init__()
 
-        if hparams is not None:
-            self.hparams = hparams
-            self.to_heatmap = ToHeatmap(hparams.expert_radius)
-            self.register_buffer('temperature', torch.Tensor([hparams.temperature]))
-            self.net = SegmentationModel(10, 4, batch_norm=True, hack=hparams.hack)
+        self.hparams = hparams
+        self.to_heatmap = ToHeatmap(hparams.expert_radius)
+        self.register_buffer('temperature', torch.Tensor([hparams.temperature]))
+        self.net = SegmentationModel(10, 4, batch_norm=True, hack=hparams.hack)
 
         self.controller = DiscreteController(n_input=4)
         self.td_criterion = torch.nn.MSELoss(reduction='none')
