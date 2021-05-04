@@ -327,7 +327,6 @@ class MapModel(pl.LightningModule):
         #margin_loss = margin_switch * margin_loss
 
         batch_loss = td_loss + margin_loss
-        val_loss = torch.mean(batch_loss, dim=0)
 
         if batch_nb == 0 and self.logger != None:
             meta = {
@@ -357,8 +356,7 @@ class MapModel(pl.LightningModule):
             for key, item in to_hist.items():
                 metrics[f'val/{key}_hist'] = make_histogram(item, key)
             self.logger.log_metrics(metrics, self.global_step)
-            val_loss = torch.mean(batch_loss,axis=0),
-
+        val_loss = torch.mean(batch_loss,axis=0)
         return {'val_loss': val_loss,
                 f'val_TD({self.hparams.n})_loss': torch.mean(td_loss,axis=0),
                 'val_margin_loss': torch.mean(margin_loss,axis=0),}
