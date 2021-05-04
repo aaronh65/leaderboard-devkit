@@ -46,6 +46,7 @@ def fuse_logits(topdown, logits, alpha=0.5):
 def viz_Qmap(batch, meta, alpha=0.5, r=2):
     state, action, reward, next_state, done, info = batch
     topdown, target = state
+    points_expert = (action+1)/2*255
 
     Qmap, Q_expert = meta['Qmap'], meta['Q_expert']
     batch_loss, td_loss = meta['batch_loss'], meta['td_loss']
@@ -78,7 +79,7 @@ def viz_Qmap(batch, meta, alpha=0.5, r=2):
             x, y = points_max[n][t] % W, points_max[n][t] // W
             draw.ellipse((x-r,y-r,x+r,y+r), (0,0,255))
             draw.text((5,30), f'max_action: {x:.2f},{y:.2f}', text_color)
-            x, y= action[n][t]
+            x, y= points_expert[n][t]
             draw.ellipse((x-r,y-r,x+r,y+r), expert_color)
             draw.text((5,40), f'exp_action: {x:.2f},{y:.2f}', text_color)
 
@@ -96,7 +97,7 @@ def viz_td(batch, meta, alpha=0.5, r=2):
     Q, nQ = meta['Q'], meta['nQ']
     Qmap, nQmap = meta['Qmap'], meta['nQmap']
     tmap, ntmap = meta['tmap'], meta['ntmap']
-    naction = meta['naction']
+    npoints_student = meta['npoints_student']
     hparams = meta['hparams']
     batch_loss, td_loss, margin = meta['batch_loss'], meta['td_loss'], meta['margin']
     margin_loss = margin.mean(1).detach().cpu().numpy()
@@ -104,6 +105,7 @@ def viz_td(batch, meta, alpha=0.5, r=2):
 
     state, action, reward, next_state, done, info = batch
     topdown, target = state
+    points_expert = (action+1)/2*255
     fused = fuse_logits(topdown, Qmap)
     ntopdown, ntarget = next_state
     nfused = fuse_logits(ntopdown, nQmap)
@@ -120,10 +122,10 @@ def viz_td(batch, meta, alpha=0.5, r=2):
         _topdown[tmap[i][0].cpu() > 0.1] = 255
         _topdown = Image.fromarray(_topdown)
         _draw = ImageDraw.Draw(_topdown)
-        _action = action[i].cpu().numpy().astype(np.uint8) # (4,2)
-        for x, y in _action:
+        _points_expert = points_expert[i].cpu().numpy().astype(np.uint8) # (4,2)
+        for x, y in _points_expert:
             _draw.ellipse((x-r, y-r, x+r, y+r), expert_color)
-        x, y = np.mean(_action[0:2], axis=0)
+        x, y = np.mean(_points_expert[0:2], axis=0)
         _draw.ellipse((x-r, y-r, x+r, y+r), aim_color)
 
         _draw.text((5, 10), f'Q = {Q[i].item():.2f}', text_color)
@@ -136,10 +138,10 @@ def viz_td(batch, meta, alpha=0.5, r=2):
         _ntopdown[ntmap[i][0].cpu() > 0.1] = 255
         _ntopdown = Image.fromarray(_ntopdown)
         _ndraw = ImageDraw.Draw(_ntopdown)
-        _naction = naction[i].cpu().numpy().astype(np.uint8) # (4,2)
-        for x, y in _naction:
+        _npoints_student = npoints_student[i].cpu().numpy().astype(np.uint8) # (4,2)
+        for x, y in _npoints_student:
             _ndraw.ellipse((x-r, y-r, x+r, y+r), student_color)
-        x, y = np.mean(_naction[0:2], axis=0)
+        x, y = np.mean(_npoints_student[0:2], axis=0)
         _ndraw.ellipse((x-r, y-r, x+r, y+r), aim_color)
 
         _metadata = decode_str(info['metadata'][i])
@@ -206,7 +208,7 @@ class MapModel(pl.LightningModule):
     def training_step(self, batch, batch_nb):
         state, action, reward, next_state, done, info = batch
         topdown, target = state
-        points_expert = action
+        points_expert = (action + 1) / 2 * 255
 
         points, Qmap, tmap = self.forward(topdown, target)
         Q_all = spatial_select(Qmap, points_expert)
@@ -215,7 +217,7 @@ class MapModel(pl.LightningModule):
         ntopdown, ntarget = next_state
         with torch.no_grad():
             npoints, nQmap, ntmap = self.forward(ntopdown, ntarget)
-        naction, nQ_all = self.get_dqn_actions(nQmap)
+        npoints_student, nQ_all = self.get_dqn_actions(nQmap)
         nQ = torch.mean(nQ_all, axis=1, keepdim=False)
         
         # td loss
@@ -251,7 +253,7 @@ class MapModel(pl.LightningModule):
                 'hparams': self.hparams,
                 'Qmap': Qmap, 'nQmap': nQmap, 
                 'Q': Q, 'nQ': nQ, 'Q_expert': Q_expert_all.squeeze(dim=-1),
-                'naction': naction,
+                'npoints_student': npoints_student,
                 'tmap': tmap, 'ntmap': ntmap,
                 'batch_loss': batch_loss,
                 'td_loss': td_loss,
@@ -286,7 +288,7 @@ class MapModel(pl.LightningModule):
     def validation_step(self, batch, batch_nb):
         state, action, reward, next_state, done, info = batch
         topdown, target = state
-        points_expert = action
+        points_expert = (action+1)/2*255
 
         with torch.no_grad():
             points, Qmap, tmap = self.forward(topdown, target)
@@ -296,7 +298,7 @@ class MapModel(pl.LightningModule):
         ntopdown, ntarget = next_state
         with torch.no_grad():
             npoints, nQmap, ntmap = self.forward(ntopdown, ntarget)
-        naction, nQ_all = self.get_dqn_actions(nQmap)
+        npoints_student, nQ_all = self.get_dqn_actions(nQmap)
         nQ = torch.mean(nQ_all, axis=1, keepdim=False) # N,1
 
         # td loss
@@ -332,7 +334,7 @@ class MapModel(pl.LightningModule):
                 'hparams': self.hparams,
                 'Qmap': Qmap, 'nQmap': nQmap, 
                 'Q': Q, 'nQ': nQ, 'Q_expert': Q_expert_all.squeeze(dim=-1),
-                'naction': naction,
+                'npoints_student': npoints_student,
                 'tmap': tmap, 'ntmap': ntmap,
                 'batch_loss': batch_loss,
                 'td_loss': td_loss,

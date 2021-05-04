@@ -1,4 +1,5 @@
 from pathlib import Path
+import sys
 
 import numpy as np
 import pandas as pd
@@ -86,7 +87,7 @@ class CarlaDataset(Dataset):
         self.topdown_frames = []
         self.measurements = pd.DataFrame()
         self.bad_indices = set()
-        thresh = max(GAP*(STEPS+1), hparams.n)
+        thresh = GAP*STEPS + hparams.n + 1
         for i, _dataset_dir in enumerate(episodes): # 90-10 train/val
             topdown_frames = list(sorted((Path(_dataset_dir) / 'topdown').glob('*')))
             dataset_len = len(topdown_frames)
@@ -231,7 +232,15 @@ class CarlaDataset(Dataset):
             points = list()
             for skip in range(1, STEPS+1):
                 j = i + GAP * skip
-                v = np.array(self.measurements.iloc[j][['x_position', 'y_position']])
+                try:
+                    v = np.array(self.measurements.iloc[j][['x_position', 'y_position']])
+                except Exception:
+                    print('ILLEGAL INDEX FOUND')
+                    print('start', i)
+                    print('GAP', GAP)
+                    print('skip', skip)
+                    print('j', j)
+                    sys.exit(1)
 
                 target = R.T.dot(v - u)
                 target *= PIXELS_PER_WORLD
