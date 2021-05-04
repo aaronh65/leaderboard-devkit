@@ -132,7 +132,6 @@ class MapModel(pl.LightningModule):
             self.hparams = hparams
             self.to_heatmap = ToHeatmap(hparams.expert_radius)
             self.register_buffer('temperature', torch.Tensor([hparams.temperature]))
-            #self.net = SegmentationModel(10, 4, backbone_key=hparams.backbone, batch_norm=True, hack=hparams.hack)
             self.net = SegmentationModel(10, 4, batch_norm=True, hack=hparams.hack)
 
         self.controller = DiscreteController(n_input=4)

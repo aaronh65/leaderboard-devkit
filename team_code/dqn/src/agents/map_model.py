@@ -178,7 +178,7 @@ class MapModel(pl.LightningModule):
             self.to_heatmap = ToHeatmap(hparams.heatmap_radius)
             self.expert_heatmap = ToTemporalHeatmap(hparams.expert_radius)
             self.register_buffer('temperature', torch.Tensor([hparams.temperature]))
-            self.net = SegmentationModel(10, 4, batch_norm=True, hack=hparams.hack)
+            self.net = SegmentationModel(10, 4, batch_norm=True, hack=hparams.hack, extract=True)
 
         self.controller = RawController(4)
         self.td_criterion = torch.nn.MSELoss(reduction='none')
@@ -475,7 +475,7 @@ if __name__ == '__main__':
     # Model args
     parser.add_argument('--heatmap_radius', type=int, default=5)
     parser.add_argument('--expert_radius', type=int, default=5)
-    parser.add_argument('--expert_margin', type=float, default=1.0)
+    parser.add_argument('--expert_margin', type=float, default=5.0)
     parser.add_argument('--temperature', type=float, default=10.0)
     parser.add_argument('--hack', action='store_true', default=True)
         

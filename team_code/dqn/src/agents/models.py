@@ -91,15 +91,17 @@ class ConvBlock(torch.nn.Module):
         return x
 
 class SegmentationModel(torch.nn.Module):
-    def __init__(self, input_channels=3, n_steps=4, batch_norm=True, hack=False):
+    def __init__(self, input_channels=3, n_steps=4, batch_norm=True, hack=False, extract=False):
         super().__init__()
 
         self.hack = hack
+        self.extract = extract
+        out_channels = 64 if extract else n_steps
 
         self.norm = torch.nn.BatchNorm2d(input_channels) if batch_norm else lambda x: x
-        self.network = deeplabv3_resnet50(pretrained=False, num_classes=n_steps)
+        self.network = deeplabv3_resnet50(pretrained=False, num_classes=out_channels)
 
-        #self.extract = ASPPExtract(in_channels=64, latent_dim=16, num_classes=n_steps)
+        self.extract = ASPPExtract(in_channels=64, latent_dim=16, num_classes=n_steps)
 
         self.spatial_softmax = SpatialSoftmax()
 
@@ -119,7 +121,8 @@ class SegmentationModel(torch.nn.Module):
             logits = torch.nn.functional.interpolate(logits, scale_factor=2.0, mode='bilinear')
 
         # conv blocks to smooth out backbone upsampling artifacts
-        #logits = self.extract(logits)
+        if self.extract:
+            logits = self.extract(logits)
 
         # extract 
         points, weights = self.spatial_softmax(logits, temperature)
