@@ -127,10 +127,10 @@ class CarlaDataset(Dataset):
         done = torch.FloatTensor(np.float32([done]))
         
         # reward calculations
-        discounts = self.discount[:ni]
-        discount = torch.FloatTensor(np.float32([self.discount[ni-i-1]])) # for Q(ns)
         penalty = self.measurements.loc[i:ni-1, 'infraction_penalty'].to_numpy()
         route_reward = self.measurements.loc[i:ni-1, 'route_reward'].to_numpy()
+        discounts = self.discount[:len(penalty)]
+        discount = torch.FloatTensor(np.float32([self.discount[ni-i-1]])) # for Q(ns)
         reward = route_reward - penalty
         reward = np.dot(reward, discounts) # discounted sum of rewards
 
