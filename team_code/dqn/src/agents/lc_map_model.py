@@ -131,7 +131,7 @@ class MapModel(pl.LightningModule):
         self.hparams = hparams
         self.to_heatmap = ToHeatmap(hparams.expert_radius)
         self.register_buffer('temperature', torch.Tensor([hparams.temperature]))
-        self.net = SegmentationModel(10, 4, batch_norm=True, hack=hparams.hack)
+        self.net = SegmentationModel(10, 4, batch_norm=True, hack=hparams.hack, extract=False)
 
         self.controller = DiscreteController(n_input=4)
         self.td_criterion = torch.nn.MSELoss(reduction='none')

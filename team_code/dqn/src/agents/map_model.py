@@ -173,12 +173,11 @@ class MapModel(pl.LightningModule):
     def __init__(self, hparams=None):
         super().__init__()
 
-        if hparams is not None:
-            self.hparams = hparams
-            self.to_heatmap = ToHeatmap(hparams.heatmap_radius)
-            self.expert_heatmap = ToTemporalHeatmap(hparams.expert_radius)
-            self.register_buffer('temperature', torch.Tensor([hparams.temperature]))
-            self.net = SegmentationModel(10, 4, batch_norm=True, hack=hparams.hack, extract=True)
+        self.hparams = hparams
+        self.to_heatmap = ToHeatmap(hparams.heatmap_radius)
+        self.expert_heatmap = ToTemporalHeatmap(hparams.expert_radius)
+        self.register_buffer('temperature', torch.Tensor([hparams.temperature]))
+        self.net = SegmentationModel(10, 4, batch_norm=True, hack=hparams.hack, extract=True)
 
         self.controller = RawController(4)
         self.td_criterion = torch.nn.MSELoss(reduction='none')
@@ -482,10 +481,11 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if args.train_dataset is None:
-        #args.train_dataset = Path('/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest_toy')
-        args.train_dataset = Path('/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest')
+        args.train_dataset = Path('/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest_toy')
+        #args.train_dataset = Path('/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest')
     if args.val_dataset is None:
-        args.val_dataset = Path('/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest')
+        #args.val_dataset = Path('/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest')
+        args.val_dataset = Path('/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest_toy')
 
     suffix = f'debug/{args.id}' if args.debug else args.id
     save_dir = args.data_root / f'leaderboard/training/dqn/offline/{suffix}'

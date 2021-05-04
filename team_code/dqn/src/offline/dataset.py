@@ -85,20 +85,29 @@ class CarlaDataset(Dataset):
         self.dataset_root = episodes[0].parent.parent
         self.topdown_frames = []
         self.measurements = pd.DataFrame()
+        self.bad_indices = set()
+        thresh = max(GAP*(STEPS+1), hparams.n)
         for i, _dataset_dir in enumerate(episodes): # 90-10 train/val
             topdown_frames = list(sorted((Path(_dataset_dir) / 'topdown').glob('*')))
             dataset_len = len(topdown_frames)
-            if dataset_len <= GAP*STEPS:
+            if dataset_len <= thresh:
                 print(f'{_dataset_dir} invalid, skipping...')
                 continue
             else:
                 print(_dataset_dir)
+            # recover illegal indices
             self.topdown_frames.extend(topdown_frames)
+            end = len(self.topdown_frames)
+            self.bad_indices.update(range(end-thresh, end))
+
+
             measure_frames = list(sorted((_dataset_dir / 'measurements').glob('*')))
             measurements = pd.DataFrame([eval(x.read_text()) for x in measure_frames])
             self.measurements = self.measurements.append(measurements, ignore_index=True)
+        #print(sorted(list(self.bad_indices)))
 
-        self.dataset_len = len(self.topdown_frames) - hparams.n - hparams.batch_size
+        self.dataset_len = len(self.topdown_frames)
+        #self.dataset_len = min(self.dataset_len-GAP*STEPS, self.dataset_len-hparams.n)
         print('%d frames.' % self.dataset_len)
         #print(topdown_frames)
 
@@ -110,6 +119,9 @@ class CarlaDataset(Dataset):
         return self.epoch_len
 
     def __getitem__(self, i):
+        i = np.random.randint(self.dataset_len)
+        while i in self.bad_indices:
+            i = np.random.randint(self.dataset_len)
 
         topdown_frame = self.topdown_frames[i]
         route, rep, _, frame = topdown_frame.parts[-4:]
