@@ -132,7 +132,7 @@ class SplitCarlaDataset(Dataset):
         print('%d hard frames.' % len(self.hard_indices))
 
         # n-step returns
-        self.epoch_len = 100 if is_train else 250
+        self.epoch_len = 1000 if is_train else 250
         self.epoch_len = self.epoch_len * hparams.batch_size
 
         # step count
