@@ -316,18 +316,18 @@ class MapModel(pl.LightningModule):
         # expert margin loss
         Q_expert_all = spatial_select(Qmap, points_expert) #N,T,1
 
+
+        margin_switch = info['margin_switch']
         margin_map = self.expert_heatmap(points_expert, Qmap) #[0,1] tall at expert points
         margin_map = (1-margin_map)*self.hparams.expert_margin #[0,M] low at expert points
         margin_map = Qmap + margin_map - Q_expert_all.unsqueeze(-1)
         margin_map = F.relu(margin_map)
 
         mean_margin = torch.mean(margin_map, dim=(-1,-2)) #N,T
-        max_margin = torch.zeros(mean_margin.shape)
         max_margin = margin_map.view(margin_map.shape[:2] + (-1,)) #N,T,H*W
         max_margin, _ = torch.max(max_margin, dim=-1) #N,T
         margin = max_margin + mean_margin
 
-        margin_switch = info['margin_switch']
         margin_loss = self.hparams.lambda_margin * margin.mean(dim=1,keepdim=True) #N,1
         #margin_loss = margin_switch * margin_loss
 
@@ -435,7 +435,10 @@ def main(hparams):
 
     # offline trainer can use all gpus
     trainer = pl.Trainer(
-        gpus=hparams.gpus, max_epochs=hparams.max_epochs,
+        #gpus=hparams.gpus, 
+        gpus=[0,1,2,3], 
+        #gpus=[4,5,6,7], 
+        max_epochs=hparams.max_epochs,
         logger=logger,
         checkpoint_callback=checkpoint_callback,
         distributed_backend='dp',)
