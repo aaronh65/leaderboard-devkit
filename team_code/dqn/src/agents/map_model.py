@@ -435,9 +435,7 @@ def main(hparams):
 
     # offline trainer can use all gpus
     trainer = pl.Trainer(
-        #gpus=hparams.gpus, 
-        gpus=[0,1,2,3], 
-        #gpus=[4,5,6,7], 
+        gpus=hparams.gpus, 
         max_epochs=hparams.max_epochs,
         logger=logger,
         checkpoint_callback=checkpoint_callback,
@@ -454,7 +452,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     parser.add_argument('-D', '--debug', action='store_true')
-    parser.add_argument('-G', '--gpus', type=int, default=-1)
+    parser.add_argument('-G', '--gpus', nargs='+', type=int, default=[-1])
     parser.add_argument('--restore_from', type=str)
     parser.add_argument('--save_dir', type=Path)
     parser.add_argument('--id', type=str, default=datetime.now().strftime("%Y%m%d_%H%M%S")) 
@@ -494,6 +492,8 @@ if __name__ == '__main__':
     if args.val_dataset is None:
         #args.val_dataset = Path('/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest')
         args.val_dataset = Path('/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest_toy')
+    if args.gpus[0] == -1:
+        args.gpus = -1
 
     _, drive, name = str(args.train_dataset).split('/')[:3]
     args.data_root = Path(f'/{drive}', name)

@@ -144,7 +144,6 @@ class SplitCarlaDataset(Dataset):
             self.max_prop_epoch = self.hparams.max_epochs // 2
         else:
             self.max_prop_epoch = self.hparams.max_prop_epoch
-        print(self.max_prop_epoch)
 
         self.epoch_num = 0
         #print('is_train', is_train, self.max_prop_batches)
