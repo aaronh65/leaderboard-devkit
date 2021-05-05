@@ -405,7 +405,7 @@ def main(hparams):
         logger = WandbLogger(id=hparams.id, save_dir=str(hparams.save_dir), project='dqn_offline')
     else:
         logger = False
-    checkpoint_callback = ModelCheckpoint(hparams.save_dir, save_top_k=3)
+    checkpoint_callback = ModelCheckpoint(hparams.save_dir, save_top_k=3, verbose=True, period=10)
 
     # resume and add a couple arguments
     if hparams.restore_from is None:
@@ -442,6 +442,8 @@ def main(hparams):
         distributed_backend='dp',)
 
     trainer.fit(model)
+
+    checkpoint_callback._save_model(str(hparams.save_dir / 'last.ckpt'))
 
     if hparams.log:
         wandb.save(str(hparams.save_dir / '*.ckpt'))
