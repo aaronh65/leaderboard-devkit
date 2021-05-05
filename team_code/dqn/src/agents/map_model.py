@@ -17,7 +17,8 @@ from dqn.src.agents.models import SegmentationModel, RawController, SpatialSoftm
 from dqn.src.agents.heatmap import ToHeatmap, ToTemporalHeatmap
 from lbc.carla_project.src.common import CONVERTER, COLOR
 from lbc.carla_project.src.map_model import viz_weights
-from dqn.src.offline.dataset import get_dataloader
+#from dqn.src.offline.dataset import get_dataloader
+from dqn.src.offline.split_dataset import get_dataloader
  
 HAS_DISPLAY = int(os.environ['HAS_DISPLAY'])
 #HAS_DISPLAY = False
@@ -193,7 +194,7 @@ class MapModel(pl.LightningModule):
         return points, logits, target_heatmap
 
         # two modes: sample, argmax?
-    def get_dqn_actions(self, Qmap, explore=False):
+    def get_argmax_actions(self, Qmap, explore=False):
         h,w = Qmap.shape[-2:]
         Qmap_flat = Qmap.view(Qmap.shape[:-2] + (-1,)) # (N,T,H*W)
         Q_all, action_flat = torch.max(Qmap_flat, -1, keepdim=True) # (N,T,1)
@@ -204,6 +205,10 @@ class MapModel(pl.LightningModule):
             axis=2) # (N,T,2)
         
         return action, Q_all # (N,T,2), (N,T,1)
+
+    def on_epoch_start(self):
+        self.train_data.dataset.epoch_num = self.current_epoch
+        self.val_data.dataset.epoch_num = self.current_epoch
 
     def training_step(self, batch, batch_nb):
         state, action, reward, next_state, done, info = batch
@@ -217,7 +222,7 @@ class MapModel(pl.LightningModule):
         ntopdown, ntarget = next_state
         with torch.no_grad():
             npoints, nQmap, ntmap = self.forward(ntopdown, ntarget)
-        npoints_student, nQ_all = self.get_dqn_actions(nQmap)
+        npoints_student, nQ_all = self.get_argmax_actions(nQmap)
         nQ = torch.mean(nQ_all, axis=1, keepdim=False)
         
         # td loss
@@ -235,11 +240,9 @@ class MapModel(pl.LightningModule):
         margin_map = F.relu(margin_map)
 
         mean_margin = torch.mean(margin_map, dim=(-1,-2)) #N,T
-        max_margin = torch.zeros(mean_margin.shape)
-        margin = mean_margin
-        #max_margin = margin_map.view(margin_map.shape[:2] + (-1,)) #N,T,H*W
-        #max_margin, _ = torch.max(max_margin, dim=-1) #N,T
-        #margin = max_margin + mean_margin
+        max_margin = margin_map.view(margin_map.shape[:2] + (-1,)) #N,T,H*W
+        max_margin, _ = torch.max(max_margin, dim=-1) #N,T
+        margin = max_margin + mean_margin
 
         margin_switch = info['margin_switch']
         margin_loss = self.hparams.lambda_margin * margin.mean(dim=1,keepdim=True) #N,1
@@ -266,21 +269,24 @@ class MapModel(pl.LightningModule):
             if HAS_DISPLAY:
                 cv2.imshow('td', cv2.cvtColor(vtd, cv2.COLOR_BGR2RGB))
                 cv2.imshow('Qmap', cv2.cvtColor(vQmap, cv2.COLOR_BGR2RGB))
-                cv2.waitKey(5000)
+                cv2.waitKey(1000)
 
         if self.logger != None:
+            
             metrics = {
-                f'train/TD({self.hparams.n}) loss': td_loss.mean().item(),
-                'train/margin_loss': margin_loss.mean().item(),
-                'train/batch_loss': batch_loss.mean().item(),
+                f'train_TD({self.hparams.n})_loss': td_loss.mean().item(),
+                'train_margin_loss': margin_loss.mean().item(),
+                'train_loss': batch_loss.mean().item(),
             }
+
+            if batch_nb == 0: 
+                metrics['epochs'] = self.current_epoch
+                metrics['hard_prop'] = info['hard_prop'].mean().item()
 
             if batch_nb % 250 == 0:
                 metrics['train_td'] = wandb.Image(vtd)
                 metrics['train_Qmap'] = wandb.Image(vQmap)
-                to_hist = {'Qmap': Qmap}
-                for key, item in to_hist.items():
-                    metrics[f'train/{key}_hist'] = make_histogram(item, key)
+                metrics['train_Qmap_hist'] = make_histogram(Qmap, 'Qmap')
             self.logger.log_metrics(metrics, self.global_step)
         return {'loss': loss}
 
@@ -298,7 +304,7 @@ class MapModel(pl.LightningModule):
         ntopdown, ntarget = next_state
         with torch.no_grad():
             npoints, nQmap, ntmap = self.forward(ntopdown, ntarget)
-        npoints_student, nQ_all = self.get_dqn_actions(nQmap)
+        npoints_student, nQ_all = self.get_argmax_actions(nQmap)
         nQ = torch.mean(nQ_all, axis=1, keepdim=False) # N,1
 
         # td loss
@@ -317,10 +323,9 @@ class MapModel(pl.LightningModule):
 
         mean_margin = torch.mean(margin_map, dim=(-1,-2)) #N,T
         max_margin = torch.zeros(mean_margin.shape)
-        margin = mean_margin
-        #max_margin = margin_map.view(margin_map.shape[:2] + (-1,)) #N,T,H*W
-        #max_margin, _ = torch.max(max_margin, dim=-1) #N,T
-        #margin = max_margin + mean_margin
+        max_margin = margin_map.view(margin_map.shape[:2] + (-1,)) #N,T,H*W
+        max_margin, _ = torch.max(max_margin, dim=-1) #N,T
+        margin = max_margin + mean_margin
 
         margin_switch = info['margin_switch']
         margin_loss = self.hparams.lambda_margin * margin.mean(dim=1,keepdim=True) #N,1
@@ -351,10 +356,8 @@ class MapModel(pl.LightningModule):
             metrics = {
                         'val_td': wandb.Image(vtd),
                         'val_Qmap': wandb.Image(vQmap),
+                        'val_Qmap_hist': make_histogram(Qmap, 'Qmap')
                         }
-            to_hist = {'Qmap': Qmap}
-            for key, item in to_hist.items():
-                metrics[f'val/{key}_hist'] = make_histogram(item, key)
             self.logger.log_metrics(metrics, self.global_step)
         val_loss = torch.mean(batch_loss,axis=0)
         return {'val_loss': val_loss,
@@ -386,13 +389,13 @@ class MapModel(pl.LightningModule):
         return [optim], [scheduler]
 
     def train_dataloader(self):
-        train_data = get_dataloader(self.hparams,self.hparams.train_dataset,is_train=True)
-        return train_data
+        self.train_data = get_dataloader(self.hparams,self.hparams.train_dataset,is_train=True)
+        return self.train_data
 
     # online val dataloaders spoof a length of N batches, and do N episode rollouts
     def val_dataloader(self):
-        val_data = get_dataloader(self.hparams,self.hparams.val_dataset,is_train=False)
-        return val_data
+        self.val_data = get_dataloader(self.hparams,self.hparams.val_dataset,is_train=False)
+        return self.val_data
 
 
 # offline training
@@ -452,13 +455,14 @@ if __name__ == '__main__':
     parser.add_argument('--restore_from', type=str)
     parser.add_argument('--save_dir', type=Path)
     parser.add_argument('--id', type=str, default=datetime.now().strftime("%Y%m%d_%H%M%S")) 
-    parser.add_argument('--data_root', type=Path, default='/data/aaronhua')
     parser.add_argument('--log', action='store_true')
     parser.add_argument('-ow', '--overwrite_hparams', nargs='+')
 
     # Trainer args
     parser.add_argument('--train_dataset', type=Path)
     parser.add_argument('--val_dataset', type=Path)
+    parser.add_argument('--hard_prop', type=float, default=0.0)
+    parser.add_argument('--max_prop_epoch', type=int)
     parser.add_argument('--max_epochs', type=int, default=50)
     parser.add_argument('--num_workers', type=int, default=4)
     parser.add_argument('--gamma', type=float, default=0.99)
@@ -477,6 +481,7 @@ if __name__ == '__main__':
     parser.add_argument('--expert_margin', type=float, default=5.0)
     parser.add_argument('--temperature', type=float, default=10.0)
     parser.add_argument('--hack', action='store_true', default=True)
+    parser.add_argument('--control_type', type=str, default='points')
         
     args = parser.parse_args()
 
@@ -486,6 +491,9 @@ if __name__ == '__main__':
     if args.val_dataset is None:
         #args.val_dataset = Path('/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest')
         args.val_dataset = Path('/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest_toy')
+
+    _, drive, name = str(args.train_dataset).split('/')[:3]
+    args.data_root = Path(f'/{drive}', name)
 
     suffix = f'debug/{args.id}' if args.debug else args.id
     save_dir = args.data_root / f'leaderboard/training/dqn/offline/{suffix}'

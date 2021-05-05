@@ -20,7 +20,8 @@ from lbc.carla_project.src.map_model import viz_weights
  
 HAS_DISPLAY = int(os.environ['HAS_DISPLAY'])
 PRIORITY = False
-from dqn.src.offline.dataset import get_dataloader
+#from dqn.src.offline.dataset import get_dataloader
+from dqn.src.offline.split_dataset import get_dataloader
 
 text_color = (255,255,255)
 aim_color = (60,179,113) # dark green
@@ -136,18 +137,7 @@ class MapModel(pl.LightningModule):
         self.controller = DiscreteController(n_input=4)
         self.td_criterion = torch.nn.MSELoss(reduction='none')
         self.margin_criterion = torch.nn.MSELoss(reduction='none')
-
-
         
-    def restore_from_lbc(self, weights_path):
-        from lbc.carla_project.src.map_model import MapModel as LBCModel
-
-        print('restoring from LBC')
-        lbc_model = LBCModel.load_from_checkpoint(weights_path)
-        self.net = lbc_model.net
-        self.temperature = lbc_model.temperature
-        self.to_heatmap = lbc_model.to_heatmap
-
     def forward(self, topdown, target, debug=False):
         target_heatmap = self.to_heatmap(target, topdown)[:, None]
         input = torch.cat((topdown, target_heatmap), 1)
@@ -168,13 +158,16 @@ class MapModel(pl.LightningModule):
         
         return action, Q_all # (N,T,2), (N,T,1)
 
-    def training_step(self, batch, batch_nb):
+    def on_epoch_start(self):
+        self.train_data.dataset.epoch_num = self.current_epoch
+        self.val_data.dataset.epoch_num = self.current_epoch
 
+    def training_step(self, batch, batch_nb):
         state, action, reward, next_state, done, info = batch
         topdown, target = state
         points_expert, ctrl_expert = action
-        points_pred, logits, tmap = self.forward(topdown, target, debug=True)
 
+        points_pred, logits, tmap = self.forward(topdown, target, debug=True)
         point_loss = torch.nn.functional.l1_loss(points_pred, points_expert, reduction='none')
         point_loss = point_loss.mean((-1,-2))
 
@@ -183,7 +176,6 @@ class MapModel(pl.LightningModule):
         Q_ctrl_pm = transform_action(Q_ctrl_pm, self.hparams, to_spatial=True) #N,1,nSp,nSt
         ctrl_pm, Q_ctrl_p = self.get_argmax_actions(Q_ctrl_pm) # ctrl in map space
         ctrl_pm = ctrl_pm.float() #N,1,2
-        #print(ctrl_pm)
 
         # convert expert control to map space
         # x (steer) from (-1,1) to [0,20]
@@ -218,6 +210,9 @@ class MapModel(pl.LightningModule):
         metrics = {}
         metrics['train_point_loss'] = point_loss.mean().item()
         metrics['train_margin_loss'] = margin_loss.mean().item()
+        if batch_nb == 0:
+            metrics['epochs'] = self.current_epoch
+            metrics['hard_prop'] = info['hard_prop'].mean().item()
 
         if batch_nb % 250 == 0 and (self.logger != None or HAS_DISPLAY):
             # convert predicted control to control space
@@ -254,7 +249,7 @@ class MapModel(pl.LightningModule):
 
         if self.logger != None:
             self.logger.log_metrics(metrics, self.global_step)
-            
+
         loss = torch.mean(batch_loss, dim=0, keepdim=True)
         return {'loss': loss}
 
@@ -276,7 +271,6 @@ class MapModel(pl.LightningModule):
         Q_ctrl_pm = transform_action(Q_ctrl_pm, self.hparams, to_spatial=True) #N,1,nSp,nSt
         ctrl_pm, Q_ctrl_p = self.get_argmax_actions(Q_ctrl_pm) # ctrl in map space
         ctrl_pm = ctrl_pm.float() #N,1,2
-        #print(ctrl_pm)
 
         # convert expert control to map space
         # x (steer) from (-1,1) to [0,20]
@@ -340,7 +334,7 @@ class MapModel(pl.LightningModule):
             if HAS_DISPLAY:
                 images = cv2.cvtColor(images, cv2.COLOR_RGB2BGR)
                 cv2.imshow('debug', images)
-                cv2.waitKey(0)
+                cv2.waitKey(100)
 
         if self.logger != None:
             self.logger.log_metrics(metrics, self.global_step)
@@ -379,22 +373,14 @@ class MapModel(pl.LightningModule):
 
     def train_dataloader(self):
 
-        train_data = get_dataloader(self.hparams,self.hparams.train_dataset,is_train=True)
-        if PRIORITY:
-            self.train_data_len = train_data.dataset.dataset_len
-            self.train_losses = np.ones(self.train_data_len)*10
-        return train_data
+        self.train_data = get_dataloader(self.hparams,self.hparams.train_dataset,is_train=True)
+        return self.train_data
 
     # online val dataloaders spoof a length of N batches, and do N episode rollouts
     def val_dataloader(self):
 
-        val_data = get_dataloader(self.hparams,self.hparams.val_dataset,is_train=False)
-        if PRIORITY:
-            self.val_data_len = val_data.dataset.dataset_len
-            self.val_losses = np.ones(self.val_data_len)*10
-            self.weight_update_rate = val_data.dataset.base_update_rate
-
-        return val_data
+        self.val_data = get_dataloader(self.hparams,self.hparams.val_dataset,is_train=False)
+        return self.val_data
 
 
 # offline training
@@ -457,13 +443,14 @@ if __name__ == '__main__':
     parser.add_argument('--restore_from', type=str)
     parser.add_argument('--save_dir', type=Path)
     parser.add_argument('--id', type=str, default=datetime.now().strftime("%Y%m%d_%H%M%S")) 
-    parser.add_argument('--data_root', type=Path, default='/data/aaronhua')
     parser.add_argument('--log', action='store_true')
     parser.add_argument('-ow', '--overwrite_hparams', nargs='+')
 
     # Trainer args
     parser.add_argument('--train_dataset', type=Path)
     parser.add_argument('--val_dataset', type=Path)
+    parser.add_argument('--hard_prop', type=float, default=0.0)
+    parser.add_argument('--max_prop_epoch', type=int)
     parser.add_argument('--max_epochs', type=int, default=50)
     parser.add_argument('--num_workers', type=int, default=4)
     parser.add_argument('--gamma', type=float, default=0.99)
@@ -487,16 +474,19 @@ if __name__ == '__main__':
     parser.add_argument('--expert_margin', type=float, default=1.0)
     parser.add_argument('--temperature', type=float, default=10.0)
     parser.add_argument('--hack', action='store_true', default=True)
+    parser.add_argument('--control_type', type=str, default='learned')
         
     args = parser.parse_args()
 
     if args.train_dataset is None:
-        #args.train_dataset = Path('/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest')
-        args.train_dataset = Path('/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest_toy')
+        args.train_dataset = Path('/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest')
+        #args.train_dataset = Path('/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest_toy')
     if args.val_dataset is None:
-        #args.val_dataset = Path('/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest')
-        args.val_dataset = Path('/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest_toy')
+        args.val_dataset = Path('/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest')
+        #args.val_dataset = Path('/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest_toy')
 
+    _, drive, name = str(args.train_dataset).split('/')[:3]
+    args.data_root = Path(f'/{drive}', name)
     suffix = f'debug/{args.id}' if args.debug else args.id
     save_dir = args.data_root / f'leaderboard/training/dqn/offline/{suffix}'
     args.save_dir = save_dir
