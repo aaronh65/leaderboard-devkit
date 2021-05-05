@@ -96,9 +96,9 @@ class SegmentationModel(torch.nn.Module):
 
         self.hack = hack
         self.extract = extract
-        if extract:
+        if self.extract:
             self.extract_module = ASPPExtract(in_channels=64, latent_dim=16, num_classes=n_steps)
-        out_channels = 64 if extract else n_steps
+        out_channels = 64 if self.extract else n_steps
 
         self.norm = torch.nn.BatchNorm2d(input_channels) if batch_norm else lambda x: x
         self.network = deeplabv3_resnet50(pretrained=False, num_classes=out_channels)

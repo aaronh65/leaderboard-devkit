@@ -56,11 +56,14 @@ config_path = f'{save_root}/config.yml'
 print(config_path)
 with open(config_path, 'w') as f:
     yaml.dump(config, f, default_flow_style=False, sort_keys=False)
-if 'weights_path' in config.keys():
-    wpath = Path(config['weights_path']).parent
-    shutil.copyfile(wpath / 'config.yml', save_root / 'train_config.yml')
-    shutil.copyfile(wpath / 'train_data_config.yml', save_root / 'train_data_config.yml')
-    shutil.copyfile(wpath / 'val_data_config.yml', save_root / 'val_data_config.yml')
+if 'weights_path' in config.keys() or ('agent' in config.keys() and 'weights_path' in config['agent'].keys()):
+        if 'weights_path' in config.keys():
+            wpath = Path(config['weights_path']).parent
+        else:
+            wpath = Path(config['agent']['weights_path']).parent
+        shutil.copyfile(wpath / 'config.yml', save_root / 'train_config.yml')
+        shutil.copyfile(wpath / 'train_data_config.yml', save_root / 'train_data_config.yml')
+        shutil.copyfile(wpath / 'val_data_config.yml', save_root / 'val_data_config.yml')
 
 # environ variables
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"

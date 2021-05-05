@@ -162,14 +162,14 @@ class PrivilegedAgent(MapAgent):
         target = torch.from_numpy(tick_data['target'])
         target = target[None].cuda()
 
-        points, logits, tmap = self.net.forward(topdown, target)
+        points, Qmap, tmap = self.net.forward(topdown, target)
         points = points.clone().cpu().squeeze().numpy()
 
         # 1. is the model using argmax or soft argmax?
         if self.aconfig.waypoint_mode == 'softargmax':
             points_map = (points + 1) / 2 * 256 # (-1,1) to (0,256)
         elif self.aconfig.waypoint_mode == 'argmax':
-            points_map, _ = self.net.get_dqn_actions(Qmap, explore=self.burn_in) # (1,4,2),(1,4,1)
+            points_map, _ = self.net.get_argmax_actions(Qmap, explore=self.burn_in) # (1,4,2),(1,4,1)
             points_map = points_map.clone().cpu().squeeze().numpy()
         points_map = np.clip(points_map, 0, 256)
         tick_data['points_map'] = points_map
