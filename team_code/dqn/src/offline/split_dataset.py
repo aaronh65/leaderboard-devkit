@@ -41,7 +41,7 @@ def get_weights(data, key='speed', bins=4):
 
     return class_weights[classes]
 
-def get_dataloader(hparams, dataset_dir, is_train=True, sample_by='even', **kwargs):
+def get_dataloader(hparams, dataset_dir, is_train=True, shuffle=True, sample_by='even', **kwargs):
     dataset_dir = Path(dataset_dir) / 'data'
 
     episodes = list()
@@ -55,7 +55,7 @@ def get_dataloader(hparams, dataset_dir, is_train=True, sample_by='even', **kwar
         dataset, 
         batch_size=hparams.batch_size, 
         num_workers=hparams.num_workers, 
-        shuffle=True, 
+        shuffle=shuffle, 
         pin_memory=True, 
         drop_last=True)
     return dataloader
@@ -147,6 +147,10 @@ class SplitCarlaDataset(Dataset):
 
         self.epoch_num = 0
         #print('is_train', is_train, self.max_prop_batches)
+        #if hasattr(self.hparams, 'direct_indexing'):
+        #    self.direct_indexing = self.hparams.direct_indexing
+        #else:
+        #    self.direct_indexing = False
 
 
     def __len__(self):
@@ -199,7 +203,7 @@ class SplitCarlaDataset(Dataset):
         reward = torch.FloatTensor(np.float32([reward]))
 
         # turn off margin if expert action is bad?
-        margin_switch = -1 if reward < 0 else 1
+        margin_switch = 0 if reward < 0 else 1
         margin_switch = torch.FloatTensor(np.float32([margin_switch]))
         
         # topdown, target, points

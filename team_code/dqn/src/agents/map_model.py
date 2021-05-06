@@ -50,6 +50,7 @@ def viz_Qmap(batch, meta, alpha=0.5, r=2):
     points_expert = (action+1)/2*255
 
     Qmap, Q_expert = meta['Qmap'], meta['Q_expert']
+    tmap, ntmap = meta['tmap'], meta['ntmap']
     batch_loss, td_loss = meta['batch_loss'], meta['td_loss']
     margin, max_margin, mean_margin = meta['margin'], meta['max_margin'], meta['mean_margin']
 
@@ -68,6 +69,7 @@ def viz_Qmap(batch, meta, alpha=0.5, r=2):
     for n in indices:
         tensor = Qmap_norm[n]
         for t, hmap in enumerate(tensor):
+            fused[n][t][tmap[n][0].cpu() > 0.1] = 255
             hmap = np.uint8(cm.inferno(hmap)[...,:3]*255)
             img = cv2.addWeighted(hmap, alpha, fused[n][t], 1, 0)
 
@@ -152,8 +154,8 @@ def viz_td(batch, meta, alpha=0.5, r=2):
         _margin_loss = f'{margin_loss[i].mean().item():.2f}'
         _batch_loss = f'{batch_loss[i].item():.2f}'
         _ndraw.text((5, 30), f'batch_loss = {_td_loss} + {_margin_loss} = {_batch_loss}', text_color)
-        #_switch = int(margin_switch[i])
-        #_ndraw.text((5, 40), f'margin_switch = {_switch}', text_color)
+        _switch = int(margin_switch[i])
+        _ndraw.text((5, 40), f'margin_switch = {_switch}', text_color)
         _combined = np.hstack((np.array(_topdown), np.array(_ntopdown)))
         images.append(_combined)
     
@@ -210,7 +212,7 @@ class MapModel(pl.LightningModule):
         self.train_data.dataset.epoch_num = self.current_epoch
         self.val_data.dataset.epoch_num = self.current_epoch
 
-    def training_step(self, batch, batch_nb):
+    def training_step(self, batch, batch_nb, show=False):
         state, action, reward, next_state, done, info = batch
         topdown, target = state
         points_expert = (action + 1) / 2 * 255
@@ -246,12 +248,12 @@ class MapModel(pl.LightningModule):
 
         margin_switch = info['margin_switch']
         margin_loss = self.hparams.lambda_margin * margin.mean(dim=1,keepdim=True) #N,1
-        #margin_loss = margin_switch * margin_loss
+        margin_loss = margin_switch * margin_loss
 
         batch_loss = td_loss + margin_loss #N,1
         loss = torch.mean(batch_loss, dim=0) #1,
 
-        if batch_nb % 250 == 0:
+        if batch_nb % 250 == 0 or show:
             meta = {
                 'hparams': self.hparams,
                 'Qmap': Qmap, 'nQmap': nQmap, 
@@ -266,7 +268,7 @@ class MapModel(pl.LightningModule):
                 'margin_switch': margin_switch,
             }
             vQmap, vtd = viz_Qmap(batch, meta), viz_td(batch, meta)
-            if HAS_DISPLAY:
+            if HAS_DISPLAY or show:
                 cv2.imshow('td', cv2.cvtColor(vtd, cv2.COLOR_BGR2RGB))
                 cv2.imshow('Qmap', cv2.cvtColor(vQmap, cv2.COLOR_BGR2RGB))
                 cv2.waitKey(1000)
@@ -291,7 +293,7 @@ class MapModel(pl.LightningModule):
         return {'loss': loss}
 
     # make this a validation episode rollout?
-    def validation_step(self, batch, batch_nb):
+    def validation_step(self, batch, batch_nb, show=False):
         state, action, reward, next_state, done, info = batch
         topdown, target = state
         points_expert = (action+1)/2*255
@@ -329,11 +331,11 @@ class MapModel(pl.LightningModule):
         margin = max_margin + mean_margin
 
         margin_loss = self.hparams.lambda_margin * margin.mean(dim=1,keepdim=True) #N,1
-        #margin_loss = margin_switch * margin_loss
+        margin_loss = margin_switch * margin_loss
 
         batch_loss = td_loss + margin_loss
 
-        if batch_nb == 0 and self.logger != None:
+        if batch_nb == 0 and self.logger != None or show:
             meta = {
                 'hparams': self.hparams,
                 'Qmap': Qmap, 'nQmap': nQmap, 
@@ -348,17 +350,19 @@ class MapModel(pl.LightningModule):
                 'margin_switch': margin_switch
             }
             vQmap, vtd = viz_Qmap(batch, meta), viz_td(batch, meta)
-            if HAS_DISPLAY:
+            if HAS_DISPLAY or show:
                 cv2.imshow('td', cv2.cvtColor(vtd, cv2.COLOR_BGR2RGB))
                 cv2.imshow('Qmap', cv2.cvtColor(vQmap, cv2.COLOR_BGR2RGB))
-                cv2.waitKey(5000)
+                #cv2.waitKey(5000)
+                cv2.waitKey(0)
 
             metrics = {
                         'val_td': wandb.Image(vtd),
                         'val_Qmap': wandb.Image(vQmap),
                         'val_Qmap_hist': make_histogram(Qmap, 'Qmap')
                         }
-            self.logger.log_metrics(metrics, self.global_step)
+            if self.logger != None:
+                self.logger.log_metrics(metrics, self.global_step)
         val_loss = torch.mean(batch_loss,axis=0)
         return {'val_loss': val_loss,
                 f'val_TD({self.hparams.n})_loss': torch.mean(td_loss,axis=0),
