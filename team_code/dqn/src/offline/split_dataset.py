@@ -125,6 +125,7 @@ class SplitCarlaDataset(Dataset):
         assert len(self.bad_indices) < self.dataset_len, \
                 'no valid examples'
         self.hard_indices = [i for i in self.hard_indices if i not in self.bad_indices]
+        self.hard_indices = sorted(list(set(self.hard_indices)))
         assert len(self.hard_indices) > 0 or self.hparams.hard_prop == 0, \
                 'no hard examples present'
         print('%d frames.' % self.dataset_len)
