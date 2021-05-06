@@ -73,7 +73,6 @@ def viz_weights(topdown, target, points, weights, loss_point=None, alpha=0.5, us
         images = cv2.cvtColor(images, cv2.COLOR_RGB2BGR)
         if HAS_DISPLAY:
             cv2.imshow('debug', images)
-            cv2.waitKey(1000)
     return images
 
 @torch.no_grad()
@@ -139,7 +138,6 @@ def viz_td(batch, out, between, out_cmd, loss_point, loss_cmd, use_wandb=False):
         images = wandb.Image(images)
     elif HAS_DISPLAY:
         cv2.imshow('debug', images)
-        cv2.waitKey(1000)
 
     return images
 
@@ -160,11 +158,11 @@ class MapModel(pl.LightningModule):
         target_heatmap = self.to_heatmap(target, topdown)[:, None]
         input = torch.cat((topdown, target_heatmap), 1)
         points, logits = self.net(input, temperature=self.temperature.item())
-        return points, target_heatmap, logits
+        return points, logits, target_heatmap
 
     def training_step(self, batch, batch_nb):
         img, topdown, points, target, actions, meta = batch
-        points_lbc, target_heatmap, logits = self.forward(topdown, target)
+        points_lbc, logits, target_heatmap= self.forward(topdown, target)
 
         alpha = torch.rand(points_lbc.shape).type_as(points_lbc)
         between = alpha * points_lbc + (1-alpha) * points
@@ -187,6 +185,8 @@ class MapModel(pl.LightningModule):
         if batch_nb % 250 == 0:
             metrics['train_image'] = viz_td(batch, points_lbc, between, out_cmd, loss_point, loss_cmd, use_wandb=self.hparams.log)
             metrics['train_heatmap'] = viz_weights(topdown, target, points_lbc, logits, loss_point, use_wandb=self.hparams.log)
+            if HAS_DISPLAY:
+                cv2.waitKey(1)
         if self.logger != None:
             #for _, item in metrics.items():
             #    print(_, type(item))
@@ -197,7 +197,7 @@ class MapModel(pl.LightningModule):
 
     def validation_step(self, batch, batch_nb):
         img, topdown, points, target, actions, meta = batch
-        points_lbc, target_heatmap, logits = self.forward(topdown, target)
+        points_lbc, logits, target_heatmap = self.forward(topdown, target)
 
         alpha = 0.0
         between = alpha * points_lbc + (1-alpha) * points
@@ -217,6 +217,9 @@ class MapModel(pl.LightningModule):
                 'val_image': img,
                 'val_heatmap': viz_weights(topdown, target, points_lbc, logits, loss_point, use_wandb=self.hparams.log)
                 }, self.global_step)
+            if HAS_DISPLAY:
+                cv2.waitKey(1)
+
 
         result = {
                 'val_loss': loss,

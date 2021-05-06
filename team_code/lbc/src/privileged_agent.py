@@ -33,6 +33,7 @@ class PrivilegedAgent(MapAgent):
         self.aconfig = dict_to_sns(self.config.agent)
         #self.save_root = Path(self.config.save_root)
 
+        self.save_freq = 1
         self.net = MapModel.load_from_checkpoint(str(self.aconfig.weights_path))
         self.net.cuda()
         self.net.eval()
@@ -116,7 +117,7 @@ class PrivilegedAgent(MapAgent):
     def run_step(self, input_data, timestamp):
         if self.aconfig.control_mode == 'learned':
             return self.run_step_learned_control(input_data, timestamp)
-        elif self.aconfig.control_mode == 'pid':
+        elif self.aconfig.control_mode == 'points':
             return self.run_step_pid_control(input_data, timestamp)
         else:
             raise Exception
@@ -134,12 +135,13 @@ class PrivilegedAgent(MapAgent):
         topdown = np.array(topdown)
         topdown = preprocess_semantic(topdown)
         topdown = topdown[None].cuda()
+        tick_data['topdown_processed'] = topdown.clone()
 
         target = torch.from_numpy(tick_data['target'])
         target = target[None].cuda()
 
         #points, (target_cam, _) = self.net.forward(img, target)
-        points, target_heatmap, logits = self.net.forward(topdown, target) # world frame
+        points, logits, target_heatmap = self.net.forward(topdown, target) # world frame
         points_map = points.clone().cpu().squeeze()
         points_map = points_map + 1
         points_map = points_map / 2 * 256
@@ -147,7 +149,7 @@ class PrivilegedAgent(MapAgent):
         points_world = self.converter.map_to_world(points_map).numpy()
         aim = (points_world[1] + points_world[0]) / 2.0
 
-        control = self.net.controller(points).cpu().squeeze()
+        control_out = self.net.controller(points).cpu().squeeze()
         steer = control[0].item()
         desired_speed = control[1].item()
         speed = tick_data['speed']
@@ -179,7 +181,7 @@ class PrivilegedAgent(MapAgent):
 
         if DEBUG:
 
-            images = viz_weights(topdown, target, points, logits)
+            images = viz_weights(tick_data['topdown_processed'], target, points, logits)
             cv2.imshow('heatmaps', images)
 
         return control
@@ -195,11 +197,12 @@ class PrivilegedAgent(MapAgent):
         topdown = np.array(topdown)
         topdown = preprocess_semantic(topdown)
         topdown = topdown[None].cuda()
+        tick_data['topdown_processed'] = topdown.clone()
 
         target = torch.from_numpy(tick_data['target'])
         target = target[None].cuda()
 
-        points, target_heatmap, logits = self.net.forward(topdown, target) # world frame
+        points, logits, target_heatmap = self.net.forward(topdown, target) # world frame
 
         points_map = points.clone().cpu().squeeze()
         points_map = points_map + 1
@@ -230,7 +233,7 @@ class PrivilegedAgent(MapAgent):
         tick_data['points_map'] = points_map
         tick_data['aim_world'] = aim
 
-        if self.config.save_data:
+        if self.config.save_data and self.step % self.save_freq == 0:
             self.save_data(tick_data, control)
             
         if DEBUG or self.config.save_debug and self.step % 4 == 0:
@@ -239,14 +242,14 @@ class PrivilegedAgent(MapAgent):
             self.debug_display(
                     tick_data, steer, throttle, brake, desired_speed)
         if DEBUG:    
-            images = viz_weights(topdown, target, points, logits)
+            images = viz_weights(tick_data['topdown_processed'], target, points, logits)
             cv2.imshow('heatmaps', images)
 
         return control
 
 
     def save_data(self, tick_data, control):
-        frame = f'{self.step:06d}'
+        frame = f'{self.step//self.save_freq:06d}'
 
         Image.fromarray(tick_data['topdown']).save(
                 self.save_path / 'topdown' / f'{frame}.png')
@@ -256,6 +259,8 @@ class PrivilegedAgent(MapAgent):
         # prepare measurements for RL env to save
         pos = self._get_position(tick_data)
         x, y = tick_data['target']
+        theta = tick_data['theta']
+        speed = tick_data['speed']
         near_node, near_command = tick_data['wpt_route'][1]
         far_node, far_command = tick_data['cmd_route'][1]
 
@@ -267,8 +272,8 @@ class PrivilegedAgent(MapAgent):
             'x_command': far_node[0],
             'y_command': far_node[1],
             'command': near_command.value,
-            'theta': tick_data['theta'],
-            'speed': tick_data['speed'],
+            'theta': theta,
+            'speed': speed,
             'target_speed': tick_data['desired_speed'], 
             'steer': control.steer,
             'throttle': control.throttle,
