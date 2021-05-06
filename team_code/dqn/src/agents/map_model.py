@@ -493,11 +493,13 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if args.train_dataset is None:
-        args.train_dataset = Path('/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest_toy')
+        #args.train_dataset = Path('/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest_toy')
+        args.train_dataset = Path('/data/aaronhua/leaderboard/data/lbc/privileged_agent/privileged_devtest_toy')
         #args.train_dataset = Path('/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest')
     if args.val_dataset is None:
+        args.val_dataset = Path('/data/aaronhua/leaderboard/data/lbc/privileged_agent/privileged_devtest_toy')
         #args.val_dataset = Path('/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest')
-        args.val_dataset = Path('/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest_toy')
+        #args.val_dataset = Path('/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest_toy')
     if args.gpus[0] == -1:
         args.gpus = -1
 

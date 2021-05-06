@@ -298,7 +298,12 @@ class SplitCarlaDataset(Dataset):
             points = torch.clamp(points, 0, 256)
             points = (points / 256) * 2 - 1
         elif self.expert_type == 'privileged':
-            pass
+            topdown_frame = self.all_frames[i]
+            route, rep, _, frame = topdown_frame.parts[-4:]
+            frame = frame[:-4]
+            with open(self.dataset_root / route / rep / 'points_lbc' / f'{frame}.npy', 'rb') as f:
+                points = np.load(f)
+            points = (points / 256) * 2 - 1
         else:
             print('unknown expert type')
             raise Exception
@@ -317,8 +322,11 @@ if __name__ == '__main__':
     
     to_heatmap = ToHeatmap(5)
     parser = argparse.ArgumentParser()
+    #parser.add_argument('--dataset_dir', type=Path,
+    #        default='/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest_toy')
     parser.add_argument('--dataset_dir', type=Path,
-            default='/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest_toy')
+            default='/data/aaronhua/leaderboard/data/lbc/privileged_agent/privileged_devtest_toy')
+
     #parser.add_argument('--dataset_dir', type=Path, 
     #        default='/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest')
     #parser.add_argument('--weights_path', type=str,
@@ -330,7 +338,8 @@ if __name__ == '__main__':
     parser.add_argument('--save_visuals', action='store_true')
     parser.add_argument('--throttle_mode', type=str, default='speed')
     parser.add_argument('--max_speed', type=int, default=10)
-    parser.add_argument('--hard_prop', type=float, default=0.5)
+    parser.add_argument('--hard_prop', type=float, default=0.0)
+    parser.add_argument('--max_prop_epoch', type=float, default=0.0)
     parser.add_argument('--max_epochs', type=int, default=10)
 
     args = parser.parse_args()
@@ -354,6 +363,5 @@ if __name__ == '__main__':
             for x,y in points:
                 draw.ellipse((x-2,y-2,x+2,y+2), (255,0,0))
             topdown = cv2.cvtColor(np.array(topdown), cv2.COLOR_RGB2BGR)
-            #cv2.imshow('topdown', topdown)
-            #cv2.waitKey(0)
-            #cv2.waitKey(100)
+            cv2.imshow('topdown', topdown)
+            cv2.waitKey(100)
