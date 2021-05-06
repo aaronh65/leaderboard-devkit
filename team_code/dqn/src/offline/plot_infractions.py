@@ -3,9 +3,9 @@ from pathlib import Path
 import numpy as np
 import argparse
 from dqn.src.offline.split_dataset import get_dataloader
-import matplotlib as mpl
-mpl.use('TkAgg')
-import matplotlib.pyplot as plt
+#import matplotlib as mpl
+#mpl.use('TkAgg')
+#import matplotlib.pyplot as plt
 parser = argparse.ArgumentParser()
 #parser.add_argument('--dataset_dir', type=Path,
 #        default='/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest_toy')
