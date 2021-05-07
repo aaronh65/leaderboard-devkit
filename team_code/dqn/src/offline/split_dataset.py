@@ -204,7 +204,7 @@ class SplitCarlaDataset(Dataset):
         reward = torch.FloatTensor(np.float32([reward]))
 
         # turn off margin if expert action is bad?
-        margin_switch = 0 if reward < 0 else 1
+        margin_switch = self.hparams.margin_switch if reward < 0 else 1
         margin_switch = torch.FloatTensor(np.float32([margin_switch]))
         
         # topdown, target, points
