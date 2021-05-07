@@ -1,4 +1,5 @@
 import argparse
+import cv2
 from pathlib import Path
 from torch.utils.data import DataLoader
 from dqn.src.offline.split_dataset import SplitCarlaDataset, get_dataloader
@@ -6,15 +7,15 @@ from dqn.src.agents.map_model import MapModel
 from dqn.src.agents.heatmap import ToHeatmap
 
 
-model_path = '/data/aaronhua/leaderboard/training/dqn/offline/20210505_012133/last.ckpt'
-model_path = '/data/aaronhua/leaderboard/training/dqn/offline/20210505_012135/last.ckpt'
+model1_path = '/data/aaronhua/leaderboard/training/dqn/offline/20210505_012133/last.ckpt'
+model2_path = '/data/aaronhua/leaderboard/training/dqn/offline/20210506_003502/last.ckpt'
 
 to_heatmap = ToHeatmap(5)
 parser = argparse.ArgumentParser()
-parser.add_argument('--dataset_dir', type=Path,
-        default='/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest_toy')
-#parser.add_argument('--dataset_dir', type=Path, 
-#        default='/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest')
+#parser.add_argument('--dataset_dir', type=Path,
+#        default='/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest_toy')
+parser.add_argument('--dataset_dir', type=Path, 
+        default='/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest')
 #parser.add_argument('--weights_path', type=str,
 #        default='/data/aaronhua/leaderboard/training/lbc/20210405_225046/epoch=22.ckpt')
 parser.add_argument('--n', type=int, default=20)
@@ -30,9 +31,13 @@ dataset_dir = Path(args.dataset_dir) / 'data'
 
 
 loader = get_dataloader(args,args.dataset_dir,is_train=True)
-model = MapModel.load_from_checkpoint(model_path)
-model.logger = None
-model.cuda()
+model1 = MapModel.load_from_checkpoint(model1_path)
+model1.logger = None
+model1.cuda()
+
+model2 = MapModel.load_from_checkpoint(model2_path)
+model2.logger = None
+model2.cuda()
 
 for batch_nb, batch in enumerate(loader):
     state, action, reward, next_state, done, info = batch
@@ -46,7 +51,9 @@ for batch_nb, batch in enumerate(loader):
     for key, item in info.items():
         info[key] = item.cuda()
     batch = state, action, reward, next_state, done, info
-    model.validation_step(batch, batch_nb, show=True)
+    model1.validation_step(batch, batch_nb, show=True, no_waitkey=1)
+    model2.validation_step(batch, batch_nb, show=True, no_waitkey=2)
+    cv2.waitKey(0)
 
 
 #episodes = list()

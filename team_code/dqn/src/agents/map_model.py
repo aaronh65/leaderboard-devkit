@@ -75,16 +75,18 @@ def viz_Qmap(batch, meta, alpha=0.5, r=2):
 
             img = Image.fromarray(img)
             draw = ImageDraw.Draw(img)
-            draw.text((5,10), f'Q max/exp/min: {Q_maxs[n][t]:.2f}/{Q_expert[n][t]:.2f}/{Q_mins[n][t]:.2f}', text_color)
-            draw.text((5,20), f'mgn mean/max:  {mean_margin[n][t]:.2f}/{max_margin[n][t]:.2f}', text_color)
+            _metadata = decode_str(info['metadata'][n])
+            draw.text((5,10), f'meta = {_metadata}', text_color)
+            draw.text((5,20), f'Q max/exp/min: {Q_maxs[n][t]:.2f}/{Q_expert[n][t]:.2f}/{Q_mins[n][t]:.2f}', text_color)
+            draw.text((5,30), f'mgn mean/max:  {mean_margin[n][t]:.2f}/{max_margin[n][t]:.2f}', text_color)
             x, y = points_min[n][t] % W, points_min[n][t] // W
             draw.ellipse((x-r,y-r,x+r,y+r), (255,255,255))
-            x, y = points_max[n][t] % W, points_max[n][t] // W
-            draw.ellipse((x-r,y-r,x+r,y+r), (0,0,255))
-            draw.text((5,30), f'max_action: {x:.2f},{y:.2f}', text_color)
             x, y= points_expert[n][t]
             draw.ellipse((x-r,y-r,x+r,y+r), expert_color)
             draw.text((5,40), f'exp_action: {x:.2f},{y:.2f}', text_color)
+            x, y = points_max[n][t] % W, points_max[n][t] // W
+            draw.ellipse((x-r,y-r,x+r,y+r), (0,0,255))
+            draw.text((5,50), f'max_action: {x:.2f},{y:.2f}', text_color)
 
             #img = cv2.cvtColor(np.array(img), cv2.COLOR_BGR2RGB)
             fused[n][t] = np.array(img)
@@ -101,6 +103,7 @@ def viz_td(batch, meta, alpha=0.5, r=2):
     Qmap, nQmap = meta['Qmap'], meta['nQmap']
     tmap, ntmap = meta['tmap'], meta['ntmap']
     npoints_student = meta['npoints_student']
+    points_student = meta['points_student']
     hparams = meta['hparams']
     batch_loss, td_loss, margin = meta['batch_loss'], meta['td_loss'], meta['margin']
     margin_loss = margin.mean(1).detach().cpu().numpy()
@@ -109,6 +112,7 @@ def viz_td(batch, meta, alpha=0.5, r=2):
     state, action, reward, next_state, done, info = batch
     topdown, target = state
     points_expert = (action+1)/2*255
+    npoints_expert = (info['naction']+1)/2*255
     fused = fuse_logits(topdown, Qmap)
     ntopdown, ntarget = next_state
     nfused = fuse_logits(ntopdown, nQmap)
@@ -128,9 +132,11 @@ def viz_td(batch, meta, alpha=0.5, r=2):
         _points_expert = points_expert[i].cpu().numpy().astype(np.uint8) # (4,2)
         for x, y in _points_expert:
             _draw.ellipse((x-r, y-r, x+r, y+r), expert_color)
+        _points_student = points_student[i].cpu().numpy().astype(np.uint8) # (4,2)
+        for x, y in _points_student:
+            _draw.ellipse((x-r, y-r, x+r, y+r), student_color)
         x, y = np.mean(_points_expert[0:2], axis=0)
         _draw.ellipse((x-r, y-r, x+r, y+r), aim_color)
-
         _draw.text((5, 10), f'Q = {Q[i].item():.2f}', text_color)
         _draw.text((5, 20), f'reward = {reward[i].item():.3f}', text_color)
         _draw.text((5, 30), f'discount = {discount[i].item():.2f}', text_color)
@@ -141,6 +147,9 @@ def viz_td(batch, meta, alpha=0.5, r=2):
         _ntopdown[ntmap[i][0].cpu() > 0.1] = 255
         _ntopdown = Image.fromarray(_ntopdown)
         _ndraw = ImageDraw.Draw(_ntopdown)
+        _npoints_expert = npoints_expert[i].cpu().numpy().astype(np.uint8) # (4,2)
+        for x, y in _npoints_expert:
+            _ndraw.ellipse((x-r, y-r, x+r, y+r), expert_color)
         _npoints_student = npoints_student[i].cpu().numpy().astype(np.uint8) # (4,2)
         for x, y in _npoints_student:
             _ndraw.ellipse((x-r, y-r, x+r, y+r), student_color)
@@ -212,12 +221,13 @@ class MapModel(pl.LightningModule):
         self.train_data.dataset.epoch_num = self.current_epoch
         self.val_data.dataset.epoch_num = self.current_epoch
 
-    def training_step(self, batch, batch_nb, show=False):
+    def training_step(self, batch, batch_nb, show=False, no_waitkey=0):
         state, action, reward, next_state, done, info = batch
         topdown, target = state
         points_expert = (action + 1) / 2 * 255
 
         points, Qmap, tmap = self.forward(topdown, target)
+        points_student, _ = self.get_argmax_actions(Qmap)
         Q_all = spatial_select(Qmap, points_expert)
         Q = torch.mean(Q_all, axis=1, keepdim=False)
 
@@ -258,6 +268,7 @@ class MapModel(pl.LightningModule):
                 'hparams': self.hparams,
                 'Qmap': Qmap, 'nQmap': nQmap, 
                 'Q': Q, 'nQ': nQ, 'Q_expert': Q_expert_all.squeeze(dim=-1),
+                'points_student': points_student,
                 'npoints_student': npoints_student,
                 'tmap': tmap, 'ntmap': ntmap,
                 'batch_loss': batch_loss,
@@ -269,9 +280,10 @@ class MapModel(pl.LightningModule):
             }
             vQmap, vtd = viz_Qmap(batch, meta), viz_td(batch, meta)
             if HAS_DISPLAY or show:
-                cv2.imshow('td', cv2.cvtColor(vtd, cv2.COLOR_BGR2RGB))
-                cv2.imshow('Qmap', cv2.cvtColor(vQmap, cv2.COLOR_BGR2RGB))
-                cv2.waitKey(1000)
+                cv2.imshow(f'td_{no_waitkey}', cv2.cvtColor(vtd, cv2.COLOR_BGR2RGB))
+                cv2.imshow(f'Qmap_{no_waitkey}', cv2.cvtColor(vQmap, cv2.COLOR_BGR2RGB))
+                if not no_waitkey:
+                    cv2.waitKey(1000)
 
         if self.logger != None:
             
@@ -293,13 +305,13 @@ class MapModel(pl.LightningModule):
         return {'loss': loss}
 
     # make this a validation episode rollout?
-    def validation_step(self, batch, batch_nb, show=False):
+    def validation_step(self, batch, batch_nb, show=False, no_waitkey=0):
         state, action, reward, next_state, done, info = batch
         topdown, target = state
         points_expert = (action+1)/2*255
-
         with torch.no_grad():
             points, Qmap, tmap = self.forward(topdown, target)
+        points_student, _ = self.get_argmax_actions(Qmap)
         Q_all = spatial_select(Qmap, points_expert) #NxT
         Q = torch.mean(Q_all, axis=1, keepdim=False)
 
@@ -340,6 +352,7 @@ class MapModel(pl.LightningModule):
                 'hparams': self.hparams,
                 'Qmap': Qmap, 'nQmap': nQmap, 
                 'Q': Q, 'nQ': nQ, 'Q_expert': Q_expert_all.squeeze(dim=-1),
+                'points_student': points_student,
                 'npoints_student': npoints_student,
                 'tmap': tmap, 'ntmap': ntmap,
                 'batch_loss': batch_loss,
@@ -351,10 +364,11 @@ class MapModel(pl.LightningModule):
             }
             vQmap, vtd = viz_Qmap(batch, meta), viz_td(batch, meta)
             if HAS_DISPLAY or show:
-                cv2.imshow('td', cv2.cvtColor(vtd, cv2.COLOR_BGR2RGB))
-                cv2.imshow('Qmap', cv2.cvtColor(vQmap, cv2.COLOR_BGR2RGB))
+                cv2.imshow(f'td_{no_waitkey}', cv2.cvtColor(vtd, cv2.COLOR_BGR2RGB))
+                cv2.imshow(f'Qmap_{no_waitkey}', cv2.cvtColor(vQmap, cv2.COLOR_BGR2RGB))
                 #cv2.waitKey(5000)
-                cv2.waitKey(0)
+                if not no_waitkey:
+                    cv2.waitKey(1000)
 
             metrics = {
                         'val_td': wandb.Image(vtd),
@@ -494,13 +508,15 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if args.train_dataset is None:
+        #args.train_dataset = Path('/data/aaronhua/leaderboard/data/lbc/privileged_agent/privileged_devtest_toy')
+        args.train_dataset = Path('/data/aaronhua/leaderboard/data/lbc/privileged_agent/privileged_devtest')
         #args.train_dataset = Path('/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest_toy')
-        args.train_dataset = Path('/data/aaronhua/leaderboard/data/lbc/privileged_agent/privileged_devtest_toy')
         #args.train_dataset = Path('/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest')
     if args.val_dataset is None:
-        args.val_dataset = Path('/data/aaronhua/leaderboard/data/lbc/privileged_agent/privileged_devtest_toy')
+        #args.val_dataset = Path('/data/aaronhua/leaderboard/data/lbc/privileged_agent/privileged_devtest_toy')
+        #args.val_dataset = Path('/data/aaronhua/leaderboard/data/lbc/privileged_agent/privileged_devtest')
         #args.val_dataset = Path('/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest')
-        #args.val_dataset = Path('/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest_toy')
+        args.val_dataset = Path('/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest_toy')
     if args.gpus[0] == -1:
         args.gpus = -1
 
