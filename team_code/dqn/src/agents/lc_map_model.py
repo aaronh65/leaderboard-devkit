@@ -459,6 +459,7 @@ if __name__ == '__main__':
     parser.add_argument('--max_epochs', type=int, default=50)
     parser.add_argument('--num_workers', type=int, default=4)
     parser.add_argument('--gamma', type=float, default=0.99)
+    parser.add_argument('--margin_switch', type=float, default=0.0)
     parser.add_argument('--lambda_margin', type=float, default=1.0)
     parser.add_argument('--lambda_td', type=float, default=1.0)
     parser.add_argument('--lr', type=float, default=1e-4)
@@ -484,11 +485,13 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if args.train_dataset is None:
-        args.train_dataset = Path('/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest')
+        #args.train_dataset = Path('/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest')
         #args.train_dataset = Path('/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest_toy')
+        args.train_dataset = Path('/data/aaronhua/leaderboard/data/lbc/privileged_agent/privileged_devtest_toy')
     if args.val_dataset is None:
-        args.val_dataset = Path('/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest')
+        #args.val_dataset = Path('/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest')
         #args.val_dataset = Path('/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest_toy')
+        args.val_dataset = Path('/data/aaronhua/leaderboard/data/lbc/privileged_agent/privileged_devtest_toy')
     if args.gpus[0] == -1:
         args.gpus = -1
 
