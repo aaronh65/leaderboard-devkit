@@ -499,8 +499,8 @@ if __name__ == '__main__':
 
     # Model args
     parser.add_argument('--heatmap_radius', type=int, default=5)
-    parser.add_argument('--expert_radius', type=int, default=5)
-    parser.add_argument('--expert_margin', type=float, default=5.0)
+    parser.add_argument('--expert_radius', type=int, default=2)
+    parser.add_argument('--expert_margin', type=float, default=1.0)
     parser.add_argument('--temperature', type=float, default=10.0)
     parser.add_argument('--hack', action='store_true', default=True)
     parser.add_argument('--control_type', type=str, default='points')

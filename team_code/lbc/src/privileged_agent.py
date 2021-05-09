@@ -115,110 +115,43 @@ class PrivilegedAgent(MapAgent):
 
     @torch.no_grad()
     def run_step(self, input_data, timestamp):
+        if not self.initialized:
+            self._init()
+        tick_data = self.tick(input_data)
+
+        topdown = Image.fromarray(tick_data['topdown'])
+        topdown = topdown.crop((128, 0, 128+256, 256))
+        topdown = np.array(topdown)
+        topdown = preprocess_semantic(topdown)
+        topdown = topdown[None].cuda()
+        tick_data['topdown_processed'] = topdown.clone()
+
+        target = torch.from_numpy(tick_data['target'])
+        target = target[None].cuda()
+
+        # get points in map/world
+        points, logits, target_heatmap = self.net.forward(topdown, target) 
+        points_map = points.clone().cpu().squeeze()
+        points_map = points_map + 1
+        points_map = points_map / 2 * 256
+        points_map = np.clip(points_map, 0, 256)
+        points_world = self.converter.map_to_world(points_map).numpy()
+        aim = (points_world[1] + points_world[0]) / 2.0
+
         if self.aconfig.control_mode == 'learned':
-            return self.run_step_learned_control(input_data, timestamp)
+            control_out = self.net.controller(points).cpu().squeeze()
+            steer = control_out[0].item()
+            desired_speed = control_out[1].item()
         elif self.aconfig.control_mode == 'points':
-            return self.run_step_pid_control(input_data, timestamp)
+            angle = np.degrees(np.pi / 2 - np.arctan2(aim[1], aim[0])) / 90
+            steer = self._turn_controller.step(angle)
+            steer = np.clip(steer, -1.0, 1.0)
+            desired_speed = np.linalg.norm(points_world[0] - points_world[1]) * 2.0
         else:
             raise Exception
 
-    @torch.no_grad()
-    def run_step_learned_control(self, input_data, timestamp):
-        if not self.initialized:
-            self._init()
-
-        tick_data = self.tick(input_data)
-
-        #img = torchvision.transforms.functional.to_tensor(tick_data['image'])
-        topdown = Image.fromarray(tick_data['topdown'])
-        topdown = topdown.crop((128, 0, 128+256, 256))
-        topdown = np.array(topdown)
-        topdown = preprocess_semantic(topdown)
-        topdown = topdown[None].cuda()
-        tick_data['topdown_processed'] = topdown.clone()
-
-        target = torch.from_numpy(tick_data['target'])
-        target = target[None].cuda()
-
-        #points, (target_cam, _) = self.net.forward(img, target)
-        points, logits, target_heatmap = self.net.forward(topdown, target) # world frame
-        points_map = points.clone().cpu().squeeze()
-        points_map = points_map + 1
-        points_map = points_map / 2 * 256
-        points_map = np.clip(points_map, 0, 256)
-        points_world = self.converter.map_to_world(points_map).numpy()
-        aim = (points_world[1] + points_world[0]) / 2.0
-
-        control_out = self.net.controller(points).cpu().squeeze()
-        steer = control[0].item()
-        desired_speed = control[1].item()
         speed = tick_data['speed']
-
         brake = desired_speed < 0.4 or (speed / desired_speed) > 1.1
-
-        delta = np.clip(desired_speed - speed, 0.0, 0.25)
-        throttle = self._speed_controller.step(delta)
-        throttle = np.clip(throttle, 0.0, 0.75)
-        throttle = throttle if not brake else 0.0
-
-        control = carla.VehicleControl()
-        control.steer = steer
-        control.throttle = throttle
-        control.brake = float(brake)
-
-        tick_data['desired_speed'] = desired_speed
-        tick_data['points_map'] = points_map
-        tick_data['aim_world'] = aim
-
-        if self.config.save_data:
-            self.save_data(tick_data, control)
-
-        if DEBUG or self.config.save_debug and self.step % 4 == 0:
-
-            # transform image model cam points to overhead BEV image (spectator frame?)
-            self.debug_display(
-                    tick_data, steer, throttle, brake, desired_speed)
-
-        if DEBUG:
-
-            images = viz_weights(tick_data['topdown_processed'], target, points, logits)
-            cv2.imshow('heatmaps', images)
-
-        return control
-
-    @torch.no_grad()
-    def run_step_pid_control(self, input_data, timestamp):
-        if not self.initialized:
-            self._init()
-
-        tick_data = self.tick(input_data)
-        topdown = Image.fromarray(tick_data['topdown'])
-        topdown = topdown.crop((128, 0, 128+256, 256))
-        topdown = np.array(topdown)
-        topdown = preprocess_semantic(topdown)
-        topdown = topdown[None].cuda()
-        tick_data['topdown_processed'] = topdown.clone()
-
-        target = torch.from_numpy(tick_data['target'])
-        target = target[None].cuda()
-
-        points, logits, target_heatmap = self.net.forward(topdown, target) # world frame
-
-        points_map = points.clone().cpu().squeeze()
-        points_map = points_map + 1
-        points_map = points_map / 2 * 256
-        points_map = np.clip(points_map, 0, 256)
-        points_world = self.converter.map_to_world(points_map).numpy()
-
-        aim = (points_world[1] + points_world[0]) / 2.0
-        angle = np.degrees(np.pi / 2 - np.arctan2(aim[1], aim[0])) / 90
-        steer = self._turn_controller.step(angle)
-        steer = np.clip(steer, -1.0, 1.0)
-
-        speed = tick_data['speed']
-        desired_speed = np.linalg.norm(points_world[0] - points_world[1]) * 2.0
-        brake = desired_speed < 0.4 or (speed / desired_speed) > 1.1
-
         delta = np.clip(desired_speed - speed, 0.0, 0.25)
         throttle = self._speed_controller.step(delta)
         throttle = np.clip(throttle, 0.0, 0.75)

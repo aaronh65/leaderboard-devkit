@@ -8,8 +8,8 @@ from pathlib import Path
 from carla import VehicleControl
 
 from misc.utils import *
-from lbc.carla_project.src.map_model import MapModel as LBCModel
 from dqn.src.agents.map_model import MapModel, fuse_logits
+from lbc.carla_project.src.map_model import MapModel as LBCModel
 from lbc.carla_project.src.dataset import preprocess_semantic
 from lbc.carla_project.src.converter import Converter
 from lbc.carla_project.src.common import CONVERTER, COLOR
@@ -38,6 +38,14 @@ class PrivilegedAgent(MapAgent):
         #self.save_root = Path(self.config.save_root)
 
         self.converter = Converter()
+
+        self.control_mode = self.aconfig.control_mode
+
+        #if self.control_mode == 'learned':
+
+        #elif self.control_mode == 'points':
+        #else:
+        #    from dqn.src.agents.map_model import MapModel, fuse_logits
 
         weights_path = self.aconfig.weights_path
         self.net = MapModel.load_from_checkpoint(weights_path)
@@ -138,18 +146,8 @@ class PrivilegedAgent(MapAgent):
 
     @torch.no_grad()
     def run_step(self, input_data, timestamp):
-        if self.aconfig.control_mode == 'learned':
-            return self.run_step_learned_control(input_data, timestamp)
-        elif self.aconfig.control_mode == 'points':
-            return self.run_step_pid_control(input_data, timestamp)
-        else:
-            raise Exception
-
-    @torch.no_grad()
-    def run_step(self, input_data, timestamp):
         if not self.initialized:
             self._init()
-
         tick_data = self.tick(input_data)
 
         # prepare inputs
@@ -158,45 +156,39 @@ class PrivilegedAgent(MapAgent):
         topdown = np.array(topdown)
         topdown = preprocess_semantic(topdown)
         topdown = topdown[None].cuda()
-        tick_data['topdown_pth'] = topdown.clone().cpu()
+        tick_data['topdown_processed'] = topdown.clone().cpu()
+
         target = torch.from_numpy(tick_data['target'])
         target = target[None].cuda()
 
         points, Qmap, tmap = self.net.forward(topdown, target)
-        points = points.clone().cpu().squeeze().numpy()
 
         # 1. is the model using argmax or soft argmax?
-        if self.aconfig.waypoint_mode == 'softargmax':
-            points_map = (points + 1) / 2 * 256 # (-1,1) to (0,256)
-        elif self.aconfig.waypoint_mode == 'argmax':
-            points_map, _ = self.net.get_argmax_actions(Qmap, explore=self.burn_in) # (1,4,2),(1,4,1)
-            points_map = points_map.clone().cpu().squeeze().numpy()
+        #if self.aconfig.waypoint_mode == 'softargmax':
+        #    points_map = points.clone().cpu().squeeze().numpy()
+        #    points_map = (points_map + 1) / 2 * 256 # (-1,1) to (0,256)
+        #elif self.aconfig.waypoint_mode == 'argmax':
+        points_map, _ = self.net.get_argmax_actions(Qmap) # (1,4,2),(1,4,1)
+        points_map = points_map.clone().cpu().squeeze().numpy()
         points_map = np.clip(points_map, 0, 256)
-        tick_data['points_map'] = points_map
-        tick_data['maps'] = (tmap, Qmap)
-
-        # 2. is there an expert present?
-        if self.aconfig.dagger_expert: # dagger and dqn
-            points_expert, _, _ = self.expert.forward(topdown, target)
-            points_expert = points_expert.clone().cpu().squeeze().numpy()
-            points_expert = (points_expert + 1) / 2 * 256
-            points_expert = np.clip(points_expert, 0, 256)
-            tick_data['points_expert'] = points_expert
-        elif self.aconfig.data_hack:
-            tick_data['points_expert'] = points_map
-
-        # get aim and controls
         points_world = self.converter.map_to_world(torch.Tensor(points_map)).numpy()
         aim = (points_world[1] + points_world[0]) / 2.0
-        tick_data['aim'] = self.converter.world_to_map(torch.Tensor(aim)).numpy()
-        desired_speed = np.linalg.norm(points_world[0] - points_world[1]) * 2.0
 
-        angle = np.degrees(np.pi / 2 - np.arctan2(aim[1], aim[0])) / 90
-        steer = self._turn_controller.step(angle)
-        steer = np.clip(steer, -1.0, 1.0)
+        if self.aconfig.control_mode == 'learned':
+            control_out = self.net.controller(points).cpu().squeeze()
+            steer = control_out[0].item()
+            desired_speed = control_out[1].item()
+        elif self.aconfig.control_mode == 'points':
+            angle = np.degrees(np.pi / 2 - np.arctan2(aim[1], aim[0])) / 90
+            steer = self._turn_controller.step(angle)
+            steer = np.clip(steer, -1.0, 1.0)
+            desired_speed = np.linalg.norm(points_world[0] - points_world[1]) * 2.0
+        else:
+            raise Exception
+
         speed = tick_data['speed']
-        delta = np.clip(desired_speed - speed, 0.0, 0.25)
         brake = desired_speed < 0.4 or (speed / desired_speed) > 1.1
+        delta = np.clip(desired_speed - speed, 0.0, 0.25)
         throttle = self._speed_controller.step(delta)
         throttle = np.clip(throttle, 0.0, 0.75)
         throttle = throttle if not brake else 0.0
@@ -206,16 +198,26 @@ class PrivilegedAgent(MapAgent):
         control.throttle = throttle
         control.brake = float(brake)
 
+        # debug mode - agent moves forward
         if self.aconfig.forward == True:
-            control.steer=0
-            control.throttle=1
+            control.steer = np.random.random()*2-1
+            control.throttle = 1
             control.brake = 0
 
-        self.control = control
+        # is there an expert present?
+        if self.aconfig.dagger_expert is True : # dagger and dqn
+            points_expert, _, _ = self.expert.forward(topdown, target)
+            points_expert = points_expert.clone().cpu().squeeze().numpy()
+            points_expert = (points_expert + 1) / 2 * 256
+            points_expert = np.clip(points_expert, 0, 256)
+            tick_data['points_expert'] = points_expert
 
-        #print(timestamp) # GAMETIME
+        tick_data['maps'] = (tmap, Qmap)
+        tick_data['points_map'] = points_map
+        tick_data['aim_world'] = aim
 
-        condition = not self.burn_in and not self.aconfig.mode == 'forward' # not random
+
+        condition = not self.burn_in and not self.aconfig.forward == True # not random
         condition = condition and (self.config.save_debug and self.step % 4 == 0)
         if condition or HAS_DISPLAY:
             self.debug_display(tick_data, steer, throttle, brake, desired_speed)
@@ -223,6 +225,7 @@ class PrivilegedAgent(MapAgent):
         if self.config.save_data:
             self.save_data(tick_data)
         self.tick_data = tick_data
+        #print(timestamp) # GAMETIME
         return control
 
     def debug_display(self, tick_data, steer, throttle, brake, desired_speed, r=2):
@@ -230,13 +233,13 @@ class PrivilegedAgent(MapAgent):
 
         # rgb image on left, topdown w/vmap image on right
         # plot Q points instead of LBC version (argmax instead of expectation)
-        aim = tick_data['aim']
+        aim = np.array(tick_data['aim_world'])
         route_map = tick_data['route_map']
         points_map = tick_data['points_map']
         points_expert = None if 'points_expert' not in tick_data.keys() else tick_data['points_expert']
         
         # (H,W,3) right image
-        topdown = tick_data['topdown_pth']
+        topdown = tick_data['topdown_processed']
         tmap, Qmap = tick_data['maps'] # (1, H, W)
         fused = fuse_logits(topdown, Qmap).squeeze()
         fused = Image.fromarray(fused)
@@ -246,14 +249,15 @@ class PrivilegedAgent(MapAgent):
         if points_expert is not None:
             for x, y in points_expert:
                 draw.ellipse((x-r, y-r, x+r, y+r), expert_color)
-        x, y = aim
+        x, y = self.converter.world_to_map(torch.Tensor(aim)).numpy()
+
         draw.ellipse((x-r, y-r, x+r, y+r), aim_color)
         for i, (x,y) in enumerate(route_map[:3]):
             draw.ellipse((x-2*r, y-2*r, x+2*r, y+2*r), route_colors[i])
         fused = np.array(fused)
 
         # left image
-        aim_cam = self.converter.map_to_cam(torch.Tensor(aim)).numpy()
+        aim_cam = self.converter.world_to_cam(torch.Tensor(aim)).numpy()
         route_cam = self.converter.map_to_cam(torch.Tensor(route_map)).numpy()
         points_cam = self.converter.map_to_cam(torch.Tensor(points_map)).numpy()
 
