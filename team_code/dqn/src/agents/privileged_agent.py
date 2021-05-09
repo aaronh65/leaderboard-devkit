@@ -41,12 +41,6 @@ class PrivilegedAgent(MapAgent):
 
         self.control_mode = self.aconfig.control_mode
 
-        #if self.control_mode == 'learned':
-
-        #elif self.control_mode == 'points':
-        #else:
-        #    from dqn.src.agents.map_model import MapModel, fuse_logits
-
         weights_path = self.aconfig.weights_path
         self.net = MapModel.load_from_checkpoint(weights_path)
         self.net.cuda()
