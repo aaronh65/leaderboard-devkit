@@ -4,3 +4,5 @@ TrafficEventType.COLLISION_VEHICLE: 255
 TrafficEventType.STOP_INFRACTION: 147
 TrafficEventType.TRAFFIC_LIGHT_INFRACTION: 10
 TrafficEventType.VEHICLE_BLOCKED: 4
+num_hard_frames: 6590
+num_infractions: 367

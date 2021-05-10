@@ -2,3 +2,5 @@ TrafficEventType.COLLISION_PEDESTRIAN: 18
 TrafficEventType.COLLISION_VEHICLE: 76
 TrafficEventType.STOP_INFRACTION: 4
 TrafficEventType.VEHICLE_BLOCKED: 3
+num_hard_frames: 1853
+num_infractions: 94

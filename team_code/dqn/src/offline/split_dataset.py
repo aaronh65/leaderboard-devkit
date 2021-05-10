@@ -89,7 +89,7 @@ class SplitCarlaDataset(Dataset):
         self.bad_indices = set()
         self.measurements = pd.DataFrame()
         thresh = GAP*STEPS + hparams.n + 1
-        infraction_count = 0
+        self.infraction_count = 0
         for i, _dataset_dir in enumerate(episodes): # 90-10 train/val
             topdown_frames = list(sorted((Path(_dataset_dir) / 'topdown').glob('*')))
             dataset_len = len(topdown_frames)
@@ -117,7 +117,7 @@ class SplitCarlaDataset(Dataset):
             hard_starts = np.clip(hard_starts, begin, end)
             for start, end in zip(hard_starts, hard_indices):
                 self.hard_indices.extend(range(start, end+1))
-            infraction_count += len(hard_indices)
+            self.infraction_count += len(hard_indices)
             
         # check indices
         self.dataset_len = len(self.all_frames)
@@ -129,7 +129,7 @@ class SplitCarlaDataset(Dataset):
         assert len(self.hard_indices) > 0 or self.hparams.hard_prop == 0, \
                 'no hard examples present'
         print('%d frames.' % self.dataset_len)
-        print('%d infractions.' % infraction_count)
+        print('%d infractions.' % self.infraction_count)
         print('%d hard frames.' % len(self.hard_indices))
 
         # n-step returns

@@ -41,8 +41,14 @@ for infraction in infractions:
 save_root = Path('infraction_counts')
 save_root.mkdir(exist_ok=True)
 dataset_name = args.dataset_dir.stem
+
+metrics = {
+    'num_infractions': loader.dataset.infraction_count,
+    'num_hard_frames': len(loader.dataset.hard_indices),
+    }
+metrics.update(counts_d)
 with open(str(save_root / f'{dataset_name}.yml'), 'w') as f:
-    yaml.dump(counts_d, f, default_flow_style=False)
+    yaml.dump(metrics, f, default_flow_style=False)
 #counts = [counts_d[i] for i in infraction_names]
 #infraction_names = [i.split('.')[1] for i in infraction_names]
 #plt.bar(1.5*np.arange(len(counts)), counts)

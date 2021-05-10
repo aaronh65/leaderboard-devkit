@@ -2,3 +2,5 @@ TrafficEventType.COLLISION_STATIC: 128
 TrafficEventType.COLLISION_VEHICLE: 169
 TrafficEventType.STOP_INFRACTION: 72
 TrafficEventType.TRAFFIC_LIGHT_INFRACTION: 26
+num_hard_frames: 5543
+num_infractions: 323
