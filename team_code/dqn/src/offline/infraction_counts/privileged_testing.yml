@@ -4,3 +4,4 @@ TrafficEventType.STOP_INFRACTION: 72
 TrafficEventType.TRAFFIC_LIGHT_INFRACTION: 26
 num_hard_frames: 5543
 num_infractions: 323
+num_total_frames: 887747

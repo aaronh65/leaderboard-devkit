@@ -45,6 +45,7 @@ dataset_name = args.dataset_dir.stem
 metrics = {
     'num_infractions': loader.dataset.infraction_count,
     'num_hard_frames': len(loader.dataset.hard_indices),
+    'num_total_frames': loader.dataset.dataset_len,
     }
 metrics.update(counts_d)
 with open(str(save_root / f'{dataset_name}.yml'), 'w') as f:

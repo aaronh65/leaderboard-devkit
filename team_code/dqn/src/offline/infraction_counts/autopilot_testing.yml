@@ -4,3 +4,4 @@ TrafficEventType.TRAFFIC_LIGHT_INFRACTION: 34
 TrafficEventType.VEHICLE_BLOCKED: 7
 num_hard_frames: 3232
 num_infractions: 178
+num_total_frames: 1136403
