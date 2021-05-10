@@ -173,11 +173,15 @@ class PrivilegedAgent(MapAgent):
             control_out = self.net.controller(points).cpu().squeeze()
             steer = control_out[0].item()
             
+            print('learned')
             # CONVERT TO DISCRETIZED DQN ACTION
             if self.train_config.throttle_mode == 'throttle':
+                print('throttle')
                 brake = False
                 throttle = control_out[1].item()
+                desired_speed = 0
             elif self.train_config.throttle_mode == 'speed':
+                print('speed')
                 desired_speed = control_out[1].item()
                 speed = tick_data['speed']
                 brake = desired_speed < 0.4 or (speed / desired_speed) > 1.1
@@ -187,6 +191,7 @@ class PrivilegedAgent(MapAgent):
                 throttle = throttle if not brake else 0.0
 
         elif self.train_config.control_type == 'points':
+            print('points')
             angle = np.degrees(np.pi / 2 - np.arctan2(aim[1], aim[0])) / 90
             steer = self._turn_controller.step(angle)
             steer = np.clip(steer, -1.0, 1.0)
