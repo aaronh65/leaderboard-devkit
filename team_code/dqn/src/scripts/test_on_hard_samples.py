@@ -7,24 +7,28 @@ from dqn.src.agents.map_model import MapModel
 from dqn.src.agents.heatmap import ToHeatmap
 
 
-model1_path = '/data/aaronhua/leaderboard/training/dqn/offline/20210505_012133/last.ckpt'
-model2_path = '/data/aaronhua/leaderboard/training/dqn/offline/20210506_003502/last.ckpt'
+#model1_path = '/data/aaronhua/leaderboard/training/dqn/offline/20210505_012133/last.ckpt'
+#model2_path = '/data/aaronhua/leaderboard/training/dqn/offline/20210506_003502/last.ckpt'
+model1_path = '/data/aaronhua/leaderboard/training/dqn/offline/20210509_185853/last.ckpt'
+model2_path = '/data/aaronhua/leaderboard/training/dqn/offline/20210509_185309/epoch=19.ckpt'
 
 to_heatmap = ToHeatmap(5)
 parser = argparse.ArgumentParser()
-#parser.add_argument('--dataset_dir', type=Path,
-#        default='/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest_toy')
-parser.add_argument('--dataset_dir', type=Path, 
-        default='/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest')
-#parser.add_argument('--weights_path', type=str,
+parser.add_argument('--dataset_dir', type=Path,
+        default='/data/aaronhua/leaderboard/data/lbc/privileged_agent/privileged_devtest')
+#parser.add_argument('--dataset_dir', type=Path, 
+#        default='/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest')
+parser.add_argument('--weights_path', type=str,
 #        default='/data/aaronhua/leaderboard/training/lbc/20210405_225046/epoch=22.ckpt')
+        default='/data/aaronhua/leaderboard/training/lbc//epoch=22.ckpt')
 parser.add_argument('--n', type=int, default=20)
-parser.add_argument('--batch_size', type=int, default=4)
+parser.add_argument('--batch_size', type=int, default=2)
 parser.add_argument('--gamma', type=float, default=0.99)
 parser.add_argument('--num_workers', type=int, default=4)
 parser.add_argument('--save_visuals', action='store_true')
 parser.add_argument('--hard_prop', type=float, default=1.0)
 parser.add_argument('--max_epochs', type=int, default=10)
+parser.add_argument('--margin_switch', type=float, default=1.0)
 parser.add_argument('--max_prop_epoch', type=int, default=0)
 args = parser.parse_args()
 dataset_dir = Path(args.dataset_dir) / 'data'
