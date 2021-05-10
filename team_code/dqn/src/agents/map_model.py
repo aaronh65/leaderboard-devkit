@@ -47,7 +47,7 @@ def fuse_logits(topdown, logits, alpha=0.5):
 def viz_Qmap(batch, meta, alpha=0.5, r=2):
     state, action, reward, next_state, done, info = batch
     topdown, target = state
-    points_expert = (action+1)/2*255
+    points_expert = torch.clamp((action+1)/2*256, 255)
 
     Qmap, Q_expert = meta['Qmap'], meta['Q_expert']
     tmap, ntmap = meta['tmap'], meta['ntmap']
@@ -111,8 +111,8 @@ def viz_td(batch, meta, alpha=0.5, r=2):
 
     state, action, reward, next_state, done, info = batch
     topdown, target = state
-    points_expert = (action+1)/2*255
-    npoints_expert = (info['naction']+1)/2*255
+    points_expert = torch.clamp((action+1)/2*256, 0, 255)
+    npoints_expert = torch.clamp((info['naction']+1)/2*256, 0, 255)
     fused = fuse_logits(topdown, Qmap)
     ntopdown, ntarget = next_state
     nfused = fuse_logits(ntopdown, nQmap)
@@ -224,7 +224,7 @@ class MapModel(pl.LightningModule):
     def training_step(self, batch, batch_nb, show=False, no_waitkey=0):
         state, action, reward, next_state, done, info = batch
         topdown, target = state
-        points_expert = (action + 1) / 2 * 255
+        points_expert = torch.clamp((action + 1) / 2 * 256, 0, 255)
 
         points, Qmap, tmap = self.forward(topdown, target)
         points_student, _ = self.get_argmax_actions(Qmap)
@@ -308,7 +308,7 @@ class MapModel(pl.LightningModule):
     def validation_step(self, batch, batch_nb, show=False, no_waitkey=0):
         state, action, reward, next_state, done, info = batch
         topdown, target = state
-        points_expert = (action+1)/2*255
+        points_expert = torch.clamp((action + 1) / 2 * 256, 0, 255)
         with torch.no_grad():
             points, Qmap, tmap = self.forward(topdown, target)
         points_student, _ = self.get_argmax_actions(Qmap)
@@ -499,7 +499,7 @@ if __name__ == '__main__':
 
     # Model args
     parser.add_argument('--heatmap_radius', type=int, default=5)
-    parser.add_argument('--expert_radius', type=int, default=2)
+    parser.add_argument('--expert_radius', type=int, default=5)
     parser.add_argument('--expert_margin', type=float, default=1.0)
     parser.add_argument('--temperature', type=float, default=10.0)
     parser.add_argument('--hack', action='store_true', default=True)

@@ -13,7 +13,7 @@ env:
   random: false
   short_stop: false
 agent:
-  weights_path: /data/aaronhua/leaderboard/training/lbc/map_model/20210403_235158/epoch=44.ckpt
+    #weights_path: /data/aaronhua/leaderboard/training/lbc/map_model/20210403_235158/epoch=44.ckpt
   #weights_path: /data/aaronhua/leaderboard/training/dqn/offline/20210419_212350/epoch=9.ckpt
   expert_path: /data/aaronhua/leaderboard/training/lbc/map_model/20210405_225046/epoch=22.ckpt
   waypoint_mode: softargmax # or argmax

@@ -8,14 +8,13 @@ from pathlib import Path
 from carla import VehicleControl
 
 from misc.utils import *
-from dqn.src.agents.map_model import MapModel, fuse_logits
 from lbc.carla_project.src.map_model import MapModel as LBCModel
 from lbc.carla_project.src.dataset import preprocess_semantic
 from lbc.carla_project.src.converter import Converter
 from lbc.carla_project.src.common import CONVERTER, COLOR
 from lbc.src.pid_controller import PIDController
 from lbc.src.map_agent import MapAgent
-
+from dqn.src.agents.map_model import fuse_logits
 from leaderboard.envs.sensor_interface import SensorInterface
 
 HAS_DISPLAY = int(os.environ.get('HAS_DISPLAY', 0))
@@ -37,9 +36,15 @@ class PrivilegedAgent(MapAgent):
         self.aconfig = dict_to_sns(self.config.agent)
         #self.save_root = Path(self.config.save_root)
 
-        self.converter = Converter()
+        with open(f'{self.config.save_root}/train_config.yml', 'r') as f:
+            self.train_config = dict_to_sns(yaml.load(f, Loader=yaml.Loader))
+        #self.control_type = self.train_config.control_type
+        if self.train_config.control_type == 'learned':
+            from dqn.src.agents.lc_map_model import MapModel
+        elif self.train_config.control_type == 'points':
+            from dqn.src.agents.map_model import MapModel
 
-        self.control_mode = self.aconfig.control_mode
+        self.converter = Converter()
 
         weights_path = self.aconfig.weights_path
         self.net = MapModel.load_from_checkpoint(weights_path)
@@ -51,10 +56,6 @@ class PrivilegedAgent(MapAgent):
             self.expert = LBCModel.load_from_checkpoint(expert_path)
             self.expert.cuda()
             self.expert.eval()
-
-        with open(f'{self.config.save_root}/train_config.yml', 'r') as f:
-            self.train_config = yaml.load(f, Loader=yaml.Loader)
-
 
         self.burn_in = False
 
@@ -168,24 +169,35 @@ class PrivilegedAgent(MapAgent):
         points_world = self.converter.map_to_world(torch.Tensor(points_map)).numpy()
         aim = (points_world[1] + points_world[0]) / 2.0
 
-        if self.aconfig.control_mode == 'learned':
+        if self.train_config.control_type == 'learned':
             control_out = self.net.controller(points).cpu().squeeze()
             steer = control_out[0].item()
-            desired_speed = control_out[1].item()
-        elif self.aconfig.control_mode == 'points':
+            
+            # CONVERT TO DISCRETIZED DQN ACTION
+            if self.train_config.throttle_mode == 'throttle':
+                brake = False
+                throttle = control_out[1].item()
+            elif self.train_config.throttle_mode == 'speed':
+                desired_speed = control_out[1].item()
+                speed = tick_data['speed']
+                brake = desired_speed < 0.4 or (speed / desired_speed) > 1.1
+                delta = np.clip(desired_speed - speed, 0.0, 0.25)
+                throttle = self._speed_controller.step(delta)
+                throttle = np.clip(throttle, 0.0, 0.75)
+                throttle = throttle if not brake else 0.0
+
+        elif self.train_config.control_type == 'points':
             angle = np.degrees(np.pi / 2 - np.arctan2(aim[1], aim[0])) / 90
             steer = self._turn_controller.step(angle)
             steer = np.clip(steer, -1.0, 1.0)
-            desired_speed = np.linalg.norm(points_world[0] - points_world[1]) * 2.0
-        else:
-            raise Exception
 
-        speed = tick_data['speed']
-        brake = desired_speed < 0.4 or (speed / desired_speed) > 1.1
-        delta = np.clip(desired_speed - speed, 0.0, 0.25)
-        throttle = self._speed_controller.step(delta)
-        throttle = np.clip(throttle, 0.0, 0.75)
-        throttle = throttle if not brake else 0.0
+            desired_speed = np.linalg.norm(points_world[0] - points_world[1]) * 2.0
+            speed = tick_data['speed']
+            brake = desired_speed < 0.4 or (speed / desired_speed) > 1.1
+            delta = np.clip(desired_speed - speed, 0.0, 0.25)
+            throttle = self._speed_controller.step(delta)
+            throttle = np.clip(throttle, 0.0, 0.75)
+            throttle = throttle if not brake else 0.0
 
         control = VehicleControl()
         control.steer = steer
