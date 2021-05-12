@@ -15,12 +15,13 @@ model2_path = '/data/aaronhua/leaderboard/training/dqn/offline/20210509_185309/e
 to_heatmap = ToHeatmap(5)
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset_dir', type=Path,
+        #default='/data/aaronhua/leaderboard/data/lbc/privileged_agent/traffic_light_test')
         default='/data/aaronhua/leaderboard/data/lbc/privileged_agent/privileged_devtest')
 #parser.add_argument('--dataset_dir', type=Path, 
 #        default='/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest')
 parser.add_argument('--weights_path', type=str,
 #        default='/data/aaronhua/leaderboard/training/lbc/20210405_225046/epoch=22.ckpt')
-        default='/data/aaronhua/leaderboard/training/lbc//epoch=22.ckpt')
+        default='/data/aaronhua/leaderboard/training/lbc/epoch=22.ckpt')
 parser.add_argument('--n', type=int, default=20)
 parser.add_argument('--batch_size', type=int, default=2)
 parser.add_argument('--gamma', type=float, default=0.99)

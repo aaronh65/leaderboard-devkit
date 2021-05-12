@@ -1,0 +1,5 @@
+TrafficEventType.COLLISION_PEDESTRIAN: 18
+TrafficEventType.COLLISION_VEHICLE: 17
+num_hard_frames: 695
+num_infractions: 35
+num_total_frames: 24227

@@ -59,8 +59,8 @@ def visualize(batch, meta):
     topdown, tmap, logits = meta['topdown'], meta['tmap'], meta['logits']
     pts_em, ctrl_em, ctrl_e = meta['pts_em'], meta['ctrl_em'], meta['ctrl_e']
     pts_pm, ctrl_pm, ctrl_p = meta['pts_pm'], meta['ctrl_pm'], meta['ctrl_p']
-    point_loss, margin_loss = meta['point_loss'], meta['margin_loss'],
-    margin_map = meta['margin_map']
+    point_loss, margin_loss = meta['point_loss'].squeeze(1), meta['margin_loss'].squeeze(1)
+    margin_mask = meta['margin_mask'].squeeze(1)
     Q_ctrl_pm = meta['Q_ctrl_pm']
 
     tdown = fuse_logits(topdown, logits)
@@ -108,12 +108,12 @@ def visualize(batch, meta):
         _Q_image[y,x] = student_color
         _Q_image = np.array(_Q_image)
 
-        _margin_map = margin_map[i].cpu().numpy()
-        _margin_map = np.uint8(_margin_map*255)
-        _margin_map = np.expand_dims(_margin_map,-1)
-        _margin_map = np.tile(_margin_map, (1,1,3))
+        _margin_mask = margin_mask[i].cpu().numpy()
+        _margin_mask = np.uint8(_margin_mask*255)
+        _margin_mask = np.expand_dims(_margin_mask,-1)
+        _margin_mask = np.tile(_margin_mask, (1,1,3))
 
-        image = np.vstack((_Q_image, _margin_map))
+        image = np.vstack((_Q_image, _margin_mask))
         image = Image.fromarray(image)
         image = np.array(image.resize((h,w), resample=0))
         image = np.hstack((_tdown, image))
@@ -134,7 +134,7 @@ class MapModel(pl.LightningModule):
         self.register_buffer('temperature', torch.Tensor([hparams.temperature]))
         self.net = SegmentationModel(10, 4, batch_norm=True, hack=hparams.hack, extract=False)
 
-        self.controller = DiscreteController(n_input=4)
+        self.controller = DiscreteController(n_input=4, n_steer=hparams.n_steer, n_throttle=hparams.n_throttle)
         self.td_criterion = torch.nn.MSELoss(reduction='none')
         self.margin_criterion = torch.nn.MSELoss(reduction='none')
         
@@ -169,7 +169,7 @@ class MapModel(pl.LightningModule):
 
         points_pred, logits, tmap = self.forward(topdown, target, debug=True)
         point_loss = torch.nn.functional.l1_loss(points_pred, points_expert, reduction='none')
-        point_loss = point_loss.mean((-1,-2))
+        point_loss = point_loss.mean((-1,-2)).unsqueeze(1)
 
         # Q_ctrl_pm = "Q map for control output given predicted points"
         Q_ctrl_pm = self.controller(points_pred)
@@ -201,9 +201,16 @@ class MapModel(pl.LightningModule):
         margin_switch = info['margin_switch']
         margin_map = self.to_heatmap(ctrl_em, Q_ctrl_pm) #N,nSp,nSt
         margin_map = (1 - margin_map) * self.hparams.expert_margin
-        margin = Q_ctrl_pm.squeeze(1) + margin_map - Q_exp.unsqueeze(-1)
-        margin = F.relu(margin)
-        margin_loss = self.hparams.lambda_margin * margin.mean((-1,-2))
+        margin_mask = margin_map.clone()
+        margin_map = Q_ctrl_pm.squeeze(1) + margin_map - Q_exp.unsqueeze(-1)
+        margin_map = F.relu(margin_map).unsqueeze(1)
+
+        mean_margin = torch.mean(margin_map, dim=(-1,-2)) #N,T
+        max_margin = margin_map.view(margin_map.shape[:2] + (-1,)) #N,T,H*W
+        max_margin, _ = torch.max(max_margin, dim=-1) #N,T
+        margin = max_margin + mean_margin
+        margin_loss = self.hparams.lambda_margin * margin.mean(dim=1,keepdim=True)
+        margin_loss = margin_switch * margin_loss
 
         td_loss = self.hparams.lambda_td * 0
         batch_loss = td_loss + margin_loss + point_loss
@@ -237,7 +244,7 @@ class MapModel(pl.LightningModule):
                 'ctrl_pm': ctrl_pm,
                 'point_loss': point_loss,
                 'margin_loss': margin_loss,
-                'margin_map': margin_map,
+                'margin_mask': margin_mask,
             }
 
 
@@ -251,7 +258,7 @@ class MapModel(pl.LightningModule):
         if self.logger != None:
             self.logger.log_metrics(metrics, self.global_step)
 
-        loss = torch.mean(batch_loss, dim=0, keepdim=True)
+        loss = torch.mean(batch_loss, dim=0)
         return {'loss': loss}
 
     # make this a validation episode rollout?
@@ -264,7 +271,7 @@ class MapModel(pl.LightningModule):
             points_pred, logits, tmap = self.forward(topdown, target, debug=True)
 
         point_loss = torch.nn.functional.l1_loss(points_pred, points_expert, reduction='none')
-        point_loss = point_loss.mean((-1,-2))
+        point_loss = point_loss.mean((-1,-2)).unsqueeze(1)
 
         # Q_ctrl_pm = "Q map for control output given predicted points"
         with torch.no_grad():
@@ -292,13 +299,21 @@ class MapModel(pl.LightningModule):
 
         #Q_ctrl_e = spatial_select(Q_ctrl_pm, points_pred.unsqueeze(1))
         Q_exp  = spatial_select(Q_ctrl_pm, ctrl_em.unsqueeze(1)).squeeze(-1)
-        
+
+        margin_switch = info['margin_switch']       
         margin_map = self.to_heatmap(ctrl_em, Q_ctrl_pm) #N,nSp,nSt
         margin_map = (1 - margin_map) * self.hparams.expert_margin
-        margin = Q_ctrl_pm.squeeze(1) + margin_map - Q_exp.unsqueeze(-1)
-        margin = F.relu(margin)
-        margin_loss = self.hparams.lambda_margin * margin.mean((-1,-2))
-                
+        margin_mask = margin_map.clone()
+        margin_map = Q_ctrl_pm.squeeze(1) + margin_map - Q_exp.unsqueeze(-1)
+        margin_map = F.relu(margin_map).unsqueeze(1)
+
+        mean_margin = torch.mean(margin_map, dim=(-1,-2)) #N,T
+        max_margin = margin_map.view(margin_map.shape[:2] + (-1,)) #N,T,H*W
+        max_margin, _ = torch.max(max_margin, dim=-1) #N,T
+        margin = max_margin + mean_margin
+        margin_loss = self.hparams.lambda_margin * margin.mean(dim=1,keepdim=True)
+        margin_loss = margin_switch * margin_loss
+
         td_loss = self.hparams.lambda_td * 0
         batch_loss = td_loss + margin_loss + point_loss
 
@@ -327,7 +342,7 @@ class MapModel(pl.LightningModule):
                 'ctrl_pm': ctrl_pm,
                 'point_loss': point_loss,
                 'margin_loss': margin_loss,
-                'margin_map': margin_map,
+                'margin_mask': margin_mask,
             }
 
             images = visualize(batch, meta)
@@ -340,8 +355,8 @@ class MapModel(pl.LightningModule):
         if self.logger != None:
             self.logger.log_metrics(metrics, self.global_step)
 
-        val_loss =  torch.mean(batch_loss, dim=0, keepdim=True)
-        val_margin_loss = torch.mean(margin_loss, dim=0, keepdim=True)
+        val_loss =  torch.mean(batch_loss, dim=0)
+        val_margin_loss = torch.mean(margin_loss, dim=0)
         val_point_loss = torch.mean(point_loss, dim=0, keepdim=True)
         return {'val_loss': val_loss,
                 'val_margin_loss': val_margin_loss,
@@ -470,7 +485,7 @@ if __name__ == '__main__':
     parser.add_argument('--weight_decay', type=float, default=0.0)
 
     # Model args
-    parser.add_argument('--n_steer', type=int, default=21)
+    parser.add_argument('--n_steer', type=int, default=41)
     parser.add_argument('--n_throttle', type=int, default=11)
     parser.add_argument('--throttle_mode', type=str, default='speed', 
             choices=['speed', 'throttle'])

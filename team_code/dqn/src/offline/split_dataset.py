@@ -90,6 +90,7 @@ class SplitCarlaDataset(Dataset):
         self.measurements = pd.DataFrame()
         thresh = GAP*STEPS + hparams.n + 1
         self.infraction_count = 0
+        self.infraction_map = {}
         for i, _dataset_dir in enumerate(episodes): # 90-10 train/val
             topdown_frames = list(sorted((Path(_dataset_dir) / 'topdown').glob('*')))
             dataset_len = len(topdown_frames)
@@ -112,11 +113,33 @@ class SplitCarlaDataset(Dataset):
 
             # recover hard indices
             rewards = measurements['reward'].to_numpy()
-            hard_indices = begin + np.where(rewards < 0)[0]
+            #print(np.where(rewards<0))
+            inf_indices = np.where(rewards < 0)[0]
+            hard_indices = begin + inf_indices
+            infractions = measurements['infraction'].tolist()
+            #for infraction in infractions:
+            #    if infraction not in self.infraction_map.keys():
+            #        self.infraction_map[infraction] = []
+            #idxs = []
+            #for i, inf in enumerate(infractions):
+            #    if inf != 'none':
+            #        if i in idxs:
+            #            print(_dataset_dir / i)
+            #        idxs.append(begin + i)
+            #print(idxs)
+            #print(hard_indices)
+
+
             hard_starts = hard_indices - hparams.n
             hard_starts = np.clip(hard_starts, begin, end)
-            for start, end in zip(hard_starts, hard_indices):
+            for i, (start, end) in enumerate(zip(hard_starts, hard_indices)):
                 self.hard_indices.extend(range(start, end+1))
+
+                infraction = infractions[inf_indices[i]]
+                if infraction not in self.infraction_map.keys():
+                    self.infraction_map[infraction] = []
+                self.infraction_map[infraction].extend(range(start, end+1))
+
             self.infraction_count += len(hard_indices)
             
         # check indices

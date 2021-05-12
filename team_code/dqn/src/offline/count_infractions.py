@@ -9,8 +9,10 @@ from dqn.src.offline.split_dataset import get_dataloader
 parser = argparse.ArgumentParser()
 #parser.add_argument('--dataset_dir', type=Path,
 #        default='/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest_toy')
-parser.add_argument('--dataset_dir', type=Path, 
-        default='/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest')
+parser.add_argument('--dataset_dir', type=Path,
+        default='/data/aaronhua/leaderboard/data/lbc/privileged_agent/privileged_devtest')
+#parser.add_argument('--dataset_dir', type=Path, 
+#        default='/data/aaronhua/leaderboard/data/lbc/autopilot/autopilot_devtest')
 #parser.add_argument('--weights_path', type=str,
 #        default='/data/aaronhua/leaderboard/training/lbc/20210405_225046/epoch=22.ckpt')
 parser.add_argument('--n', type=int, default=20)
@@ -25,19 +27,22 @@ parser.add_argument('--max_prop_epoch', type=float, default=0.5)
 parser.add_argument('--max_epochs', type=int, default=10)
 
 args = parser.parse_args()
-loader = get_dataloader(args, args.dataset_dir, is_train=True)
+loader = get_dataloader(args, args.dataset_dir, is_train=False)
 
 
 meas = loader.dataset.measurements
 infractions = meas['infraction'].tolist()
 infraction_names = [i for i in set(infractions) if i != 'none']
 counts_d = {}
-for infraction in infractions:
+idxs = []
+for i, infraction in enumerate(infractions):
     if infraction == 'none':
         continue
+    idxs.append(i)
     if infraction not in counts_d.keys():
         counts_d[infraction] = 0
     counts_d[infraction] += 1
+print(loader.dataset.infraction_map['TrafficEventType.TRAFFIC_LIGHT_INFRACTION'])
 save_root = Path('infraction_counts')
 save_root.mkdir(exist_ok=True)
 dataset_name = args.dataset_dir.stem

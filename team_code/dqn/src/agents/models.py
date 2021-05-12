@@ -28,7 +28,7 @@ def spatial_norm(tensor):
     11 throttle choices * 21 steer choices = 231 actions
 '''
 class DiscreteController(torch.nn.Module):
-    def __init__(self, n_input=4, n_steer=21, n_speed=11, k=128):
+    def __init__(self, n_input=4, n_steer=21, n_throttle=11, k=128):
         super().__init__()
 
         self.layers = torch.nn.Sequential(
@@ -41,7 +41,7 @@ class DiscreteController(torch.nn.Module):
                 torch.nn.ReLU(),
 
                 torch.nn.BatchNorm1d(k),
-                torch.nn.Linear(k, n_steer*n_speed))
+                torch.nn.Linear(k, n_steer*n_throttle))
 
     def forward(self, x):
         return self.layers(torch.flatten(x, 1))
