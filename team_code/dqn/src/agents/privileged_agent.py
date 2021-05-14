@@ -163,26 +163,26 @@ class PrivilegedAgent(MapAgent):
         #    points_map = points.clone().cpu().squeeze().numpy()
         #    points_map = (points_map + 1) / 2 * 256 # (-1,1) to (0,256)
         #elif self.aconfig.waypoint_mode == 'argmax':
-        points_map, _ = self.net.get_argmax_actions(Qmap) # (1,4,2),(1,4,1)
-        points_map = points_map.clone().cpu().squeeze().numpy()
-        points_map = np.clip(points_map, 0, 256)
-        points_world = self.converter.map_to_world(torch.Tensor(points_map)).numpy()
-        aim = (points_world[1] + points_world[0]) / 2.0
+        #points_map, _ = self.net.get_argmax_actions(Qmap) # (1,4,2),(1,4,1)
+        #points_map = points_map.clone().cpu().squeeze().numpy()
+        #points_map = np.clip(points_map, 0, 256)
+        #points_world = self.converter.map_to_world(torch.Tensor(points_map)).numpy()
+        #aim = (points_world[1] + points_world[0]) / 2.0
 
+        maps = [tmap, Qmap]
         if self.train_config.control_type == 'learned':
-            control_out = self.net.controller(points).cpu().squeeze()
-            steer = control_out[0].item()
             
-            print('learned')
-            # CONVERT TO DISCRETIZED DQN ACTION
+            control_out, Qmap_lc = self.net.get_control_from_points(points)
+            control_out = control_out.detach().cpu().numpy().flatten().astype(float)
+            maps.append(Qmap_lc)
+
+            steer = control_out[0]
             if self.train_config.throttle_mode == 'throttle':
-                print('throttle')
                 brake = False
-                throttle = control_out[1].item()
+                throttle = control_out[1]
                 desired_speed = 0
             elif self.train_config.throttle_mode == 'speed':
-                print('speed')
-                desired_speed = control_out[1].item()
+                desired_speed = control_out[1] * 10
                 speed = tick_data['speed']
                 brake = desired_speed < 0.4 or (speed / desired_speed) > 1.1
                 delta = np.clip(desired_speed - speed, 0.0, 0.25)
@@ -190,8 +190,20 @@ class PrivilegedAgent(MapAgent):
                 throttle = np.clip(throttle, 0.0, 0.75)
                 throttle = throttle if not brake else 0.0
 
+            # for plotting purposes
+            points_map = (points+1)/2*256
+            points_map = points_map.clone().cpu().squeeze().numpy()
+            points_map = np.clip(points_map, 0, 256)
+            points_world = self.converter.map_to_world(torch.Tensor(points_map)).numpy()
+            aim = (points_world[1] + points_world[0]) / 2.0
+
         elif self.train_config.control_type == 'points':
-            print('points')
+            points_map, _ = self.net.get_argmax_actions(Qmap) # (1,4,2),(1,4,1)
+            points_map = points_map.clone().cpu().squeeze().numpy()
+            points_map = np.clip(points_map, 0, 256)
+            points_world = self.converter.map_to_world(torch.Tensor(points_map)).numpy()
+            aim = (points_world[1] + points_world[0]) / 2.0
+
             angle = np.degrees(np.pi / 2 - np.arctan2(aim[1], aim[0])) / 90
             steer = self._turn_controller.step(angle)
             steer = np.clip(steer, -1.0, 1.0)
@@ -223,7 +235,7 @@ class PrivilegedAgent(MapAgent):
             points_expert = np.clip(points_expert, 0, 256)
             tick_data['points_expert'] = points_expert
 
-        tick_data['maps'] = (tmap, Qmap)
+        tick_data['maps'] = maps
         tick_data['points_map'] = points_map
         tick_data['aim_world'] = aim
 
@@ -236,11 +248,9 @@ class PrivilegedAgent(MapAgent):
         if self.config.save_data:
             self.save_data(tick_data)
         self.tick_data = tick_data
-        #print(timestamp) # GAMETIME
         return control
 
     def debug_display(self, tick_data, steer, throttle, brake, desired_speed, r=2):
-
 
         # rgb image on left, topdown w/vmap image on right
         # plot Q points instead of LBC version (argmax instead of expectation)
@@ -249,9 +259,31 @@ class PrivilegedAgent(MapAgent):
         points_map = tick_data['points_map']
         points_expert = None if 'points_expert' not in tick_data.keys() else tick_data['points_expert']
         
-        # (H,W,3) right image
+        merge_list = []
+        maps = tick_data['maps']
+        if len(maps) == 2:
+            tmap, Qmap = tick_data['maps'] # (1, H, W)
+        else:
+            tmap, Qmap, Qmap_lc = tick_data['maps'] # (1, H, W)
+            Qmap_lc = spatial_norm(Qmap_lc)
+            Qmap_lc = Qmap_lc[0][0].detach().cpu().numpy()
+            Qmap_im = np.expand_dims(Qmap_lc, -1)
+            Qmap_im = np.tile(Qmap_im, (1,1,3))
+            Qmap_im = Image.fromarray(np.uint8(Qmap_im*255))
+
+            Qmap_draw = ImageDraw.Draw(Qmap_im)
+            dspeed = desired_speed / 10
+            x = (steer + 1) / 2 * (self.train_config.n_steer-1)
+            y = (1-dspeed) * (self.train_config.n_throttle-1)
+            Qmap_draw.ellipse((x,y,x+1,y+1), (0,0,255))
+            Qmap_im = Qmap_im.resize((256,256), resample=0)
+            merge_list.append(Qmap_im)
+
+        #cv2.imshow('Qmap_lc', Qmap_lc)
+        #cv2.waitKey(0)
+
+        # (H,W,3) middle image if it exists
         topdown = tick_data['topdown_processed']
-        tmap, Qmap = tick_data['maps'] # (1, H, W)
         fused = fuse_logits(topdown, Qmap).squeeze()
         fused = Image.fromarray(fused)
         draw = ImageDraw.Draw(fused)
@@ -266,8 +298,9 @@ class PrivilegedAgent(MapAgent):
         for i, (x,y) in enumerate(route_map[:3]):
             draw.ellipse((x-2*r, y-2*r, x+2*r, y+2*r), route_colors[i])
         fused = np.array(fused)
+        merge_list.append(fused)
 
-        # left image
+        # middle image
         aim_cam = self.converter.world_to_cam(torch.Tensor(aim)).numpy()
         route_cam = self.converter.map_to_cam(torch.Tensor(route_map)).numpy()
         points_cam = self.converter.map_to_cam(torch.Tensor(points_map)).numpy()
@@ -302,8 +335,9 @@ class PrivilegedAgent(MapAgent):
         draw.text((5, 110), f'Current: {cur_command}', text_color)
         draw.text((5, 130), f'Next: {next_command}', text_color)
         rgb = np.array(rgb)
+        merge_list.append(rgb)
 
-        _combined = cv2.cvtColor(np.hstack((rgb, fused)), cv2.COLOR_BGR2RGB)
+        _combined = cv2.cvtColor(np.hstack(merge_list), cv2.COLOR_RGB2BGR)
         self.debug_img = _combined
 
         if self.config.save_debug and self.step % 4 == 0:

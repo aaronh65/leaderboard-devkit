@@ -162,6 +162,15 @@ class MapModel(pl.LightningModule):
         self.train_data.dataset.epoch_num = self.current_epoch
         self.val_data.dataset.epoch_num = self.current_epoch
 
+    def get_control_from_points(self, points):
+        Qmap_flat = self.controller(points)
+        Qmap_lc = transform_action(Qmap_flat, self.hparams, to_spatial=True)
+        ctrl, _ = self.get_argmax_actions(Qmap_lc)
+        ctrl = ctrl.float()
+        ctrl[..., 0] = ctrl[..., 0] / (self.hparams.n_steer-1) * 2 - 1
+        ctrl[..., 1] = ctrl[..., 1] / (self.hparams.n_throttle-1) * -1 + 1
+        return ctrl, Qmap_lc
+
     def training_step(self, batch, batch_nb):
         state, action, reward, next_state, done, info = batch
         topdown, target = state
@@ -298,7 +307,7 @@ class MapModel(pl.LightningModule):
         #out_cmd_pred = self.controller(points_lbc)
 
         #Q_ctrl_e = spatial_select(Q_ctrl_pm, points_pred.unsqueeze(1))
-        Q_exp  = spatial_select(Q_ctrl_pm, ctrl_em.unsqueeze(1)).squeeze(-1)
+        Q_exp = spatial_select(Q_ctrl_pm, ctrl_em.unsqueeze(1)).squeeze(-1)
 
         margin_switch = info['margin_switch']       
         margin_map = self.to_heatmap(ctrl_em, Q_ctrl_pm) #N,nSp,nSt
