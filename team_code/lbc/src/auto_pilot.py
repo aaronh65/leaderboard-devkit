@@ -189,7 +189,7 @@ class AutoPilot(MapAgent):
        data['theta'] = theta
        return data
 
-    def run_step(self, input_data, timestamp):
+    def run_step(self, input_data, timestamp, noviz=False):
         if not self.initialized:
             self._init()
 
@@ -220,7 +220,7 @@ class AutoPilot(MapAgent):
         if self.config.save_data and self.step % self.save_freq == 0:
             self.save(far_node, near_command, steer, throttle, brake, target_speed, data)
 
-        if HAS_DISPLAY or self.config.save_debug:
+        if (HAS_DISPLAY or self.config.save_debug) and not noviz:
             self.debug_display(data, steer, throttle, brake, target_speed, cmd_cmds, cmd_nodes, gps)
                 
         

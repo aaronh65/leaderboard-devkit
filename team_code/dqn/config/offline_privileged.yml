@@ -8,11 +8,13 @@ agent:
     #weights_path: /data/aaronhua/leaderboard/training/dqn/offline/20210505_012216/last.ckpt
     #weights_path: /data/aaronhua/leaderboard/training/dqn/offline/20210509_185309/epoch=19.ckpt
     #weights_path: /data/aaronhua/leaderboard/training/dqn/offline/20210508_150029/last.ckpt
-  weights_path: /data/aaronhua/leaderboard/training/dqn/offline/20210511_154202/last.ckpt
+    #weights_path: /data/aaronhua/leaderboard/training/dqn/offline/20210511_154202/last.ckpt
     #weights_path: /data/aaronhua/leaderboard/training/dqn/offline/20210512_145602/last.ckpt
+  weights_path: /data/aaronhua/leaderboard/training/dqn/offline/20210512_141502/last.ckpt
   expert_path: /data/aaronhua/leaderboard/training/lbc/map_model/20210405_225046/epoch=22.ckpt
   waypoint_mode: argmax # or argmax
   dagger_expert: false
+  safety_driver: true
   data_hack: false
   forward: false
   n: 20

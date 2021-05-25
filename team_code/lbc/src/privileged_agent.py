@@ -1,6 +1,6 @@
-import os
-import numpy as np
+import os, copy
 import cv2
+import numpy as np
 import pickle as pkl
 import torch
 import torchvision
@@ -40,6 +40,10 @@ class PrivilegedAgent(MapAgent):
 
         self.converter = Converter()
 
+        if self.aconfig.safety_driver:
+            from team_code.lbc.src.auto_pilot import AutoPilot
+            self.safety_driver = AutoPilot(f'{self.config.project_root}/team_code/lbc/config/offline_autopilot.yml')
+
     def _init(self):
         super()._init()
 
@@ -61,6 +65,13 @@ class PrivilegedAgent(MapAgent):
             (self.save_path / 'topdown').mkdir()
             (self.save_path / 'measurements').mkdir()
             (self.save_path / 'points_lbc').mkdir()
+
+        if self.aconfig.safety_driver:
+            self.safety_driver._global_plan_world_coord = self._global_plan_world_coord
+            self.safety_driver._global_plan= self._global_plan
+            self.safety_driver._plan_HACK = self._plan_HACK
+            self.safety_driver._plan_gps_HACK = self._plan_gps_HACK
+
 
     def reset(self):
         self.initialized = False
@@ -117,6 +128,12 @@ class PrivilegedAgent(MapAgent):
     def run_step(self, input_data, timestamp):
         if not self.initialized:
             self._init()
+
+        if self.aconfig.safety_driver:
+            input_copy = copy.deepcopy(input_data)
+            time_copy = copy.deepcopy(timestamp)
+            safe_control = self.safety_driver.run_step(input_copy, time_copy, noviz=True)
+
         tick_data = self.tick(input_data)
 
         topdown = Image.fromarray(tick_data['topdown'])
@@ -159,8 +176,9 @@ class PrivilegedAgent(MapAgent):
 
         control = carla.VehicleControl()
         control.steer = steer
-        control.brake = float(brake)
         control.throttle = throttle
+        #control.brake = float(brake)
+        control.brake = safe_control.brake if self.aconfig.safety_driver else float(brake)
 
         tick_data['desired_speed'] = desired_speed
         tick_data['points_map'] = points_map

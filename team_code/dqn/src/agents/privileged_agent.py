@@ -1,4 +1,4 @@
-import os, yaml
+import os, yaml, copy
 import cv2
 import numpy as np
 import torch
@@ -57,6 +57,11 @@ class PrivilegedAgent(MapAgent):
             self.expert.cuda()
             self.expert.eval()
 
+        if self.aconfig.safety_driver:
+            from team_code.lbc.src.auto_pilot import AutoPilot
+            self.safety_driver = AutoPilot(f'{self.config.project_root}/team_code/lbc/config/offline_autopilot.yml')
+
+
         self.burn_in = False
 
     def _init(self):
@@ -81,6 +86,13 @@ class PrivilegedAgent(MapAgent):
             (self.save_path / 'points_expert').mkdir()
             (self.save_path / 'points_student').mkdir()
             (self.save_path / 'measurements').mkdir()
+
+        if self.aconfig.safety_driver:
+            self.safety_driver._global_plan_world_coord = self._global_plan_world_coord
+            self.safety_driver._global_plan= self._global_plan
+            self.safety_driver._plan_HACK = self._plan_HACK
+            self.safety_driver._plan_gps_HACK = self._plan_gps_HACK
+
 
     def reset(self):
         self.initialized = False
@@ -143,6 +155,12 @@ class PrivilegedAgent(MapAgent):
     def run_step(self, input_data, timestamp):
         if not self.initialized:
             self._init()
+
+        if self.aconfig.safety_driver:
+            input_copy = copy.deepcopy(input_data)
+            time_copy = copy.deepcopy(timestamp)
+            safe_control = self.safety_driver.run_step(input_copy, time_copy, noviz=True)
+
         tick_data = self.tick(input_data)
 
         # prepare inputs
@@ -219,11 +237,13 @@ class PrivilegedAgent(MapAgent):
         control = VehicleControl()
         control.steer = steer
         control.throttle = throttle
-        control.brake = float(brake)
+        #control.brake = float(brake)
+        control.brake = safe_control.brake if self.aconfig.safety_driver else float(brake)
 
         # debug mode - agent moves forward
         if self.aconfig.forward == True:
-            control.steer = np.random.random()*2-1
+            #control.steer = np.random.random()*2-1
+            control.steer = 0
             control.throttle = 1
             control.brake = 0
 
